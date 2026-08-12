@@ -23,10 +23,6 @@
             <version>${wanaku-capabilities-sdk.version}</version>
         </dependency>
 
-        <dependency>
-            <groupId>io.quarkus</groupId>
-            <artifactId>quarkus-grpc</artifactId>
-        </dependency>
     </dependencies>
 
 </project>

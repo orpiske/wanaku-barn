@@ -13,7 +13,6 @@ import ai.wanaku.backend.bridge.types.WanakuToolCallContext;
 import ai.wanaku.backend.common.ToolCallEvent;
 import ai.wanaku.capabilities.sdk.api.types.ToolReference;
 import ai.wanaku.capabilities.sdk.api.types.providers.ServiceTarget;
-import ai.wanaku.core.exchange.v1.ToolInvokeRequest;
 import ai.wanaku.core.util.CollectionsHelper;
 
 /**
@@ -38,14 +37,20 @@ public class EventNotifier {
      * @param toolCallContext the tool call context
      * @param toolReference the tool reference
      * @param service the resolved service target
-     * @param request the built tool invoke request
+     * @param headers the request headers
+     * @param body the request body
+     * @param configurationUri the configuration URI
+     * @param secretsUri the secrets URI
      * @return the started event (for tracking the eventId), or null if emission fails
      */
     public ToolCallEvent emitStartedEvent(
             WanakuToolCallContext toolCallContext,
             ToolReference toolReference,
             ServiceTarget service,
-            ToolInvokeRequest request) {
+            Map<String, String> headers,
+            String body,
+            String configurationUri,
+            String secretsUri) {
         try {
             Map<String, String> argumentsMap = CollectionsHelper.toStringStringMap(toolCallContext.args());
             ToolCallEvent event = ToolCallEvent.started(
@@ -55,10 +60,10 @@ public class EventNotifier {
                     service.getId(),
                     service.toAddress(),
                     argumentsMap,
-                    request.getHeadersMap(),
-                    request.getBody(),
-                    request.getConfigurationUri(),
-                    request.getSecretsUri());
+                    headers,
+                    body,
+                    configurationUri,
+                    secretsUri);
 
             return emit(event);
         } catch (Exception e) {
@@ -111,8 +116,7 @@ public class EventNotifier {
         String exceptionName = e.getClass().getName();
         String message = e.getMessage() != null ? e.getMessage().toLowerCase() : "";
 
-        if (exceptionName.contains("StatusRuntimeException")
-                || exceptionName.contains("ServiceUnavailableException")
+        if (exceptionName.contains("ServiceUnavailableException")
                 || message.contains("unavailable")
                 || message.contains("connection refused")
                 || message.contains("connection reset")) {

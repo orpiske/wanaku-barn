@@ -16,8 +16,8 @@
 package ai.wanaku.backend.bridge;
 
 import java.util.Iterator;
+import ai.wanaku.capabilities.sdk.api.types.execution.CodeExecutionEvent;
 import ai.wanaku.capabilities.sdk.api.types.execution.CodeExecutionRequest;
-import ai.wanaku.core.exchange.v1.CodeExecutionReply;
 
 /**
  * Bridge interface for code execution services.
@@ -31,17 +31,13 @@ public interface CodeExecutorBridge extends Bridge {
 
     /**
      * Executes code on a remote code execution service.
-     * <p>
-     * This method locates an appropriate code execution service based on the
-     * engine type and language, then streams the execution results back to
-     * the caller.
-     * </p>
      *
      * @param engineType the execution engine type (e.g., "jvm", "interpreted")
      * @param language the programming language (e.g., "java", "python")
      * @param request the code execution request containing the code and parameters
-     * @return an iterator over the streaming code execution replies
+     * @param requestId the request ID for traceability
+     * @return an iterator over the streaming code execution events
      */
-    Iterator<CodeExecutionReply> executeCode(
+    Iterator<CodeExecutionEvent> executeCode(
             String engineType, String language, CodeExecutionRequest request, String requestId);
 }

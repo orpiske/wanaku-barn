@@ -186,8 +186,6 @@ public class DeploymentInstructionsBean {
                     "URL of the Wanaku router for service registration",
                     "http://localhost:8080",
                     "url"));
-            placeholders.add(
-                    new PlaceholderDefinition("grpc-port", "gRPC Port", "Port for the gRPC service endpoint", "9191"));
         }
         return placeholders;
     }

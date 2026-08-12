@@ -73,7 +73,7 @@ export WANAKU_ADMIN_PASSWORD=secure-password
 wanaku admin realm create --config wanaku-config.json
 ```
 
-## Network Policies for gRPC Traffic
+## Network Policies for Service Traffic
 
 ### Default Deny Ingress
 
@@ -91,15 +91,15 @@ spec:
   - Ingress
 ```
 
-### Allow Router-to-Capability gRPC
+### Allow Router-to-Capability Traffic
 
-Allow gRPC traffic (port 9190 by default) only from the router namespace:
+Allow capability traffic (port 9190 by default) only from the router namespace:
 
 ```yaml
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-router-grpc
+  name: allow-router-capability
   namespace: wanaku-capabilities
 spec:
   podSelector:
@@ -286,18 +286,15 @@ Key events logged:
 - Capability service registration/deregistration
 - Authentication successes and failures
 
-### gRPC Access Logs
+### Access Logs
 
-By default, Wanaku capability services serve gRPC through the main HTTP server (`quarkus.grpc.server.use-separate-server=false`), so the HTTP access log also records gRPC calls. Enable it to track tool invocations:
+Enable the HTTP access log in capability services to track tool invocations:
 
 ```properties
 # In capability service application.properties
 quarkus.http.access-log.enabled=true
 quarkus.http.access-log.pattern=combined
 ```
-
-> [!NOTE]
-> If you run gRPC on a separate server (`quarkus.grpc.server.use-separate-server=true`), the HTTP access log does not capture gRPC traffic — rely on application-level logging instead.
 
 ### Kubernetes Audit Policy
 
@@ -352,12 +349,12 @@ spec:
     insecureEdgeTerminationPolicy: Redirect
 ```
 
-### gRPC mTLS (Future)
+### mTLS (Future)
 
 For enhanced service-to-service security, plan for mTLS:
 
 - Use cert-manager for certificate issuance
-- Configure gRPC with mutual TLS
+- Configure mutual TLS for service communication
 - Validate peer certificates in capability services
 
 ## Compliance Checklist

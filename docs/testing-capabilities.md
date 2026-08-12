@@ -69,11 +69,11 @@ free-currency-conversion-tool default http https://economia.awesomeapi.com.br/la
 
 ## Part 2: Mocking the Wanaku Router for Unit Tests
 
-When writing unit tests for your capability code, you don't need a running Wanaku router. Instead, use the gRPC stubs directly and test your tool logic in isolation.
+When writing unit tests for your capability code, you don't need a running Wanaku router. Instead, use the exchange stubs directly and test your tool logic in isolation.
 
 ### Setting Up Test Dependencies
 
-Projects generated from the capabilities archetype (see [demo 4.01](../4.01-plain-java-capability/README.md)) already have the gRPC exchange classes (`ToolInvokeRequest`, `ToolInvokeReply`, and the other classes under `ai.wanaku.core.exchange.v1`) on the classpath through the Wanaku Capabilities Java SDK. You only need JUnit 5 with test scope, if your project does not already declare it:
+Projects generated from the capabilities archetype (see [demo 4.01](../4.01-plain-java-capability/README.md)) already have the exchange classes (`ToolInvokeRequest`, `ToolInvokeReply`, and the other classes under `ai.wanaku.core.exchange.v1`) on the classpath through the Wanaku Capabilities Java SDK. You only need JUnit 5 with test scope, if your project does not already declare it:
 
 ```xml
 <dependency>
@@ -304,7 +304,7 @@ java -jar camel-integration-capability-*.jar --help
 Look for:
 
 - Registration success messages
-- gRPC server startup on the configured port
+- Server startup on the configured port
 - Tool invocation requests and responses
 
 ### Step 6: Validate Rules File

@@ -37,6 +37,7 @@ public class LocalRunner {
     private static final URI DEFAULT_ROUTER_READINESS_URI = URI.create("http://localhost:8080/q/health/ready");
     private static final Duration ROUTER_READINESS_POLL_INTERVAL = Duration.ofMillis(500);
     private static final Duration ROUTER_READINESS_REQUEST_TIMEOUT = Duration.ofSeconds(2);
+    private static final int INITIAL_SERVICE_PORT = 9000;
     private final WanakuCliConfig config;
     private final HttpClient httpClient;
     private final URI routerReadinessUri;
@@ -218,7 +219,7 @@ public class LocalRunner {
         ExecutorService executorService = Executors.newCachedThreadPool();
 
         CountDownLatch countDownLatch = new CountDownLatch(activeServices + 1);
-        int grpcPort = config.initialGrpcPort();
+        int servicePort = INITIAL_SERVICE_PORT;
 
         String profileOpt = String.format("-Dquarkus.profile=%s", config.localProfile());
 
@@ -236,8 +237,8 @@ public class LocalRunner {
 
         for (Map.Entry<String, String> component : components.entrySet()) {
             if (isEnabled(services, component)) {
-                startService(component, grpcPort, profileOpt, executorService, countDownLatch, environment);
-                grpcPort++;
+                startService(component, servicePort, profileOpt, executorService, countDownLatch, environment);
+                servicePort++;
             }
         }
 
@@ -322,30 +323,30 @@ public class LocalRunner {
 
     private void startService(
             Map.Entry<String, String> component,
-            int grpcPort,
+            int servicePort,
             String profileOpt,
             ExecutorService executorService,
             CountDownLatch countDownLatch,
             LocalRunnerEnvironment environment) {
-        LOG.infof("Starting Wanaku Service %s (gRPC port %d)", component.getKey(), grpcPort);
+        LOG.infof("Starting Wanaku Service %s (port %d)", component.getKey(), servicePort);
 
         if (isQuarkusComponent(component.getKey())) {
-            startQuarkusService(component.getKey(), grpcPort, profileOpt, executorService, countDownLatch, environment);
+            startQuarkusService(
+                    component.getKey(), servicePort, profileOpt, executorService, countDownLatch, environment);
         } else {
-            startStandaloneService(component.getKey(), grpcPort, executorService, countDownLatch, environment);
+            startStandaloneService(component.getKey(), executorService, countDownLatch, environment);
         }
     }
 
     private static void startQuarkusService(
             String componentName,
-            int grpcPort,
+            int servicePort,
             String profileOpt,
             ExecutorService executorService,
             CountDownLatch countDownLatch,
             LocalRunnerEnvironment environment) {
         File componentDir = quarkusAppDir(componentName);
-        String grpcPortOpt = String.format("-Dquarkus.grpc.server.port=%d", grpcPort);
-        String httpPortOpt = String.format("-Dquarkus.http.port=%d", grpcPort);
+        String httpPortOpt = String.format("-Dquarkus.http.port=%d", servicePort);
         String wanakuHomeArg = wanakuHomeOpt();
 
         executorService.submit(() -> {
@@ -356,7 +357,6 @@ public class LocalRunner {
                         "java",
                         profileOpt,
                         wanakuHomeArg,
-                        grpcPortOpt,
                         httpPortOpt,
                         "-jar",
                         "quarkus-run.jar");
@@ -370,7 +370,6 @@ public class LocalRunner {
 
     private static void startStandaloneService(
             String componentName,
-            int grpcPort,
             ExecutorService executorService,
             CountDownLatch countDownLatch,
             LocalRunnerEnvironment environment) {
@@ -382,8 +381,6 @@ public class LocalRunner {
         command.add(STANDALONE_JAR);
         command.add("--registration-announce-address");
         command.add("localhost");
-        command.add("--grpc-port");
-        command.add(String.valueOf(grpcPort));
         command.add("--name");
         command.add(componentName);
 

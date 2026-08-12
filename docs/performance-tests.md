@@ -19,14 +19,14 @@ There are two test paths, each targeting a different bridge type:
 ```text
                           ┌─────────────────────────────────┐
                           │         Wanaku Router            │
-  k6 ──SSE──►  /public/mcp/sse  ──┬── gRPC bridge ──► capability (tool-noop / static-file)
-                                   └── MCP bridge  ──► mock MCP server (SSE forward)
+  k6 ──SSE──►  /public/mcp/sse  ──┬── capability bridge ──► capability (tool-noop / static-file)
+                                   └── MCP bridge       ──► mock MCP server (SSE forward)
                           └─────────────────────────────────┘
 ```
 
 | Bridge | Backend | Tool name | Resource URI | Capability module |
 |--------|---------|-----------|--------------|-------------------|
-| gRPC | `wanaku-tool-performance-noop`, `wanaku-provider-performance-static-file` | `performancenoop` | `in-memory-file.txt` | `capabilities/tools/wanaku-tool-performance-noop`, `capabilities/providers/wanaku-provider-performance-static-file` |
+| Capability | `wanaku-tool-performance-noop`, `wanaku-provider-performance-static-file` | `performancenoop` | `in-memory-file.txt` | `capabilities/tools/wanaku-tool-performance-noop`, `capabilities/providers/wanaku-provider-performance-static-file` |
 | MCP (forward) | `wanaku-performance-test-mock-mcp` | `mockTool` | `file:///mock/data` | `tests/mcp-servers/wanaku-performance-test-mock-mcp` |
 
 ## Quick Reference
@@ -36,7 +36,7 @@ There are two test paths, each targeting a different bridge type:
 ```text
 tests/load/
 ├── run-perf-test.sh          # Single-run test runner (any bridge)
-├── run-perf-evaluation.sh    # Full baseline-vs-patched evaluation (gRPC bridge, CI-based)
+├── run-perf-evaluation.sh    # Full baseline-vs-patched evaluation (capability bridge, CI-based)
 ├── generate-perf-report.py   # Comparison report generator
 ├── mcp-tools-invoke-sse.js   # k6 script: tool invocation via SSE
 └── mcp-resources-read-sse.js # k6 script: resource read via SSE
@@ -60,9 +60,9 @@ tests/mcp-servers/wanaku-performance-test-mock-mcp/   # Mock MCP server for MCP 
 
 ## Test Scenarios
 
-### 1. gRPC Bridge Tests (via `run-perf-test.sh`)
+### 1. Capability Bridge Tests (via `run-perf-test.sh`)
 
-Tests the gRPC bridge path using standalone capability providers. Requires pre-built distribution archives.
+Tests the capability bridge path using standalone capability providers. Requires pre-built distribution archives.
 
 #### Build
 
@@ -172,7 +172,7 @@ rm -rf ~/.wanaku/router/resource/{data,index}/*
 
 ### 3. Full Baseline vs Patched Evaluation
 
-#### gRPC Bridge Evaluation (CI-based)
+#### Capability Bridge Evaluation (CI-based)
 
 Uses `run-perf-evaluation.sh` to download baseline artifacts from CI (main branch), build the current branch, run both, and generate a comparison report:
 

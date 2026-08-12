@@ -46,11 +46,6 @@
             <artifactId>quarkus-arc</artifactId>
         </dependency>
 
-        <dependency>
-            <groupId>io.quarkus</groupId>
-            <artifactId>quarkus-grpc</artifactId>
-        </dependency>
-
         <!-- For building containers -->
         <dependency>
             <groupId>io.quarkus</groupId>

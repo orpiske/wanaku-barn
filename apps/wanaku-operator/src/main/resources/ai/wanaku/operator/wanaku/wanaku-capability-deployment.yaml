@@ -30,10 +30,6 @@ spec:
               - ALL
           seccompProfile:
             type: RuntimeDefault
-        ports:
-        - containerPort: 9000
-          name: grpc
-          protocol: TCP
         livenessProbe:
           failureThreshold: 5
           tcpSocket:

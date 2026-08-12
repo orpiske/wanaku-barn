@@ -4,7 +4,7 @@ This document provides a detailed look at the internal architecture and implemen
 
 ## Overview
 
-The Wanaku router backend is built around a bridge architecture that abstracts MCP operations and delegates actual work to capability services via gRPC. The bridge pattern separates transport concerns from business logic, enabling flexible and testable implementations.
+The Wanaku router backend is built around a bridge architecture that abstracts MCP operations and delegates actual work to capability services. The bridge pattern separates transport concerns from business logic, enabling flexible and testable implementations.
 
 ### Core Abstraction: Bridge Interface
 
@@ -69,8 +69,7 @@ classDiagram
         +resolveService(type, serviceType) ServiceTarget
     }
 
-    class GrpcTransport {
-        -channelManager GrpcChannelManager
+    class TransportImpl {
         +provision(...) ProvisioningReference
         +invokeTool(...) Uni~ToolResponse~
         +acquireResource(...) Uni~List~ResourceContents~~
@@ -81,7 +80,7 @@ classDiagram
     ProvisionBridge <|.. ProvisionerBridge
     ResourceBridge <|.. ResourceAcquirerBridge
     ToolsBridge <|.. InvokerBridge
-    WanakuBridgeTransport <|.. GrpcTransport
+    WanakuBridgeTransport <|.. TransportImpl
     ResourceAcquirerBridge o-- WanakuBridgeTransport
     ResourceAcquirerBridge o-- ProvisionerBridge
     InvokerBridge o-- WanakuBridgeTransport
@@ -95,7 +94,7 @@ classDiagram
     style ResourceAcquirerBridge fill:#FFB347
     style InvokerBridge fill:#FFB347
     style ProvisionerBridge fill:#FFB347
-    style GrpcTransport fill:#E67E22
+    style TransportImpl fill:#E67E22
 ```
 
 The bridge architecture is organized into specialized interfaces and uses composition over inheritance:
@@ -112,9 +111,9 @@ The bridge architecture is organized into specialized interfaces and uses compos
 The bridge architecture uses **composition over inheritance** to separate transport concerns from business logic:
 
 - **`ResourceAcquirerBridge`** and **`InvokerBridge`** delegate all transport operations to a `WanakuBridgeTransport` implementation
-- **`GrpcTransport`** implements `WanakuBridgeTransport` and handles all gRPC-specific communication
+- The transport implementation handles all communication with capability services
 - **`ProvisionerBridge`** consolidates shared provisioning logic and service resolution, eliminating duplication between bridges
-- **Response transformers** (`ToolResponseTransformer`, `ResourceResponseTransformer`) convert transport-specific types (e.g., gRPC protobuf replies) into MCP domain types within the transport layer, keeping bridge implementations protocol-agnostic
+- **Response transformers** (`ToolResponseTransformer`, `ResourceResponseTransformer`) convert transport-specific types into MCP domain types within the transport layer, keeping bridge implementations protocol-agnostic
 - This design enables:
   - Easy testing with mock transports
   - Support for alternative transport protocols (HTTP, WebSocket, etc.)
@@ -123,7 +122,7 @@ The bridge architecture uses **composition over inheritance** to separate transp
 
 All bridge operations follow an **async-first** design using Mutiny `Uni` types. The transport layer returns already-transformed domain objects, so bridges never handle transport-specific types directly.
 
-Leveraging these specialized interfaces, we have the concrete classes `ResourceAcquirerBridge` and `InvokerBridge` that use [gRPC](https://grpc.io/) via the transport abstraction to exchange data with capability services providing access to resources and tools. Additionally, `DefaultMcpBridge` provides forwarding to remote MCP servers using the langchain4j MCP client.
+Leveraging these specialized interfaces, we have the concrete classes `ResourceAcquirerBridge` and `InvokerBridge` that use the transport abstraction to exchange data with capability services providing access to resources and tools. Additionally, `DefaultMcpBridge` provides forwarding to remote MCP servers using the langchain4j MCP client.
 
 ## Resources
 
@@ -137,7 +136,7 @@ A resource is, essentially, anything that can be read by using the MCP protocol.
 Among other things, resources can be subscribed to, so that changes to its data and state are notified
 to the subscribers.
 
-For instance, the ability to read files is handled by the `wanaku-provider-file` which is a gRPC server that is capable of
+For instance, the ability to read files is handled by the `wanaku-provider-file` which is a service capable of
 consuming files isolated from other providers:
 
 ```mermaid
@@ -146,20 +145,20 @@ graph TB
     ResourceBridge[ResourceBridge<br/>Resource Operations]
     ResourceAcquirerBridge[ResourceAcquirerBridge<br/>Business Logic]
     Transport[WanakuBridgeTransport<br/>Transport Abstraction]
-    GrpcTransport[GrpcTransport<br/>gRPC Implementation]
-    FileProvider[Wanaku Provider - File<br/>gRPC Server]
+    TransportImpl[Transport Implementation]
+    FileProvider[Wanaku Provider - File]
 
     Bridge -->|extends| ResourceBridge
     ResourceBridge -->|implements| ResourceAcquirerBridge
     ResourceAcquirerBridge -->|uses| Transport
-    Transport -->|implements| GrpcTransport
-    GrpcTransport -->|gRPC| FileProvider
+    Transport -->|implements| TransportImpl
+    TransportImpl --> FileProvider
 
     style Bridge fill:#4A90E2
     style ResourceBridge fill:#50C878
     style ResourceAcquirerBridge fill:#FFB347
     style Transport fill:#9B59B6
-    style GrpcTransport fill:#E67E22
+    style TransportImpl fill:#E67E22
     style FileProvider fill:#DDA0DD
 ```
 
@@ -176,7 +175,7 @@ Examples:
 - Executing subprocesses that provide an output
 - Executing an RPC invocation and waiting for its response
 
-In Wanaku, every tool invocation is remote and handled by the `InvokerBridge` class which uses the gRPC protocol via the transport abstraction to
+In Wanaku, every tool invocation is remote and handled by the `InvokerBridge` class which uses the transport abstraction to
 communicate with the service that provides the tool.
 
 ```mermaid
@@ -185,20 +184,20 @@ graph TB
     ToolsBridge[ToolsBridge<br/>Tool Operations]
     InvokerBridge[InvokerBridge<br/>Business Logic]
     Transport[WanakuBridgeTransport<br/>Transport Abstraction]
-    GrpcTransport[GrpcTransport<br/>gRPC Implementation]
-    ToolProvider[Tool Service<br/>HTTP/Exec/Tavily/etc.<br/>gRPC Server]
+    TransportImpl[Transport Implementation]
+    ToolProvider[Tool Service<br/>HTTP/Exec/Tavily/etc.]
 
     Bridge -->|extends| ToolsBridge
     ToolsBridge -->|implements| InvokerBridge
     InvokerBridge -->|uses| Transport
-    Transport -->|implements| GrpcTransport
-    GrpcTransport -->|gRPC| ToolProvider
+    Transport -->|implements| TransportImpl
+    TransportImpl --> ToolProvider
 
     style Bridge fill:#4A90E2
     style ToolsBridge fill:#50C878
     style InvokerBridge fill:#FFB347
     style Transport fill:#9B59B6
-    style GrpcTransport fill:#E67E22
+    style TransportImpl fill:#E67E22
     style ToolProvider fill:#DDA0DD
 ```
 
@@ -220,7 +219,7 @@ sequenceDiagram
     participant Router as Router Backend
     participant RAB as ResourceAcquirerBridge
     participant PB as ProvisionerBridge
-    participant Transport as GrpcTransport
+    participant Transport as Transport
     participant Provider as Resource Provider
 
     MCP->>Router: ReadResource(file:///data/doc.txt)
@@ -229,9 +228,9 @@ sequenceDiagram
     PB-->>RAB: ServiceTarget
     RAB->>RAB: Build ResourceRequest
     RAB->>Transport: acquireResource(request, service, arguments, resource)
-    Transport->>Provider: gRPC ReadResource(uri)
+    Transport->>Provider: ReadResource(uri)
     Provider->>Provider: Read File from Filesystem
-    Provider-->>Transport: gRPC Response (contents)
+    Provider-->>Transport: Response (contents)
     Transport->>Transport: Transform via ResourceResponseTransformer
     Transport-->>RAB: Uni~List~ResourceContents~~
     RAB-->>Router: Uni~ResourceResponse~
@@ -247,16 +246,16 @@ sequenceDiagram
     participant MCP as MCP Client
     participant Router as Router Backend
     participant IB as InvokerBridge
-    participant Transport as GrpcTransport
+    participant Transport as Transport
     participant Tool as Tool Service
 
     MCP->>Router: CallTool(http://api.example.com/data)
     Router->>IB: execute(toolArguments, toolReference)
     IB->>IB: Resolve service, build ToolInvokeRequest
     IB->>Transport: invokeTool(request, service)
-    Transport->>Tool: gRPC InvokeTool(uri, params)
+    Transport->>Tool: InvokeTool(uri, params)
     Tool->>Tool: Execute HTTP Request
-    Tool-->>Transport: gRPC Response (result)
+    Tool-->>Transport: Response (result)
     Transport->>Transport: Transform via ToolResponseTransformer
     Transport-->>IB: Uni~ToolResponse~
     IB-->>Router: Uni~ToolResponse~
@@ -272,7 +271,7 @@ The router uses the Bridge pattern to:
 - Separate abstraction (business logic) from implementation (transport)
 - Provide a unified interface for MCP operations
 - Enable composition over inheritance for flexibility
-- Support multiple transport implementations (gRPC, HTTP, etc.)
+- Support multiple transport implementations
 - Facilitate testing with mock transports
 
 ### Composition Over Inheritance
@@ -281,7 +280,7 @@ The architecture favors composition:
 
 - Bridges **have-a** transport instead of **being-a** transport
 - `InvokerBridge` and `ResourceAcquirerBridge` delegate to `WanakuBridgeTransport`
-- `GrpcTransport` implements transport-specific logic
+- Transport implementation handles protocol-specific logic
 - Clear separation enables independent evolution of components
 
 ### Factory Pattern
@@ -289,7 +288,7 @@ The architecture favors composition:
 Service creation uses factories to:
 
 - Instantiate appropriate proxy implementations based on URI schemes
-- Manage gRPC client lifecycle
+- Manage transport client lifecycle
 - Handle service registration and deregistration
 
 ### Strategy Pattern
@@ -305,8 +304,8 @@ Different capability types use strategy pattern to:
 ### Concurrent Request Handling
 
 - **Async Processing**: Router uses Quarkus reactive programming model
-- **Thread Pools**: Dedicated thread pools for MCP requests and gRPC calls
-- **Connection Pooling**: gRPC channels are pooled and reused
+- **Thread Pools**: Dedicated thread pools for MCP requests and service calls
+- **Connection Pooling**: Transport channels are pooled and reused
 - **State Management**: Service registry uses concurrent data structures
 
 ### Isolation Guarantees

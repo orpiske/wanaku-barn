@@ -32,7 +32,7 @@ The router architecture provides several advantages:
 - **Isolation**: Each capability service runs independently, improving security and reliability
 - **Scalability**: Services can be scaled independently based on demand
 - **Flexibility**: Easy to add, remove, or update capabilities without affecting the router
-- **Language independence**: Capability services can be written in any language that supports gRPC
+- **Language independence**: Capability services can be written in any supported language
 
 ### What is a "capability" in Wanaku?
 
@@ -44,7 +44,7 @@ A capability is a service that provides specific functionality to the Wanaku rou
 
 ### How does Wanaku communicate with capability services?
 
-Wanaku uses gRPC for communication between the router backend and capability services. This provides efficient, type-safe communication with built-in support for streaming and bidirectional communication.
+Wanaku uses an internal transport protocol for communication between the router backend and capability services. This provides efficient, type-safe communication between the router and its capabilities.
 
 ### What is the role of Keycloak in Wanaku?
 
@@ -192,7 +192,7 @@ See the [Contributing Guide](contributing.md) for detailed instructions.
 
 ### Can I write capability services in languages other than Java?
 
-Yes! Any language that supports gRPC can be used to create capability services. The service must implement the appropriate gRPC protocol defined in the Wanaku core-exchange module.
+Yes! Capability services can be created in multiple languages. The service must implement the appropriate protocol defined in the Wanaku core-exchange module.
 
 ### Where should I put my custom capabilities?
 

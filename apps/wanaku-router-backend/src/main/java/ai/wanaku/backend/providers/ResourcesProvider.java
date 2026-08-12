@@ -8,19 +8,13 @@ import jakarta.inject.Inject;
 
 import java.util.List;
 import io.smallrye.mutiny.Uni;
-import ai.wanaku.backend.bridge.ProvisionerBridge;
-import ai.wanaku.backend.bridge.ResourceAcquirerBridge;
 import ai.wanaku.backend.bridge.ResourceBridge;
-import ai.wanaku.backend.bridge.WanakuBridgeTransport;
-import ai.wanaku.backend.bridge.transports.grpc.GrpcChannelManager;
-import ai.wanaku.backend.bridge.transports.grpc.GrpcTransport;
 import ai.wanaku.backend.bridge.types.WanakuResourceReadContext;
 import ai.wanaku.backend.bridge.types.WanakuResourceResult;
 import ai.wanaku.backend.core.mcp.providers.ServiceRegistry;
 import ai.wanaku.backend.service.support.FirstAvailable;
 import ai.wanaku.backend.service.support.ServiceResolver;
 import ai.wanaku.capabilities.sdk.api.types.ResourceReference;
-import picocli.CommandLine;
 
 /**
  * A provider for resources resolvers
@@ -28,13 +22,7 @@ import picocli.CommandLine;
 @ApplicationScoped
 public class ResourcesProvider {
     @Inject
-    CommandLine.ParseResult parseResult;
-
-    @Inject
     Instance<ServiceRegistry> serviceRegistryInstance;
-
-    @Inject
-    GrpcChannelManager channelManager;
 
     private ServiceRegistry serviceRegistry;
 
@@ -49,33 +37,13 @@ public class ResourcesProvider {
     }
 
     @Produces
-    WanakuBridgeTransport getTransport() {
-        return new GrpcTransport(channelManager);
-    }
-
-    @Produces
-    ProvisionerBridge getProvisionerBridge() {
-        ServiceResolver resolver = new FirstAvailable(serviceRegistry);
-        WanakuBridgeTransport transport = new GrpcTransport(channelManager);
-        return new ProvisionerBridge(resolver, transport);
-    }
-
-    @Produces
     ResourceBridge getResourceBridge() {
-        if (parseResult.isUsageHelpRequested() || parseResult.isVersionHelpRequested()) {
-            return new ResourceBridge() {
-                @Override
-                public Uni<WanakuResourceResult> read(
-                        WanakuResourceReadContext readContext, ResourceReference mcpResource) {
-                    return Uni.createFrom().item(new WanakuResourceResult(List.of()));
-                }
-            };
-        }
-
-        ServiceResolver resolver = new FirstAvailable(serviceRegistry);
-        WanakuBridgeTransport transport = new GrpcTransport(channelManager);
-        ProvisionerBridge provisioner = new ProvisionerBridge(resolver, transport);
-
-        return new ResourceAcquirerBridge(provisioner, transport);
+        return new ResourceBridge() {
+            @Override
+            public Uni<WanakuResourceResult> read(
+                    WanakuResourceReadContext readContext, ResourceReference mcpResource) {
+                return Uni.createFrom().item(new WanakuResourceResult(List.of()));
+            }
+        };
     }
 }

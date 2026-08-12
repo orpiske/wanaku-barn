@@ -10,7 +10,7 @@ filtering capabilities exposed to Large Language Models (LLMs).
 
 The Wanaku MCP Router itself does not directly host tools or resources; instead, it acts as an integration service that connects AI agents with external resources and tools, including enterprise systems and cloud services. It manages and governs access between agent types and specific resources, proxying and filtering available capabilities to agents and their LLM
 
-![Diagram showing Wanaku's layered architecture with LLM client connecting to router backend, which communicates via gRPC with tool services and resource providers](imgs/wanaku-architecture.jpg)
+![Diagram showing Wanaku's layered architecture with LLM client connecting to router backend, which communicates with tool services and resource providers](imgs/wanaku-architecture.jpg)
 
 Wanaku provides specialized services, referred to as "capabilities" that offer specific functionalities to the Wanaku MCP Router.
 
@@ -63,7 +63,7 @@ This refers to extending the router's functionality by integrating with various 
 
 Wanaku leverages Quarkus and Apache Camel to provide connectivity to a vast range of services and platforms.
 This allows users to create custom services to solve particular needs.
-These services can be implemented in any language that supports gRPC for communication with the Wanaku MCP Router.
+These services can be implemented in any language that supports the Wanaku communication protocol.
 
 > [!NOTE]
 > It is also possible to create and run services in Java and other languages, such as Go or Python, although the process is not
@@ -2819,7 +2819,7 @@ Arguments with this prefix are:
 
 1. Extracted from the regular arguments (they are not passed to the tool as arguments)
 2. Stripped of the `wanaku_meta_` prefix
-3. Forwarded as headers in the gRPC tool invocation request
+3. Forwarded as headers in the tool invocation request
 
 For example, an argument named `wanaku_meta_contextId` with value `ctx-123` becomes a header with key `contextId` and
 value `ctx-123`.
@@ -2862,7 +2862,7 @@ Arguments with this prefix are:
 
 1. Extracted from the regular arguments (they are never passed to LLMs or to the tool as arguments)
 2. Stripped of the `wanaku_auth_` prefix
-3. Forwarded as headers in the gRPC tool invocation request
+3. Forwarded as headers in the tool invocation request
 4. Always redacted in logs and observability events
 
 For example, an argument named `wanaku_auth_Authorization` with value `Bearer token-123` becomes a header with key
@@ -2950,7 +2950,7 @@ then build the project using Maven (`mvn clean package`).
 Then, launch it using:
 
 ```shell
-java -Dwanaku.service.registration.uri=http://localhost:8080 -Dquarkus.grpc.server.port=9901 ... -jar target/quarkus-app/quarkus-run.jar
+java -Dwanaku.service.registration.uri=http://localhost:8080 -Dquarkus.http.port=9901 ... -jar target/quarkus-app/quarkus-run.jar
 ```
 
 You can check if the service was registered correctly using `wanaku capabilities list`.
@@ -2982,7 +2982,7 @@ To run the newly created service enter the directory that was created (i.e.,; `c
 Then, launch it using:
 
 ```shell
-java -Dwanaku.service.registration.uri=http://localhost:8080 -Dquarkus.grpc.server.port=9900 ... -jar target/quarkus-app/quarkus-run.jar
+java -Dwanaku.service.registration.uri=http://localhost:8080 -Dquarkus.http.port=9900 ... -jar target/quarkus-app/quarkus-run.jar
 ```
 
 You can check if the service was registered correctly using `wanaku capabilities list`.
@@ -3020,7 +3020,7 @@ then build the project using Maven (`mvn clean package`).
 Then, launch it using:
 
 ```shell
-java -Dwanaku.service.registration.uri=http://localhost:8080 -Dquarkus.grpc.server.port=9901 ... -jar target/quarkus-app/quarkus-run.jar
+java -Dwanaku.service.registration.uri=http://localhost:8080 -Dquarkus.http.port=9901 ... -jar target/quarkus-app/quarkus-run.jar
 ```
 
 You can check if the service was registered correctly using `wanaku forwards list`.
@@ -3034,7 +3034,7 @@ After created, then most of the work is to adjust the auto-generated `Tool` clas
 
 ### Implementing Services in Other Languages
 
-The communication between Wanaku MCP Router and its downstream services is capable of talking to any type of service using gRPC.
+The communication between Wanaku MCP Router and its downstream services supports multiple transport protocols.
 Therefore, it's possible to implement services in any language that supports it.
 
 For those cases, leverage the `.proto` files in the `core-exchange` module for creating your own service.
@@ -3110,11 +3110,11 @@ Using the example above, we would include the following dependencies:
     </dependency>
 ```
 
-Adjust the gPRC port in the `application.properties` file by adjusting the `quarkus.grpc.server.port` property.
+Adjust the port in the `application.properties` file by adjusting the `quarkus.http.port` property.
 
 > [!NOTE]
 > You can also provide the port when launching
-> (i.e., `java -Dquarkus.grpc.server.port=9190 -jar target/quarkus-app/quarkus-run.jar`)
+> (i.e., `java -Dquarkus.http.port=9190 -jar target/quarkus-app/quarkus-run.jar`)
 
 Then, build the project:
 
@@ -3343,7 +3343,7 @@ This section provides solutions to common issues you may encounter while using W
 1. Verify the service is running:
 
    ```shell
-   # Check if the gRPC port is listening
+   # Check if the port is listening
    netstat -an | grep 9009
    ```
 

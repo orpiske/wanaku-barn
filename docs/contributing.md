@@ -92,11 +92,11 @@ Using the example above, we would include the following dependencies:
     </dependency>
 ```
 
-Adjust the gPRC port in the `application.properties` file by adjusting the `quarkus.grpc.server.port` property.
+Adjust the port in the `application.properties` file by adjusting the `quarkus.http.port` property.
 
 > [!NOTE]
 > You can also provide the port when launching
-> (i.e., `java -Dquarkus.grpc.server.port=9190 -jar target/quarkus-app/quarkus-run.jar`)
+> (i.e., `java -Dquarkus.http.port=9190 -jar target/quarkus-app/quarkus-run.jar`)
 
 Then, build the project:
 
@@ -151,10 +151,10 @@ Using the example above, we would include the following dependencies:
 </dependency>
 ```
 
-Adjust the gPRC port in the `application.properties` file by adjusting the `quarkus.grpc.server.port` property.
+Adjust the port in the `application.properties` file by adjusting the `quarkus.http.port` property.
 
 > [!NOTE]
-> You can also provide the port when launching (i.e., `java -Dquarkus.grpc.server.port=9190 -jar target/quarkus-app/quarkus-run.jar`)
+> You can also provide the port when launching (i.e., `java -Dquarkus.http.port=9190 -jar target/quarkus-app/quarkus-run.jar`)
 
 Then, build the project:
 
@@ -204,7 +204,7 @@ mvn -Pdist -Dquarkus.container-image.registry=quay.io -Dquarkus.container-image.
 
 Wanaku supports acting as a router/gateway for two types of services:
 
-- Downstream services using gRPC. These services can either be plain Quarkus or Camel Extension for Quarkus.
+- Downstream capability services. These services can either be plain Quarkus or Camel Extension for Quarkus.
 - Other HTTP-based MCP servers (SSE). This allows integrating any MCP server with Wanaku.
 
 The type of service you create will depend on the type of problem you want to solve. Downstream services offer
