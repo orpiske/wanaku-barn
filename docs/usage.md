@@ -3039,7 +3039,6 @@ Therefore, it's possible to implement capabilities in any language that supports
 
 <!-- -->
 
-
 ### Adjusting the announcement address
 
 You can adjust the address used to announce to the MCP Router using either (depending on whether using a tool or a resource provider):
@@ -3079,7 +3078,6 @@ open http://localhost:8080
 3. Enter prompt and send
 
 ### Creating New MCP Server Using Maven
-
 
 > [!IMPORTANT]
 > When using the maven way, please make sure to adjust the version of Wanaku

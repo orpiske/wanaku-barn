@@ -357,7 +357,6 @@ Configuration for the Wanaku command-line interface (`wanaku-cli`).
 | `wanaku.cli.components.*`        | URL templates for downloading various Wanaku components. `%s` is replaced with the version number.    |
 | `wanaku.cli.default-services`    | A comma-separated list of default services to start automatically when running the router.            |
 
-
 ## 4. Testing
 
 Properties primarily used when running tests.
