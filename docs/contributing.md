@@ -38,167 +38,10 @@ endpoints (`prompts/list` and `prompts/get`).
 
 Ideally, most of the MCP tools and MCP resource providers should be created using the
 [Camel Integration Capability for Wanaku](https://wanaku.ai/docs/camel-integration-capability/).
-For special cases, you can use the Wanaku CLI to create the project templates for creating tools or resource providers using
-the Wanaku SDK.
 
 > [!IMPORTANT]
 > The vast majority of the custom capabilities should be included in the [Wanaku Examples](https://github.com/wanaku-ai/wanaku-examples)
 > repository and not to the main Wanaku MCP Router project.
-
-### Service types
-
-You can create services using [Apache Camel](https://camel.apache.org) or plain [Quarkus](https://quarkus.io). To do so, just
-provide the desired type when creating the project (i.e.; via `--type=quarkus` when using `wanaku` or `-Dwanaku-capability-type` when
-using the Maven archetype).
-
-## Creating New Tools
-
-To create a new tool for Wanaku, you can start by creating a new project.
-
-For instance, to create one for Kafka:
-
-```shell
-wanaku services create tool --name kafka
-```
-
-> [!NOTE]
-> This can be used both to create a core tool, part of the Wanaku MCP router project,
-> or to create a custom one for your own needs. Also, this is the **recommended** way to
-> create a new component for Wanaku.
-
-### Creating New Tools Using Maven
-
-Alternatively, if you don't have the CLI installed locally, you can obtain it using Maven:
-
-```shell
-mvn -B archetype:generate -DarchetypeGroupId=ai.wanaku -DarchetypeArtifactId=wanaku-tool-service-archetype \
-  -DarchetypeVersion=LATEST_VERSION -DgroupId=ai.wanaku -Dpackage=ai.wanaku.tool.kafka -DartifactId=wanaku-tool-service-kafka \
-  -Dname=Kafka -Dwanaku-version=LATEST_VERSION -Dwanaku-capability-type=camel
-```
-
-> [!IMPORTANT]
-> Replace `LATEST_VERSION` with the actual Wanaku version from the [releases page](https://github.com/wanaku-ai/wanaku/releases).
-> Both `archetypeVersion` and `wanaku-version` must match.
-
-### Adjusting the Tool Service
-
-After creating the service, open the `pom.xml` file to add the dependencies for your project.
-Using the example above, we would include the following dependencies:
-
-```xml
-    <dependency>
-        <groupId>org.apache.camel.quarkus</groupId>
-        <artifactId>camel-quarkus-kafka</artifactId>
-    </dependency>
-```
-
-Adjust the port in the `application.properties` file by adjusting the `quarkus.http.port` property.
-
-> [!NOTE]
-> You can also provide the port when launching
-> (i.e., `java -Dquarkus.http.port=9190 -jar target/quarkus-app/quarkus-run.jar`)
-
-Then, build the project:
-
-```shell
-mvn clean package
-```
-
-And run it:
-
-```shell
-java -jar target/quarkus-app/quarkus-run.jar
-```
-
-## Creating new Resource Providers
-
-To create a new resource for Wanaku, you can start by creating a new project.
-
-For instance, to create one for S3:
-
-```shell
-wanaku services create resource --name s3
-```
-
-> [!NOTE]
-> This can be used both to create a core tool, part of the Wanaku MCP router project,
-> or to create a custom one for your own needs. Also, this is the **recommended** way to
-> create a new component for Wanaku.
-
-### Creating New Resource Providers Using Maven
-
-Alternatively, if you don't have the CLI installed locally, you can obtain it using Maven:
-
-```shell
-mvn -B archetype:generate -DarchetypeGroupId=ai.wanaku -DarchetypeArtifactId=wanaku-provider-archetype \
-  -DarchetypeVersion=LATEST_VERSION -DgroupId=ai.wanaku -Dpackage=ai.wanaku.provider.s3 -DartifactId=wanaku-provider-s3 \
-  -Dname=S3 -Dwanaku-version=LATEST_VERSION -Dwanaku-capability-type=camel
-```
-
-> [!IMPORTANT]
-> Replace `LATEST_VERSION` with the actual Wanaku version from the [releases page](https://github.com/wanaku-ai/wanaku/releases).
-> Both `archetypeVersion` and `wanaku-version` must match.
-
-### Adjusting the Provider Service
-
-After creating the service, open the `pom.xml` file to add the dependencies for your project.
-Using the example above, we would include the following dependencies:
-
-```xml
-<dependency>
-    <groupId>org.apache.camel.quarkus</groupId>
-    <artifactId>camel-quarkus-aws-s3</artifactId>
-</dependency>
-```
-
-Adjust the port in the `application.properties` file by adjusting the `quarkus.http.port` property.
-
-> [!NOTE]
-> You can also provide the port when launching (i.e., `java -Dquarkus.http.port=9190 -jar target/quarkus-app/quarkus-run.jar`)
-
-Then, build the project:
-
-```shell
-mvn clean package
-```
-
-And run it:
-
-```shell
-java -jar target/quarkus-app/quarkus-run.jar
-```
-
-## Building Containers
-
-You can also build containers using:
-
-```shell
-mvn -Pdist -Dquarkus.container-image.build=true -Dquarkus.container-image.push=true clean package
-```
-
-For custom containers, please make sure you set the following properties
-
-- `quarkus.container-image.registry`: to set the registry name
-- `quarkus.container-image.group`: to set the group
-
-You can do that in the `pom.xml` file:
-
-```xml
-<project>
-    <!-- lots of stuff -->
-    <properties>
-        <quarkus.container-image.registry>quay.io</quarkus.container-image.registry>
-        <quarkus.container-image.group>my-group</quarkus.container-image.group>
-    </properties>
-    <!-- lots of other stuff -->
-</project>
-```
-
-Or in the CLI:
-
-```shell
-mvn -Pdist -Dquarkus.container-image.registry=quay.io -Dquarkus.container-image.group=my-group -Dquarkus.container-image.build=true -Dquarkus.container-image.push=true clean package
-```
 
 ## Capabilities and Forwards
 
@@ -328,10 +171,10 @@ Requirements:
 eval $(minikube docker-env)
 ```
 
-1. Build the container image from wanaku-router-backend, wanaku-operator, wanaku-tool-service-http and wanaku-tool-service-exec.
+1. Build the container image from wanaku-router-backend and wanaku-operator.
 
 ```shell
-mvn -ntp -Dquarkus.container-image.build=true -Dquarkus.container-image.push=false -DskipTests package -pl :wanaku-operator,:wanaku-router-backend,:wanaku-tool-service-http,:wanaku-tool-service-exec
+mvn -ntp -Dquarkus.container-image.build=true -Dquarkus.container-image.push=false -DskipTests package -pl :wanaku-operator,:wanaku-router-backend
 ```
 
 If everything went well, you should see the container is pushed to the registry:
@@ -346,8 +189,6 @@ You can look with the cli: `docker images --format=table|grep wanaku`.
 ```shell
 quay.io/wanaku/wanaku-operator            latest         fadfce7976a5   4 hours ago     463MB
 quay.io/wanaku/wanaku-router-backend      latest         8cc535c47cad   4 hours ago     535MB
-quay.io/wanaku/wanaku-tool-service-http   latest         bd540b6eb9fd   14 hours ago    509MB
-quay.io/wanaku/wanaku-tool-service-exec   latest         cd20d5df77dd   14 hours ago    489MB
 ```
 
 1. Deploy to Minikube
@@ -390,7 +231,7 @@ podman login -u $(oc whoami) -p $(oc whoami -t) --tls-verify=false $REGISTRY
 1. Build all container images
 
 ```shell
-mvn -ntp -Dquarkus.container-image.build=true -Dquarkus.container-image.push=true -DskipTests package -Dquarkus.container-image.registry=$REGISTRY -Dquarkus.container-image.insecure=true -Dopenshift -pl :wanaku-operator,:wanaku-router-backend,:wanaku-tool-service-http,:wanaku-tool-service-exec
+mvn -ntp -Dquarkus.container-image.build=true -Dquarkus.container-image.push=true -DskipTests package -Dquarkus.container-image.registry=$REGISTRY -Dquarkus.container-image.insecure=true -Dopenshift -pl :wanaku-operator,:wanaku-router-backend
 ```
 
 The `-Dopenshift` activates the maven profile to set the quarkus-openshift dependencies.

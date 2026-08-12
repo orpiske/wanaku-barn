@@ -260,9 +260,9 @@ These `wanaku.router.health-check.*` properties control the periodic health prob
 
 ## 2. Capabilities (Tool Services)
 
-### Common Capability Settings (`wanaku-capabilities-base`)
+### Common Capability Settings
 
-These settings apply to most tool services and are foundational for their operation.
+These settings apply to capability services and are foundational for their operation.
 
 #### Common Settings (All Modes)
 
@@ -357,26 +357,8 @@ Configuration for the Wanaku command-line interface (`wanaku-cli`).
 | `wanaku.cli.components.*`        | URL templates for downloading various Wanaku components. `%s` is replaced with the version number.    |
 | `wanaku.cli.default-services`    | A comma-separated list of default services to start automatically when running the router.            |
 
-## 4. Archetypes
 
-These properties are found in the project archetypes and serve as templates for new services.
-
-### `wanaku-mcp-servers-archetype`
-
-| Property                                          | Description                                                                  |
-|---------------------------------------------------|------------------------------------------------------------------------------|
-| `wanaku.mcp.service.name`                         | The name of the new MCP service, typically derived from the `name` variable. |
-| `wanaku.mcp.service.namespace`                    | The namespace the MCP service will operate on.                               |
-| `wanaku.service.registration.mcp-forward-address` | The address to forward MCP messages to.                                      |
-
-### `wanaku-provider-archetype` & `wanaku-tool-service-archetype`
-
-| Property                                  | Description                                                                                          |
-|-------------------------------------------|------------------------------------------------------------------------------------------------------|
-| `wanaku.service.service.configurations.*` | A way to define user-exposable configurations for a service. The key becomes the configuration name. |
-| `wanaku.service.service.defaults.*`       | Defines default values for the corresponding `configurations`.                                       |
-
-## 5. Testing
+## 4. Testing
 
 Properties primarily used when running tests.
 

@@ -73,7 +73,7 @@ When writing unit tests for your capability code, you don't need a running Wanak
 
 ### Setting Up Test Dependencies
 
-Projects generated from the capabilities archetype (see [demo 4.01](../4.01-plain-java-capability/README.md)) already have the exchange classes (`ToolInvokeRequest`, `ToolInvokeReply`, and the other classes under `ai.wanaku.core.exchange.v1`) on the classpath through the Wanaku Capabilities Java SDK. You only need JUnit 5 with test scope, if your project does not already declare it:
+Projects using the Wanaku Capabilities Java SDK already have the exchange classes (`ToolInvokeRequest`, `ToolInvokeReply`, and the other classes under `ai.wanaku.core.exchange.v1`) on the classpath. You only need JUnit 5 with test scope, if your project does not already declare it:
 
 ```xml
 <dependency>

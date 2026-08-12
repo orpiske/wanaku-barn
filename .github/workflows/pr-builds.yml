@@ -96,6 +96,3 @@ jobs:
         path: 'target/reports/'
         retention-days: 14
         if-no-files-found: ignore
-    - name: Test Archetypes
-      if: runner.os != 'Windows'
-      run: bash tests/archetype-tests/test-archetypes.sh

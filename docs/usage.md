@@ -3039,9 +3039,6 @@ Therefore, it's possible to implement capabilities in any language that supports
 
 <!-- -->
 
-> [!NOTE]
-> For plain Java, you can still generate the project using the archetype, but in this case, you must implement your own
-> delegate from scratch and adjust the dependencies.
 
 ### Adjusting the announcement address
 
@@ -3083,11 +3080,6 @@ open http://localhost:8080
 
 ### Creating New MCP Server Using Maven
 
-```shell
-mvn -B archetype:generate -DarchetypeGroupId=ai.wanaku -DarchetypeArtifactId=wanaku-mcp-servers-archetype \
-  -DarchetypeVersion=0.3.0 -DgroupId=ai.wanaku -Dpackage=ai.wanaku.mcp.servers.s3 -DartifactId=wanaku-mcp-servers-s3 \
-  -Dname=S3 -Dwanaku-version=0.3.0 -Dwanaku-capability-type=camel
-```
 
 > [!IMPORTANT]
 > When using the maven way, please make sure to adjust the version of Wanaku
@@ -3204,19 +3196,10 @@ The application [super gateway](https://github.com/supercorp-ai/supergateway) ca
 npx -y supergateway --sse http://localhost:8080/mcp/sse
 ```
 
-## Available Resources Capabilities
-
-Visit [this page](../capabilities/providers/README.md) to check all the providers that come built-in with Wanaku.
+## Available Resources and Tools
 
 > [!NOTE]
-> Most users should rely on the [Camel Integration Capability for Wanaku](https://wanaku.ai/docs/camel-integration-capability/).
-
-## Available Tools Capabilities
-
-Visit [this page](../capabilities/tools/README.md) to check all the tools that come built-in with Wanaku.
-
-> [!NOTE]
-> Most users should rely on the [Camel Integration Capability for Wanaku](https://wanaku.ai/docs/camel-integration-capability/).
+> Most users should rely on the [Camel Integration Capability for Wanaku](https://wanaku.ai/docs/camel-integration-capability/) to create tools and resources. For custom implementations beyond Camel's connectivity, you can use the [Wanaku Capabilities Java SDK](https://github.com/wanaku-ai/wanaku-capabilities-java-sdk).
 
 ### API Note
 

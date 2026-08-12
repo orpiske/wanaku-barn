@@ -4,9 +4,6 @@ needs-review:
           - core/**
           - apps/**
           - apps/wanaku-router-backend/**
-          - capabilities/**
-          - capabilities-quarkus-sdk/**
-          - archetypes/**
           - docs/**
           - '**/*.md'
           - services/**
@@ -16,8 +13,6 @@ needs-test:
       - any-glob-to-any-file:
           - apps/wanaku-cli/**
           - apps/wanaku-router-backend/**
-          - capabilities-quarkus-sdk/**
-          - capabilities/tools/wanaku-tool-service-http/**
 
 needs-e2e-test:
   - changed-files:
