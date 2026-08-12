@@ -145,7 +145,7 @@ Wanaku follows a distributed microservices architecture where the central router
 
 - **Router as Gateway**: Central entry point for all MCP requests
 - **Service Independence**: Each capability service runs as an independent process
-- **Protocol Translation**: Router handles MCP protocol; services use internal transport
+- **Protocol Translation**: Router handles MCP protocol for both clients and capability services
 - **Horizontal Scalability**: Services can be scaled independently
 
 ### Request Flow
@@ -154,22 +154,15 @@ Wanaku follows a distributed microservices architecture where the central router
 sequenceDiagram
     participant Client as LLM Client
     participant Router as Router Backend
-    participant Bridge as Bridge Layer
-    participant Transport as Transport Layer
     participant Service as Capability Service
     participant Target as External System
 
     Client->>Router: MCP Request (Tool Call)
     Router->>Router: Authenticate Request
-    Router->>Bridge: Route to Appropriate Bridge
-    Bridge->>Bridge: Process Business Logic
-    Bridge->>Transport: Delegate to Transport
-    Transport->>Service: Tool Invocation
+    Router->>Service: MCP Tool Invocation
     Service->>Target: Execute Operation
     Target-->>Service: Operation Result
-    Service-->>Transport: Response
-    Transport-->>Bridge: Parsed Response
-    Bridge-->>Router: Aggregated Result
+    Service-->>Router: MCP Response
     Router-->>Client: MCP Response
 ```
 
@@ -178,12 +171,10 @@ sequenceDiagram
 1. **Client Connection**: LLM client connects to router backend via MCP protocol (SSE or HTTP)
 2. **Authentication**: Router authenticates the request using Keycloak/OIDC
 3. **Request Processing**: Router receives MCP requests (tool calls, resource reads, prompt requests)
-4. **Bridge Routing**: Bridge layer determines the appropriate service based on tool/resource type and namespace
-5. **Business Logic**: Bridge processes request and prepares for transport asynchronously
-6. **Transport Delegation**: Bridge delegates communication to transport layer (composition pattern)
-7. **Service Communication**: Transport forwards request to specific capability service and transforms the response using response transformers
-8. **Service Processing**: Capability service handles actual resource access or tool execution
-9. **Async Response**: Results are returned as `Uni` types through transport and bridge layers back to client
+4. **Service Routing**: Router determines the appropriate capability service based on tool/resource type and namespace
+5. **Service Communication**: Router forwards request to the capability service via MCP
+6. **Service Processing**: Capability service handles actual resource access or tool execution
+7. **Response**: Results flow back through the router to the client
 
 ### Tool Invocation Flow
 
@@ -191,8 +182,6 @@ sequenceDiagram
 sequenceDiagram
     participant LLM as LLM Agent
     participant Router as Router Backend
-    participant Bridge as InvokerBridge
-    participant Transport as Transport
     participant Registry as Service Registry
     participant ToolSvc as HTTP Tool Service
     participant API as External API
@@ -200,14 +189,10 @@ sequenceDiagram
     LLM->>Router: Call Tool "http://api.example.com/data"
     Router->>Registry: Lookup Service for "http://" URI
     Registry-->>Router: Return HTTP Service Details
-    Router->>Bridge: execute(arguments, reference)
-    Bridge->>Transport: invokeTool(request, service)
-    Transport->>ToolSvc: ToolInvoke(uri, params)
+    Router->>ToolSvc: MCP Tool Call(uri, params)
     ToolSvc->>API: HTTP GET /data
     API-->>ToolSvc: JSON Response
-    ToolSvc-->>Transport: Response
-    Transport-->>Bridge: Uni~ToolResponse~
-    Bridge-->>Router: Uni~ToolResponse~
+    ToolSvc-->>Router: MCP Response
     Router-->>LLM: MCP Tool Result
 ```
 
@@ -217,8 +202,6 @@ sequenceDiagram
 sequenceDiagram
     participant LLM as LLM Agent
     participant Router as Router Backend
-    participant Bridge as ResourceAcquirerBridge
-    participant Transport as Transport
     participant Registry as Service Registry
     participant FileProv as File Provider
     participant FS as File System
@@ -226,14 +209,10 @@ sequenceDiagram
     LLM->>Router: Read Resource "file:///path/to/doc.txt"
     Router->>Registry: Lookup Provider for "file://" URI
     Registry-->>Router: Return File Provider Details
-    Router->>Bridge: read(arguments, resource)
-    Bridge->>Transport: acquireResource(request, service, ...)
-    Transport->>FileProv: ReadResource(uri)
+    Router->>FileProv: MCP ReadResource(uri)
     FileProv->>FS: Read File
     FS-->>FileProv: File Contents
-    FileProv-->>Transport: Response (contents)
-    Transport-->>Bridge: Uni~List~ResourceContents~~
-    Bridge-->>Router: Uni~ResourceResponse~
+    FileProv-->>Router: MCP Response (contents)
     Router-->>LLM: MCP Resource Content
 ```
 
@@ -435,13 +414,11 @@ Leverage 300+ Camel components for rapid integration:
 - **Technology Flexibility**: Use different tech stacks per service
 - **Security**: Contain potential vulnerabilities to specific services
 
-### Why Bridge Pattern with Composition?
+### Why Bridge Pattern?
 
-- **Separation of Concerns**: Business logic separated from transport implementation
-- **Testability**: Easy to mock transport layer for unit testing
-- **Flexibility**: Support multiple transport protocols
-- **Maintainability**: Changes to transport don't affect business logic
-- **Extensibility**: New transport implementations without modifying bridges
+- **Separation of Concerns**: Business logic separated from protocol handling
+- **Testability**: Easy to mock for unit testing
+- **Maintainability**: Clear separation between routing logic and MCP communication
 
 ### Why Infinispan for Persistence?
 
@@ -529,9 +506,7 @@ graph TB
 ### Throughput
 
 - **MCP Requests**: Router handles concurrent requests asynchronously using Mutiny `Uni` types
-- **Efficient Communication**: Async invocations reduce serialization overhead
-- **Connection Caching**: Transport channels are cached and reused per service target
-- **Async Processing**: Non-blocking I/O throughout the stack with response transformation at the transport layer
+- **Async Processing**: Non-blocking I/O throughout the stack
 
 ### Latency
 

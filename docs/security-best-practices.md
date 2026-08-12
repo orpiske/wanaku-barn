@@ -73,7 +73,7 @@ export WANAKU_ADMIN_PASSWORD=secure-password
 wanaku admin realm create --config wanaku-config.json
 ```
 
-## Network Policies for Service Traffic
+## Network Policies
 
 ### Default Deny Ingress
 
@@ -91,9 +91,9 @@ spec:
   - Ingress
 ```
 
-### Allow Router-to-Capability Traffic
+### Allow Router-to-Capability Communication
 
-Allow capability traffic (port 9190 by default) only from the router namespace:
+Allow traffic from the router namespace to capabilities:
 
 ```yaml
 apiVersion: networking.k8s.io/v1
@@ -351,7 +351,7 @@ spec:
 
 ### mTLS (Future)
 
-For enhanced service-to-service security, plan for mTLS:
+For enhanced security, plan for mTLS:
 
 - Use cert-manager for certificate issuance
 - Configure mutual TLS for service communication

@@ -19,7 +19,7 @@ There are two test paths, each targeting a different bridge type:
 ```text
                           ┌─────────────────────────────────┐
                           │         Wanaku Router            │
-  k6 ──SSE──►  /public/mcp/sse  ──┬── capability bridge ──► capability (tool-noop / static-file)
+  k6 ──SSE──►  /public/mcp/sse  ──┬── capability ──► capability (tool-noop / static-file)
                                    └── MCP bridge       ──► mock MCP server (SSE forward)
                           └─────────────────────────────────┘
 ```
@@ -36,7 +36,7 @@ There are two test paths, each targeting a different bridge type:
 ```text
 tests/load/
 ├── run-perf-test.sh          # Single-run test runner (any bridge)
-├── run-perf-evaluation.sh    # Full baseline-vs-patched evaluation (capability bridge, CI-based)
+├── run-perf-evaluation.sh    # Full baseline-vs-patched evaluation (capability, CI-based)
 ├── generate-perf-report.py   # Comparison report generator
 ├── mcp-tools-invoke-sse.js   # k6 script: tool invocation via SSE
 └── mcp-resources-read-sse.js # k6 script: resource read via SSE
@@ -62,7 +62,7 @@ tests/mcp-servers/wanaku-performance-test-mock-mcp/   # Mock MCP server for MCP 
 
 ### 1. Capability Bridge Tests (via `run-perf-test.sh`)
 
-Tests the capability bridge path using standalone capability providers. Requires pre-built distribution archives.
+Tests the capability path using standalone capability providers. Requires pre-built distribution archives.
 
 #### Build
 

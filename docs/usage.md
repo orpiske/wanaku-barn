@@ -3034,13 +3034,8 @@ After created, then most of the work is to adjust the auto-generated `Tool` clas
 
 ### Implementing Services in Other Languages
 
-The communication between Wanaku MCP Router and its downstream services supports multiple transport protocols.
-Therefore, it's possible to implement services in any language that supports it.
-
-For those cases, leverage the `.proto` files in the `core-exchange` module for creating your own service.
-
-> [!CAUTION]
-> At this time, Wanaku is being intensively developed, therefore, we cannot guarantee backwards compatibility of the protocol.
+Wanaku uses MCP for communication between the router and capability services.
+Therefore, it's possible to implement capabilities in any language that supports MCP.
 
 <!-- -->
 
