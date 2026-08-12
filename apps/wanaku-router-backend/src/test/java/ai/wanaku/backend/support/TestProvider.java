@@ -7,7 +7,6 @@ import jakarta.enterprise.inject.Produces;
 import org.jboss.logging.Logger;
 import io.quarkus.arc.DefaultBean;
 import io.smallrye.mutiny.Uni;
-import ai.wanaku.backend.bridge.ProvisionerBridge;
 import ai.wanaku.backend.bridge.ToolsBridge;
 
 @ApplicationScoped
@@ -20,13 +19,5 @@ public class TestProvider {
     ToolsBridge toolsBridge() {
         LOG.infof("Creating test tools bridge");
         return (toolArguments, toolReference) -> Uni.createFrom().nullItem();
-    }
-
-    @Produces
-    @DefaultBean
-    @Priority(100)
-    ProvisionerBridge provisionerBridge() {
-        LOG.infof("Creating test provisioner bridge");
-        return new ProvisionerBridge(null, null);
     }
 }

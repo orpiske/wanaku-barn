@@ -302,7 +302,7 @@ Deploys the Camel Code Execution Engine. Supports two modes: **in-cluster** (Kub
 | `spec.engineType` | string | No | `"camel"` | Engine type identifier. |
 | `spec.languageName` | string | **Yes** | — | Language name for the engine (e.g., `yaml`, `java`). |
 | `spec.image` | string | **Yes** (in-cluster) | — | Container image. Required when `deploymentMode=in-cluster`. |
-| `spec.port` | int | No | `9190` | gRPC port. |
+| `spec.port` | int | No | `9190` | Service port. |
 | `spec.remote.host` | string | **Yes** (remote) | — | Hostname of the remote engine. Required when `deploymentMode=remote`. |
 | `spec.remote.port` | int | No | `9190` | Port of the remote engine. |
 | `spec.remote.scheme` | string | No | `"http"` | URL scheme: `http` or `https`. |

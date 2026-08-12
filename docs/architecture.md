@@ -13,7 +13,7 @@ The Wanaku MCP Router is a distributed system for managing Model Context Protoco
 
 ### High-Level Architecture
 
-![Diagram showing Wanaku's layered architecture with LLM client connecting to router backend, which communicates via gRPC with tool services and resource providers](imgs/wanaku-architecture.jpg)
+![Diagram showing Wanaku's layered architecture with LLM client connecting to router backend, which communicates with tool services and resource providers](imgs/wanaku-architecture.jpg)
 
 Wanaku doesn't directly host tools or resources. Instead, it acts as a central hub that manages and governs how AI agents access specific resources and capabilities through registered services.
 
@@ -50,10 +50,10 @@ graph TB
     UI -->|REST API| Router
     Router -->|Auth| Auth
     Router -->|Persist| Persist
-    Router -->|gRPC| TS1
-    Router -->|gRPC| TS2
-    Router -->|gRPC| TS3
-    Router -->|gRPC| CIC1
+    Router --> TS1
+    Router --> TS2
+    Router --> TS3
+    Router --> CIC1
 
     style Router fill:#4A90E2
     style LLM fill:#50C878
@@ -70,13 +70,13 @@ graph TB
 The main MCP server engine that:
 
 - Receives MCP protocol requests from AI clients (SSE and HTTP transports)
-- Routes tool invocations to appropriate tool services via gRPC
-- Routes resource read requests to appropriate providers via gRPC
+- Routes tool invocations to appropriate tool services
+- Routes resource read requests to appropriate providers
 - Manages tool and resource registrations across namespaces
 - Provides HTTP management API for configuration
 - Handles authentication and authorization via Keycloak
 
-**Technology Stack**: Quarkus, Quarkus MCP Server Extension, gRPC, Infinispan
+**Technology Stack**: Quarkus, Quarkus MCP Server Extension, Infinispan
 
 #### CLI (`cli`)
 
@@ -124,7 +124,7 @@ Shared libraries providing foundational functionality:
 
 | Library | Purpose |
 |---------|---------|
-| **core-exchange** | gRPC protocols and message exchange definitions |
+| **core-exchange** | Protocol definitions and message exchange contracts |
 | **core-mcp** | MCP protocol implementation and client libraries |
 | **wanaku-capabilities-base** | Base classes for capability implementations (in `capabilities-quarkus-sdk`) |
 | **core-service-discovery** | Service registration and health monitoring |
@@ -145,7 +145,7 @@ Wanaku follows a distributed microservices architecture where the central router
 
 - **Router as Gateway**: Central entry point for all MCP requests
 - **Service Independence**: Each capability service runs as an independent process
-- **Protocol Translation**: Router handles MCP protocol; services use gRPC
+- **Protocol Translation**: Router handles MCP protocol; services use internal transport
 - **Horizontal Scalability**: Services can be scaled independently
 
 ### Request Flow
@@ -164,10 +164,10 @@ sequenceDiagram
     Router->>Bridge: Route to Appropriate Bridge
     Bridge->>Bridge: Process Business Logic
     Bridge->>Transport: Delegate to Transport
-    Transport->>Service: gRPC Tool Invocation
+    Transport->>Service: Tool Invocation
     Service->>Target: Execute Operation
     Target-->>Service: Operation Result
-    Service-->>Transport: gRPC Response
+    Service-->>Transport: Response
     Transport-->>Bridge: Parsed Response
     Bridge-->>Router: Aggregated Result
     Router-->>Client: MCP Response
@@ -181,7 +181,7 @@ sequenceDiagram
 4. **Bridge Routing**: Bridge layer determines the appropriate service based on tool/resource type and namespace
 5. **Business Logic**: Bridge processes request and prepares for transport asynchronously
 6. **Transport Delegation**: Bridge delegates communication to transport layer (composition pattern)
-7. **gRPC Communication**: Transport forwards request to specific capability service via gRPC and transforms the response using response transformers
+7. **Service Communication**: Transport forwards request to specific capability service and transforms the response using response transformers
 8. **Service Processing**: Capability service handles actual resource access or tool execution
 9. **Async Response**: Results are returned as `Uni` types through transport and bridge layers back to client
 
@@ -192,7 +192,7 @@ sequenceDiagram
     participant LLM as LLM Agent
     participant Router as Router Backend
     participant Bridge as InvokerBridge
-    participant Transport as GrpcTransport
+    participant Transport as Transport
     participant Registry as Service Registry
     participant ToolSvc as HTTP Tool Service
     participant API as External API
@@ -202,10 +202,10 @@ sequenceDiagram
     Registry-->>Router: Return HTTP Service Details
     Router->>Bridge: execute(arguments, reference)
     Bridge->>Transport: invokeTool(request, service)
-    Transport->>ToolSvc: gRPC ToolInvoke(uri, params)
+    Transport->>ToolSvc: ToolInvoke(uri, params)
     ToolSvc->>API: HTTP GET /data
     API-->>ToolSvc: JSON Response
-    ToolSvc-->>Transport: gRPC Response
+    ToolSvc-->>Transport: Response
     Transport-->>Bridge: Uni~ToolResponse~
     Bridge-->>Router: Uni~ToolResponse~
     Router-->>LLM: MCP Tool Result
@@ -218,7 +218,7 @@ sequenceDiagram
     participant LLM as LLM Agent
     participant Router as Router Backend
     participant Bridge as ResourceAcquirerBridge
-    participant Transport as GrpcTransport
+    participant Transport as Transport
     participant Registry as Service Registry
     participant FileProv as File Provider
     participant FS as File System
@@ -228,10 +228,10 @@ sequenceDiagram
     Registry-->>Router: Return File Provider Details
     Router->>Bridge: read(arguments, resource)
     Bridge->>Transport: acquireResource(request, service, ...)
-    Transport->>FileProv: gRPC ReadResource(uri)
+    Transport->>FileProv: ReadResource(uri)
     FileProv->>FS: Read File
     FS-->>FileProv: File Contents
-    FileProv-->>Transport: gRPC Response (contents)
+    FileProv-->>Transport: Response (contents)
     Transport-->>Bridge: Uni~List~ResourceContents~~
     Bridge-->>Router: Uni~ResourceResponse~
     Router-->>LLM: MCP Resource Content
@@ -270,7 +270,7 @@ sequenceDiagram
 2. **Authentication**: Service authenticates with router using OIDC client credentials
 3. **Registration**: Service registers itself with router, providing:
    - Service name and type
-   - gRPC endpoint address
+   - Service endpoint address
    - Supported capabilities (tool types or resource protocols)
    - Configuration schema
 4. **Health Monitoring**: Service sends periodic heartbeats to indicate availability
@@ -312,8 +312,8 @@ graph TB
 
     Service1 -->|A. Register + OIDC| Router
     Service2 -->|B. Register + OIDC| Router
-    Proxy -->|6. gRPC + Service Auth| Service1
-    Proxy -->|7. gRPC + Service Auth| Service2
+    Proxy -->|6. Service Auth| Service1
+    Proxy -->|7. Service Auth| Service2
 
     style Keycloak fill:#E74C3C
     style Router fill:#4A90E2
@@ -392,7 +392,7 @@ graph LR
 **Steps:**
 
 1. Use `wanaku services create tool --name my-tool` to generate project
-2. Implement tool logic using Java/Camel or other gRPC-capable language
+2. Implement tool logic using Java/Camel or other supported language
 3. Configure service registration and OIDC credentials
 4. Deploy service (standalone or containerized)
 5. Service auto-registers with router on startup
@@ -406,7 +406,7 @@ Similar pattern to tool services, using `wanaku services create provider`
 ```mermaid
 graph LR
     External[External MCP Server] -->|HTTP| Bridge[MCP Bridge Service]
-    Bridge -->|gRPC| Router[Router Backend]
+    Bridge --> Router[Router Backend]
     Router -->|MCP| Client[LLM Client]
 
     style External fill:#E74C3C
@@ -428,13 +428,6 @@ Leverage 300+ Camel components for rapid integration:
 
 ## Design Decisions
 
-### Why gRPC for Internal Communication?
-
-- **Performance**: Binary protocol with efficient serialization
-- **Type Safety**: Strongly-typed contracts via Protocol Buffers
-- **Streaming**: Built-in support for bidirectional streaming
-- **Language Agnostic**: Capability services can be written in any language
-
 ### Why Separate Router and Capability Services?
 
 - **Isolation**: Failures in one capability don't affect others
@@ -446,7 +439,7 @@ Leverage 300+ Camel components for rapid integration:
 
 - **Separation of Concerns**: Business logic separated from transport implementation
 - **Testability**: Easy to mock transport layer for unit testing
-- **Flexibility**: Support multiple transport protocols (gRPC, HTTP, WebSocket)
+- **Flexibility**: Support multiple transport protocols
 - **Maintainability**: Changes to transport don't affect business logic
 - **Extensibility**: New transport implementations without modifying bridges
 
@@ -474,8 +467,8 @@ graph TB
     Client[LLM Client] -->|MCP| Router
     CLI -->|API| Router
     Router -->|Auth| KC
-    Router -->|gRPC| Service1
-    Router -->|gRPC| Service2
+    Router --> Service1
+    Router --> Service2
 
     style Router fill:#4A90E2
     style KC fill:#E74C3C
@@ -513,10 +506,10 @@ graph TB
     Ingress --> Router
     Ingress --> UI
     Router -->|Internal DNS| KC
-    Router -->|gRPC| TS1
-    Router -->|gRPC| TS2
-    Router -->|gRPC| RP1
-    Router -->|gRPC| RP2
+    Router --> TS1
+    Router --> TS2
+    Router --> RP1
+    Router --> RP2
 
     style Router fill:#4A90E2
     style KC fill:#E74C3C
@@ -536,8 +529,8 @@ graph TB
 ### Throughput
 
 - **MCP Requests**: Router handles concurrent requests asynchronously using Mutiny `Uni` types
-- **gRPC**: Efficient binary protocol with FutureStub-based async invocations reduces serialization overhead
-- **Connection Caching**: gRPC channels are cached and reused per service target
+- **Efficient Communication**: Async invocations reduce serialization overhead
+- **Connection Caching**: Transport channels are cached and reused per service target
 - **Async Processing**: Non-blocking I/O throughout the stack with response transformation at the transport layer
 
 ### Latency
@@ -548,7 +541,7 @@ Typical request latency breakdown:
 |-----------|---------|-------|
 | MCP Protocol Overhead | ~5ms | SSE/HTTP serialization |
 | Router Processing | ~10ms | Routing, auth validation |
-| gRPC Communication | ~2ms | Internal network |
+| Service Communication | ~2ms | Internal network |
 | Capability Processing | Variable | Depends on operation |
 | **Total (excluding operation)** | **~17ms** | Overhead without actual work |
 

@@ -23,7 +23,7 @@ spec:
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 9190
-              name: grpc
+              name: http
               protocol: TCP
           livenessProbe:
             initialDelaySeconds: 30

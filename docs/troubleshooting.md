@@ -227,7 +227,7 @@ Ensure the router is started and healthy before starting capability services. In
 **Symptoms:**
 
 - Capability appears in `wanaku capabilities list`
-- Tool invocations fail with gRPC connection timeouts
+- Tool invocations fail with connection timeouts
 - Router logs show connection errors to an unexpected IP address
 
 **Why this happens:**
@@ -313,7 +313,7 @@ Two capability SDK ecosystems coexist:
 |---|---|---|
 | **GroupId** | `ai.wanaku.sdk` | `ai.wanaku` |
 | **Version** | 0.1.x | 0.2.x |
-| **Runtime** | Picocli + gRPC | Quarkus CDI |
+| **Runtime** | Picocli | Quarkus CDI |
 | **Archetype** | `capabilities-archetypes-java-tool` | `wanaku-tool-service-archetype` |
 
 **Fix:**
@@ -380,32 +380,7 @@ Add your dev server's origin to the router's configuration:
 quarkus.http.cors.origins=http://localhost:8080,http://127.0.0.1:8080,http://localhost:5173,http://localhost:6274,http://localhost:<your-port>
 ```
 
-## gRPC and Performance
-
-### Tool invocations time out after 10 seconds
-
-**Symptoms:**
-
-- Tool calls that invoke slow APIs (LLM inference, large data processing) fail with "Service X did not respond within a reasonable time frame"
-- HTTP 502 Bad Gateway response
-
-**Why this happens:**
-
-The router's gRPC transport uses a 10-second deadline for all calls to capability services (`wanaku.bridge.grpc.transport.deadline-seconds=10`). This is too short for many real-world workloads, especially AI-related tools.
-
-**Fix:**
-
-Increase the deadline on the router:
-
-```shell
-export WANAKU_BRIDGE_GRPC_TRANSPORT_DEADLINE_SECONDS=60
-```
-
-Or set it in the router's `application.properties`:
-
-```properties
-wanaku.bridge.grpc.transport.deadline-seconds=60
-```
+## Performance
 
 ### Opaque "Generic error" responses
 

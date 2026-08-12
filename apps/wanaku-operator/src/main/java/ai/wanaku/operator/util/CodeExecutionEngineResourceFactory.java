@@ -139,7 +139,6 @@ public final class CodeExecutionEngineResourceFactory {
 
         final Integer port = resolveCodeExecutionPort(resource);
         container.getPorts().getFirst().setContainerPort(port);
-        container.getPorts().getFirst().setName("grpc");
 
         if (container.getLivenessProbe() != null && container.getLivenessProbe().getTcpSocket() != null) {
             container.getLivenessProbe().getTcpSocket().setPort(new IntOrString(port));
@@ -224,14 +223,6 @@ public final class CodeExecutionEngineResourceFactory {
                 .withName(EnvironmentVariables.CAMEL_CODE_EXECUTION_ENGINE_LANGUAGE_NAME)
                 .withValue(resource.getSpec().getLanguageName())
                 .build());
-        envVars.add(new EnvVarBuilder()
-                .withName(EnvironmentVariables.CAMEL_CODE_EXECUTION_ENGINE_GRPC_PORT)
-                .withValue(String.valueOf(
-                        resource.getSpec().getPort() != null
-                                ? resource.getSpec().getPort()
-                                : 9190))
-                .build());
-
         if (authServer != null && !authServer.isBlank()) {
             envVars.add(new EnvVarBuilder()
                     .withName(EnvironmentVariables.CAMEL_INTEGRATION_CAPABILITY_TOKEN_ENDPOINT)

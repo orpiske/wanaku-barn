@@ -21,7 +21,6 @@ import io.fabric8.kubernetes.api.model.EnvVar;
 import io.fabric8.kubernetes.api.model.EnvVarBuilder;
 import io.fabric8.kubernetes.api.model.PersistentVolumeClaim;
 import io.fabric8.kubernetes.api.model.Service;
-import io.fabric8.kubernetes.api.model.ServicePort;
 import io.fabric8.kubernetes.api.model.apps.Deployment;
 import io.fabric8.kubernetes.api.model.apps.DeploymentSpec;
 import io.fabric8.kubernetes.client.KubernetesClient;
@@ -346,8 +345,6 @@ public class WanakuCamelRouteReconciler implements Reconciler<WanakuCamelRoute>,
         return readyReplicas != null && readyReplicas > 0;
     }
 
-    private static final int CIC_GRPC_PORT = 9190;
-
     private void deployCicInstance(
             WanakuCamelRoute resource,
             String crName,
@@ -405,13 +402,8 @@ public class WanakuCamelRouteReconciler implements Reconciler<WanakuCamelRoute>,
         service.getMetadata().getLabels().put("app", crName);
         service.getMetadata().getLabels().put("component", cicName);
         service.getSpec().setSelector(Map.of("app", crName, "component", cicName));
-        for (ServicePort port : service.getSpec().getPorts()) {
-            port.setPort(CIC_GRPC_PORT);
-            port.setTargetPort(new io.fabric8.kubernetes.api.model.IntOrString(CIC_GRPC_PORT));
-            port.setName("9190-tcp");
-        }
         service.addOwnerReference(resource);
-        LOG.infof("Creating Service '%s' on port %d", cicName, CIC_GRPC_PORT);
+        LOG.infof("Creating Service '%s'", cicName);
         kubernetesClient.services().inNamespace(namespace).resource(service).createOr(Replaceable::update);
     }
 
@@ -479,10 +471,6 @@ public class WanakuCamelRouteReconciler implements Reconciler<WanakuCamelRoute>,
         envVars.add(new EnvVarBuilder()
                 .withName(EnvironmentVariables.CAMEL_INTEGRATION_CAPABILITY_REGISTRATION_ANNOUNCE_ADDRESS)
                 .withValue(crName + "-cic")
-                .build());
-        envVars.add(new EnvVarBuilder()
-                .withName(EnvironmentVariables.CAMEL_INTEGRATION_CAPABILITY_GRPC_PORT)
-                .withValue(String.valueOf(CIC_GRPC_PORT))
                 .build());
         envVars.add(new EnvVarBuilder()
                 .withName(EnvironmentVariables.CAMEL_INTEGRATION_CAPABILITY_SERVICE_CATALOG)

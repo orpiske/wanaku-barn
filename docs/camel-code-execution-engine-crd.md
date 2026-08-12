@@ -61,7 +61,7 @@ spec:
 
 ### `port` (optional, default: 9190)
 
-gRPC port for the engine.
+Service port for the engine.
 
 ```yaml
 spec:

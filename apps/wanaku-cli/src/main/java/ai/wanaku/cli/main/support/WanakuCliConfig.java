@@ -53,14 +53,6 @@ public interface WanakuCliConfig extends WanakuConfig {
     Map<String, String> components();
 
     /**
-     * Every service needs its own gRPC port. The CLI increases it automatically
-     * starting from this port number
-     * @return the port
-     */
-    @WithDefault("9000")
-    int initialGrpcPort();
-
-    /**
      * Maximum number of seconds to wait for the local router readiness
      * endpoint before starting capability services.
      */

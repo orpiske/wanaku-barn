@@ -29,7 +29,7 @@ Key characteristics:
 
 - Service targets represent downstream capability endpoints
 - Reactive messaging distributes events to subscribers
-- gRPC transport for service-to-service communication
+- Service-to-service communication
 - Dual-repository pattern separates service metadata from activity history
 
 ---
@@ -425,7 +425,7 @@ public class ResourcesProvider {
 
     @Produces
     ProvisionerBridge getProvisionerBridge() {
-        return new ProvisionerBridge(new FirstAvailable(serviceRegistry), new GrpcTransport());
+        return new ProvisionerBridge(new FirstAvailable(serviceRegistry), transport);
     }
 
     @Produces

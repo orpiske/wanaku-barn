@@ -17,7 +17,6 @@ import io.quarkus.scheduler.Scheduled;
 import io.quarkus.vertx.ConsumeEvent;
 import io.smallrye.reactive.messaging.MutinyEmitter;
 import ai.wanaku.backend.WanakuRouterConfig;
-import ai.wanaku.backend.bridge.WanakuBridgeTransport;
 import ai.wanaku.backend.common.ServiceTargetEvent;
 import ai.wanaku.backend.core.mcp.providers.ServiceRegistry;
 import ai.wanaku.capabilities.sdk.api.types.discovery.ActivityRecord;
@@ -26,7 +25,7 @@ import ai.wanaku.capabilities.sdk.api.types.discovery.ServiceState;
 import ai.wanaku.capabilities.sdk.api.types.providers.ServiceTarget;
 
 /**
- * Periodically probes registered capabilities for health status via gRPC.
+ * Periodically probes registered capabilities for health status.
  */
 @ApplicationScoped
 public class PeriodicHealthCheckService {
@@ -46,20 +45,15 @@ public class PeriodicHealthCheckService {
     ManagedExecutor managedExecutor;
 
     @Inject
-    WanakuBridgeTransport transport;
-
-    @Inject
     @Channel("service-target-event")
     @OnOverflow(OnOverflow.Strategy.DROP)
     MutinyEmitter<ServiceTargetEvent> serviceTargetEventEmitter;
 
     private ServiceRegistry serviceRegistry;
-    private HealthProbeClient probeClient;
 
     @PostConstruct
     void init() {
         serviceRegistry = serviceRegistryInstance.get();
-        probeClient = new HealthProbeClient(transport);
     }
 
     @Scheduled(
@@ -104,9 +98,6 @@ public class PeriodicHealthCheckService {
             return;
         }
 
-        // Skip capabilities that were explicitly deregistered.
-        // Capabilities that crashed without deregistering remain ACTIVE
-        // and will still be probed and marked as DOWN.
         ActivityRecord activityRecord = serviceRegistry.getStates(id);
         if (activityRecord == null) {
             LOG.infof(
@@ -132,12 +123,8 @@ public class PeriodicHealthCheckService {
             return;
         }
 
-        probeClient
-                .probeAsync(target)
-                .subscribe()
-                .with(
-                        status -> completeHealthCheck(target, id, status),
-                        failure -> failHealthCheck(id, activityRecord, failure));
+        LOG.debugf("Health probing not available for %s (%s), marking as PENDING", target.getServiceName(), id);
+        completeHealthCheck(target, id, HealthStatus.PENDING);
     }
 
     private void completeHealthCheck(ServiceTarget target, String id, HealthStatus status) {
@@ -164,34 +151,6 @@ public class PeriodicHealthCheckService {
         }
     }
 
-    private void failHealthCheck(String id, ActivityRecord activityRecord, Throwable failure) {
-        try {
-            LOG.infof(
-                    "Health probe failed for capability %s, current status: %s",
-                    id, activityRecord.getHealthStatus().asValue());
-            if (activityRecord.getHealthStatus() == HealthStatus.PENDING) {
-                final Instant lastSeen = activityRecord.getLastSeen();
-                final Duration between = Duration.between(lastSeen, Instant.now());
-
-                if (between.toMinutes() < ActivityRecord.TIME_TO_LET_GO) {
-                    LOG.infof("Recently registered capability %s is in pending health state. ", id);
-                } else {
-                    markDown(id, failure);
-                }
-            } else {
-                markDown(id, failure);
-            }
-        } finally {
-            inProgress.remove(id);
-        }
-    }
-
-    private void markDown(String id, Throwable failure) {
-        LOG.warnf(failure, "Error during health check for %s", id);
-        serviceRegistry.updateHealthStatus(id, HealthStatus.DOWN);
-        emitHealthStatusEvent(id, HealthStatus.DOWN);
-    }
-
     private void emitHealthStatusEvent(String id, HealthStatus status) {
         if (!serviceTargetEventEmitter.hasRequests()) {
             return;
@@ -210,7 +169,6 @@ public class PeriodicHealthCheckService {
 
     /**
      * Consumes health check events from the Vert.x EventBus.
-     * Dispatches the health probe asynchronously.
      *
      * @param target the service target to check
      */

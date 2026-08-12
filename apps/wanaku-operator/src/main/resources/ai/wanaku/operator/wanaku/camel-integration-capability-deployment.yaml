@@ -29,8 +29,6 @@ spec:
           value: ""
         - name: REGISTRATION_ANNOUNCE_ADDRESS
           value: "auto"
-        - name: GRPC_PORT
-          value: "9190"
         - name: SERVICE_NAME
           value: ""
         - name: ROUTES_PATH
@@ -61,10 +59,6 @@ spec:
           initialDelaySeconds: 5
           periodSeconds: 10
           timeoutSeconds: 5
-        ports:
-        - containerPort: 9190
-          name: grpc
-          protocol: TCP
         volumeMounts:
           - mountPath: /data
             name: ""

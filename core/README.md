@@ -9,7 +9,7 @@ Core library modules providing fundamental functionality for the Wanaku MCP Rout
 This directory contains essential libraries and infrastructure used throughout Wanaku:
 
 - MCP protocol implementation
-- gRPC communication protocols
+- Communication protocols
 - Data persistence abstractions
 - Service discovery mechanisms
 
@@ -21,7 +21,7 @@ MCP protocol client and server implementations using the Quarkus MCP extension.
 
 ### core-exchange
 
-gRPC protocol definitions and message exchange contracts for communication between router and capability services.
+Protocol definitions and message exchange contracts for communication between router and capability services.
 
 ### core-persistence
 
