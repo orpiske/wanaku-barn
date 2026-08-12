@@ -16,7 +16,6 @@
     <modules>
         <!-- common -->
         <module>core-util</module>
-        <module>core-exchange</module>
         <module>core-services-api</module>
 
         <!-- capabilities core -->
