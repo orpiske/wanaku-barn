@@ -1,0 +1,3 @@
+specs
+.claude
+tests
