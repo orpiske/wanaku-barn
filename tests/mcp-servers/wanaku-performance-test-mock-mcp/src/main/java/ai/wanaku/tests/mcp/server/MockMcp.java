@@ -8,9 +8,6 @@ import io.quarkiverse.mcp.server.Tool;
 import io.quarkiverse.mcp.server.ToolArg;
 
 public class MockMcp {
-    //    @Inject
-    //    Instance<ForwardRegistrationManager> registrationManager;
-
     @Inject
     MockMcpPerformanceConfig config;
 
