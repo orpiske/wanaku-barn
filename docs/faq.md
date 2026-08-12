@@ -44,7 +44,7 @@ A capability is a service that provides specific functionality to the Wanaku rou
 
 ### How does Wanaku communicate with capability services?
 
-Wanaku uses an internal transport protocol for communication between the router backend and capability services. This provides efficient, type-safe communication between the router and its capabilities.
+Wanaku uses MCP for communication between the router and capability services. Capabilities register with the router and exchange requests via the Model Context Protocol.
 
 ### What is the role of Keycloak in Wanaku?
 
