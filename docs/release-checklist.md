@@ -159,16 +159,10 @@ This workflow will:
 - [ ] GitHub Release page has all expected assets:
   - [ ] CLI: native binaries (Linux x86_64, macOS aarch64) + Java ZIP
   - [ ] Router backend ZIP
-  - [ ] Tool services ZIPs (http, exec)
   - [ ] Service templates ZIP
-  - [ ] Performance tooling ZIPs (noop, static-file)
 - [ ] Container images available on quay.io:
   - [ ] `quay.io/wanaku/wanaku-router-backend:${CURRENT_VERSION}`
-  - [ ] `quay.io/wanaku/wanaku-tool-service-http:${CURRENT_VERSION}`
-  - [ ] `quay.io/wanaku/wanaku-tool-service-exec:${CURRENT_VERSION}`
   - [ ] `quay.io/wanaku/wanaku-operator:${CURRENT_VERSION}`
-  - [ ] `quay.io/wanaku/wanaku-tool-performance-noop:${CURRENT_VERSION}`
-  - [ ] `quay.io/wanaku/wanaku-provider-performance-static-file:${CURRENT_VERSION}`
 - [ ] Multi-arch manifests are published (verify with `podman manifest inspect`)
 - [ ] JBang installation works: `jbang app install wanaku@wanaku-ai/wanaku`
 

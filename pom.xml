@@ -91,10 +91,7 @@
     <modules>
         <module>parent</module>
         <module>core</module>
-        <module>capabilities-quarkus-sdk</module>
         <module>apps</module>
-        <module>capabilities</module>
-        <module>archetypes</module>
         <module>services</module>
         <module>tests</module>
     </modules>

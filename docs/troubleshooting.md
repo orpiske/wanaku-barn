@@ -298,29 +298,6 @@ Before any non-local deployment, rotate these credentials:
 
 ## SDK and Capability Development
 
-### Two separate SDKs exist with no guidance on which to use
-
-**Symptoms:**
-
-- Confusion when searching for "Wanaku SDK"
-- Build failures when mixing artifacts from different SDKs
-
-**Why this happens:**
-
-Two capability SDK ecosystems coexist:
-
-| | Java SDK (standalone) | Quarkus SDK (in-tree) |
-|---|---|---|
-| **GroupId** | `ai.wanaku.sdk` | `ai.wanaku` |
-| **Version** | 0.1.x | 0.2.x |
-| **Runtime** | Picocli | Quarkus CDI |
-| **Archetype** | `capabilities-archetypes-java-tool` | `wanaku-tool-service-archetype` |
-
-**Fix:**
-
-- Use the **Java SDK** (`ai.wanaku.sdk`) for standalone capabilities that run independently
-- Use the **Quarkus SDK** (`ai.wanaku`) for capabilities developed within the Wanaku monorepo
-
 ### Port 8080 conflict between router and new capabilities
 
 **Symptoms:**
@@ -329,11 +306,11 @@ Two capability SDK ecosystems coexist:
 
 **Why this happens:**
 
-The archetype-generated `application.properties` comments out `quarkus.http.port`. Quarkus defaults to port 8080, which is the same as the router. Built-in capabilities use specific ports (9000, 9001, 9009, 9010), but the archetype does not set one.
+Capability services often default to port 8080, which is the same as the router.
 
 **Fix:**
 
-Set a non-conflicting port in the generated capability's `application.properties`:
+Set a non-conflicting port in the capability's `application.properties`:
 
 ```properties
 # Use a specific port
@@ -342,21 +319,6 @@ quarkus.http.port=9090
 # Or let Quarkus pick a random available port
 quarkus.http.port=0
 ```
-
-### Generated coerceResponse() throws at runtime
-
-**Symptoms:**
-
-- Capability compiles and starts successfully
-- First tool invocation fails with `InvalidResponseTypeException`
-
-**Why this happens:**
-
-The archetype generates a `coerceResponse()` method that unconditionally throws an exception. This is a deliberate placeholder, but the project compiles without errors, so the issue is only discovered at runtime.
-
-**Fix:**
-
-Before deploying, implement the `coerceResponse()` method in your generated delegate class. Replace the `throw` statement with your actual response conversion logic.
 
 ## Frontend and Admin UI
 

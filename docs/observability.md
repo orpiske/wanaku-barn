@@ -68,7 +68,7 @@ quarkus.otel.propagators=tracecontext,baggage
 
 ### Capability Services
 
-Capability services use a shared base configuration in `wanaku-capabilities-base`:
+Capability services use similar configuration:
 
 ```properties
 quarkus.otel.exporter.otlp.endpoint=http://localhost:4317

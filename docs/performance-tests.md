@@ -19,14 +19,12 @@ There are two test paths, each targeting a different bridge type:
 ```text
                           ┌─────────────────────────────────┐
                           │         Wanaku Router            │
-  k6 ──SSE──►  /public/mcp/sse  ──┬── capability ──► capability (tool-noop / static-file)
-                                   └── MCP bridge       ──► mock MCP server (SSE forward)
+  k6 ──SSE──►  /public/mcp/sse  ──── MCP bridge ──► mock MCP server (SSE forward)
                           └─────────────────────────────────┘
 ```
 
-| Bridge | Backend | Tool name | Resource URI | Capability module |
-|--------|---------|-----------|--------------|-------------------|
-| Capability | `wanaku-tool-performance-noop`, `wanaku-provider-performance-static-file` | `performancenoop` | `in-memory-file.txt` | `capabilities/tools/wanaku-tool-performance-noop`, `capabilities/providers/wanaku-provider-performance-static-file` |
+| Bridge | Backend | Tool name | Resource URI | Test module |
+|--------|---------|-----------|--------------|-------------|
 | MCP (forward) | `wanaku-performance-test-mock-mcp` | `mockTool` | `file:///mock/data` | `tests/mcp-servers/wanaku-performance-test-mock-mcp` |
 
 ## Quick Reference
@@ -60,44 +58,7 @@ tests/mcp-servers/wanaku-performance-test-mock-mcp/   # Mock MCP server for MCP 
 
 ## Test Scenarios
 
-### 1. Capability Bridge Tests (via `run-perf-test.sh`)
-
-Tests the capability path using standalone capability providers. Requires pre-built distribution archives.
-
-#### Build
-
-```bash
-mvn package -Pdist -DskipTests -T1C -q
-```
-
-This produces `.tar.gz` archives under each module's `target/distributions/` directory.
-
-#### Run
-
-```bash
-tests/load/run-perf-test.sh \
-  --router-from apps/wanaku-router-backend/target/distributions/wanaku-router-backend-0.2.0-SNAPSHOT.tar.gz \
-  --capability-from capabilities/tools/wanaku-tool-performance-noop/target/distributions/wanaku-tool-performance-noop-0.2.0-SNAPSHOT.tar.gz \
-  --suite tools-sse \
-  --test-name my-run \
-  --test-base-dir /tmp/perf-results
-```
-
-The script handles Keycloak startup, credential acquisition, router launch, capability registration, and k6 execution at VU levels 1, 10, 500, 1000, 2000, 30000.
-
-Available suites: `sse` (both), `tools-sse`, `resources-sse`.
-
-You can also pass custom k6 scripts with `--test NAME PATH`:
-
-```bash
---test my-custom-test ./my-script.js
-```
-
-#### Artifacts
-
-`run-perf-test.sh` accepts `--router-from` and `--capability-from` as either local paths or HTTP URLs. This allows testing against CI-built artifacts directly.
-
-### 2. MCP Bridge Tests (via mock MCP server)
+### 1. MCP Bridge Tests (via mock MCP server)
 
 Tests the MCP bridge path where the router forwards requests to a remote MCP server over SSE.
 
@@ -170,23 +131,7 @@ rm -rf ~/.wanaku/router/tool/{data,index}/*
 rm -rf ~/.wanaku/router/resource/{data,index}/*
 ```
 
-### 3. Full Baseline vs Patched Evaluation
-
-#### Capability Bridge Evaluation (CI-based)
-
-Uses `run-perf-evaluation.sh` to download baseline artifacts from CI (main branch), build the current branch, run both, and generate a comparison report:
-
-```bash
-tests/load/run-perf-evaluation.sh
-```
-
-Override defaults with environment variables:
-
-```bash
-TEST_SCOPE=tools SKIP_BASELINE=true tests/load/run-perf-evaluation.sh
-```
-
-#### MCP Bridge Evaluation (local build)
+### 2. Full Baseline vs Patched Evaluation
 
 For comparing main vs a feature branch through the MCP bridge, build and test each branch separately:
 
