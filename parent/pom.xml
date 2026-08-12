@@ -76,10 +76,6 @@
         <maven-pmd-plugin.version>3.28.0</maven-pmd-plugin.version>
         <spotbugs-maven-plugin.version>4.10.3.0</spotbugs-maven-plugin.version>
         <spotless-maven-plugin.version>3.8.0</spotless-maven-plugin.version>
-        <protobuf-maven-plugin.version>0.6.1</protobuf-maven-plugin.version>
-        <protoc.version>3.25.5</protoc.version>
-        <protoc-gen-grpc-java.version>1.72.0</protoc-gen-grpc-java.version>
-        <annotations-api.version>6.0.53</annotations-api.version>
         <quarkus-operator-sdk.version>7.7.4</quarkus-operator-sdk.version>
         <quarkus-helm.version>1.4.1</quarkus-helm.version>
         <wanaku-capabilities-sdk.version>0.3.0-SNAPSHOT</wanaku-capabilities-sdk.version>
@@ -321,7 +317,6 @@
 
                             <excludes>
                                 <exclude>**/*.properties</exclude>
-                                <exclude>**/*.proto</exclude>
                             </excludes>
 
                             <importOrder>

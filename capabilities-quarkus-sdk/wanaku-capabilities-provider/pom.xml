@@ -17,12 +17,6 @@
             <version>${project.version}</version>
         </dependency>
 
-        <dependency>
-            <groupId>ai.wanaku.sdk</groupId>
-            <artifactId>capabilities-exchange</artifactId>
-            <version>${wanaku-capabilities-sdk.version}</version>
-        </dependency>
-
     </dependencies>
 
 </project>
