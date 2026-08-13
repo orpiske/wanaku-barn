@@ -18,7 +18,7 @@ jobs:
     name: Dispatch Integration Tests
     runs-on: ubuntu-latest
     if: >-
-      github.repository == 'wanaku-ai/wanaku'
+      github.repository == 'wanaku-ai/wanaku-barn'
       && github.event.issue.pull_request
       && contains(github.event.comment.body, '/wanaku-integration-tests')
     steps:

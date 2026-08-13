@@ -92,7 +92,7 @@ jobs:
   dispatch-integration-tests:
     needs: pre-release-build-linux
     runs-on: ubuntu-latest
-    if: github.repository == 'wanaku-ai/wanaku'
+    if: github.repository == 'wanaku-ai/wanaku-barn'
     steps:
       - name: Dispatch integration tests
         if: env.DISPATCH_TOKEN != ''
