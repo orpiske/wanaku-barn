@@ -16,7 +16,7 @@ The CLI is used to manage and interact with the Wanaku MCP Router.
 
 | Component | File |
 |---|---|
-| Router Backend | [wanaku-router-backend-{{projectVersion}}.zip](https://github.com/wanaku-ai/wanaku/releases/download/{{tagName}}/wanaku-router-backend-{{projectVersion}}.zip) |
+| Router Backend | [wanaku-barn-backend-{{projectVersion}}.zip](https://github.com/wanaku-ai/wanaku/releases/download/{{tagName}}/wanaku-barn-backend-{{projectVersion}}.zip) |
 
 ### Capability Services (Tools)
 

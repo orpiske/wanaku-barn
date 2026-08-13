@@ -40,7 +40,7 @@ fi
 
 image=$(grep image: apps/wanaku-operator/deploy/helm/wanaku-operator/values.yaml |awk '{print $2}')
 WANAKU_OPERATOR_IMAGE="${WANAKU_OPERATOR_IMAGE:-${image}}"
-WANAKU_ROUTER_IMAGE="${WANAKU_ROUTER_IMAGE:-quay.io/wanaku/wanaku-router-backend:latest}"
+WANAKU_ROUTER_IMAGE="${WANAKU_ROUTER_IMAGE:-quay.io/wanaku/wanaku-barn-backend:latest}"
 
 log_info()  { echo "[INFO]  $*"; }
 log_error() { echo "[ERROR] $*" >&2; }
