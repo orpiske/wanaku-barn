@@ -2,21 +2,6 @@
 openapi: 3.1.0
 components:
   schemas:
-    ActivityRecord:
-      type: object
-      properties:
-        id:
-          type: string
-        lastSeen:
-          $ref: "#/components/schemas/Instant"
-        healthStatus:
-          $ref: "#/components/schemas/HealthStatus"
-        states:
-          type: array
-          items:
-            $ref: "#/components/schemas/ServiceState"
-        active:
-          type: boolean
     DataStore:
       type: object
       properties:
@@ -47,30 +32,6 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/PlaceholderDefinition"
-    FleetStatus:
-      type: object
-      properties:
-        total:
-          type: integer
-          format: int32
-        healthy:
-          type: integer
-          format: int32
-        warning:
-          type: integer
-          format: int32
-        down:
-          type: integer
-          format: int32
-        overall:
-          type: string
-    HealthStatus:
-      type: string
-      enum:
-      - PENDING
-      - HEALTHY
-      - UNHEALTHY
-      - DOWN
     InputSchema:
       type: object
       properties:
@@ -84,50 +45,6 @@ components:
           type: array
           items:
             type: string
-    Instant:
-      type: string
-      format: date-time
-      examples:
-      - 2022-03-10T16:15:50Z
-    MediaType:
-      type: object
-      properties:
-        type:
-          type: string
-        subtype:
-          type: string
-        parameters:
-          type: object
-          additionalProperties:
-            type: string
-        hash:
-          type: integer
-          format: int32
-        wildcardType:
-          type: boolean
-        wildcardSubtype:
-          type: boolean
-    OutboundSseEvent:
-      type: object
-      properties:
-        id:
-          type: string
-        name:
-          type: string
-        comment:
-          type: string
-        reconnectDelay:
-          type: integer
-          format: int64
-        reconnectDelaySet:
-          type: boolean
-        type:
-          type: object
-        genericType:
-          type: object
-        mediaType:
-          $ref: "#/components/schemas/MediaType"
-        data: {}
     PlaceholderDefinition:
       type: object
       properties:
@@ -159,57 +76,6 @@ components:
       properties:
         version:
           type: string
-    ServiceState:
-      type: object
-      properties:
-        timestamp:
-          $ref: "#/components/schemas/Instant"
-        healthy:
-          type: boolean
-        healthStatus:
-          $ref: "#/components/schemas/HealthStatus"
-        reason:
-          type: string
-    ServiceTarget:
-      type: object
-      properties:
-        id:
-          type: string
-        serviceName:
-          type: string
-        host:
-          type: string
-        port:
-          type: integer
-          format: int32
-        serviceType:
-          type: string
-        serviceSubType:
-          type: string
-        languageName:
-          type: string
-        languageType:
-          type: string
-        languageSubType:
-          type: string
-    StaleCapabilityInfo:
-      type: object
-      properties:
-        id:
-          type: string
-        serviceName:
-          type: string
-        serviceType:
-          type: string
-        host:
-          type: string
-        port:
-          type: integer
-          format: int32
-        healthStatus:
-          type: string
-        lastSeen:
-          $ref: "#/components/schemas/Instant"
     SystemInstruction:
       type: object
       properties:
@@ -297,13 +163,6 @@ components:
           $ref: "#/components/schemas/WanakuError"
         data:
           $ref: "#/components/schemas/DeploymentInstructions"
-    WanakuResponseFleetStatus:
-      type: object
-      properties:
-        error:
-          $ref: "#/components/schemas/WanakuError"
-        data:
-          $ref: "#/components/schemas/FleetStatus"
     WanakuResponseInteger:
       type: object
       properties:
@@ -342,24 +201,6 @@ components:
             type: object
             additionalProperties:
               type: string
-    WanakuResponseListServiceTarget:
-      type: object
-      properties:
-        error:
-          $ref: "#/components/schemas/WanakuError"
-        data:
-          type: array
-          items:
-            $ref: "#/components/schemas/ServiceTarget"
-    WanakuResponseListStaleCapabilityInfo:
-      type: object
-      properties:
-        error:
-          $ref: "#/components/schemas/WanakuError"
-        data:
-          type: array
-          items:
-            $ref: "#/components/schemas/StaleCapabilityInfo"
     WanakuResponseListToolReference:
       type: object
       properties:
@@ -369,17 +210,6 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ToolReference"
-    WanakuResponseMapStringListActivityRecord:
-      type: object
-      properties:
-        error:
-          $ref: "#/components/schemas/WanakuError"
-        data:
-          type: object
-          additionalProperties:
-            type: array
-            items:
-              $ref: "#/components/schemas/ActivityRecord"
     WanakuResponseMapStringMapStringString:
       type: object
       properties:
