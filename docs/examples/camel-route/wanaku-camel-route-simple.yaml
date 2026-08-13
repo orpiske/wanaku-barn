@@ -31,5 +31,15 @@ spec:
                     expression: '{"api_key": "{{tavily.api.key}}", "query": "${body}"}'
             - to:
                 uri: https://api.tavily.com/search
+  mcp:
+    tools:
+      - name: tavily-search
+        routeId: tavily-search
+        description: Search the web using the Tavily AI-optimized search engine
+        properties:
+          - name: wanaku_body
+            type: string
+            description: The search term
+            required: true
   properties:
     tavily.api.key: "{{tavily.api.key}}"
