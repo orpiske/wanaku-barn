@@ -3,10 +3,10 @@
     from:
       uri: ai-tool:pinecone-search
       parameters:
-        tags: pinecone
+        tags: wanaku
         description: "{{tool.description}}"
-        parameter.wanaku_body: string
-        parameter.wanaku_body.description: "The search query vector or text to search in Pinecone"
+        parameter.query: string
+        parameter.query.description: "The search query vector or text to search in Pinecone"
       steps:
         - setHeader:
             name: CamelPineconeAction

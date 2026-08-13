@@ -3,10 +3,10 @@
     from:
       uri: ai-tool:send-message-to-kafka
       parameters:
-        tags: kafka
+        tags: wanaku
         description: "{{tool.description}}"
-        parameter.wanaku_body: string
-        parameter.wanaku_body.description: "The message to send to Kafka"
+        parameter.message: string
+        parameter.message.description: "The message to send to Kafka"
       steps:
         - setExchangePattern:
             pattern: InOut

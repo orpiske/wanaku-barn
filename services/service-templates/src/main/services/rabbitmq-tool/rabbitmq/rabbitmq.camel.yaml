@@ -3,12 +3,12 @@
     from:
       uri: ai-tool:send-message-to-rabbitmq
       parameters:
-        tags: rabbitmq
+        tags: wanaku
         description: "Send a message to RabbitMQ"
-        parameter.wanaku_body: string
-        parameter.wanaku_body.description: "The message to send to RabbitMQ"
+        parameter.message: string
+        parameter.message.description: "The message to send to RabbitMQ"
       steps:
-        - log: ${body}
+        - log: ${header.message}
         - to:
             uri: spring-rabbitmq
             parameters:

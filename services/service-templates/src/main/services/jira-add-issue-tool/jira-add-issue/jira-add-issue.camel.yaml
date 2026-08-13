@@ -3,10 +3,10 @@
     from:
       uri: ai-tool:jira-add-issue
       parameters:
-        tags: jira
+        tags: wanaku
         description: "{{tool.description}}"
-        parameter.wanaku_body: string
-        parameter.wanaku_body.description: "The issue summary and description"
+        parameter.summary: string
+        parameter.summary.description: "The issue summary and description"
       steps:
         - to:
             uri: jira:addIssue

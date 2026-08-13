@@ -3,10 +3,10 @@
     from:
       uri: ai-tool:openai-chat-completion
       parameters:
-        tags: openai
+        tags: wanaku
         description: "{{tool.description}}"
-        parameter.wanaku_body: string
-        parameter.wanaku_body.description: "The prompt text to send to OpenAI for chat completion"
+        parameter.prompt: string
+        parameter.prompt.description: "The prompt text to send to OpenAI for chat completion"
         parameter.systemMessage: string
         parameter.systemMessage.description: "Optional system message to set the behavior of the assistant"
         parameter.model: string
@@ -43,12 +43,12 @@
                 steps:
                   - setHeader:
                       name: CamelOpenAI.messages
-                      simple: '[{"role": "system", "content": "{{openai.system.message}}"}, {"role": "user", "content": "${body}"}]'
+                      simple: '[{"role": "system", "content": "{{openai.system.message}}"}, {"role": "user", "content": "${header.prompt}"}]'
             otherwise:
               steps:
                 - setHeader:
                     name: CamelOpenAI.messages
-                    simple: '[{"role": "user", "content": "${body}"}]'
+                    simple: '[{"role": "user", "content": "${header.prompt}"}]'
         - choice:
             when:
               - simple: "${header.CamelOpenAI.stopSequences} != ''"

@@ -3,12 +3,12 @@
     from:
       uri: ai-tool:send-message-using-jms
       parameters:
-        tags: jms
+        tags: wanaku
         description: "Send messages using JMS"
-        parameter.wanaku_body: string
-        parameter.wanaku_body.description: "Send messages using JMS"
+        parameter.message: string
+        parameter.message.description: "The message to send using JMS"
       steps:
-        - log: ${body}
+        - log: ${header.message}
         - to:
             id: to-2964
             uri: jms

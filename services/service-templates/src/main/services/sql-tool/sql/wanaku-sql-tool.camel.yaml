@@ -3,19 +3,19 @@
     from:
       uri: ai-tool:sql
       parameters:
-        tags: sql
+        tags: wanaku
         description: "Search on a database using a predefined query"
-        parameter.wanaku_body: string
-        parameter.wanaku_body.description: "Input argument for the query"
+        parameter.query: string
+        parameter.query.description: "Input argument for the query"
       steps:
-        # The tool input (wanaku_body) is exposed as a named parameter and is bound by camel-sql as
-        # a prepared-statement parameter (:#wanakuBody). Keep sql.query a fixed, predefined statement
-        # and reference the input via :#wanakuBody - never concatenate tool input into the SQL text.
+        # The tool input (query) arrives as a header and is bound by camel-sql as a
+        # prepared-statement parameter (:#wanakuBody). Keep sql.query a fixed, predefined
+        # statement and reference the input via :#wanakuBody.
         - setHeader:
             name: wanakuBody
             expression:
               simple:
-                expression: ${body}
+                expression: ${header.query}
         - setHeader:
             name: CamelSqlQuery
             expression:

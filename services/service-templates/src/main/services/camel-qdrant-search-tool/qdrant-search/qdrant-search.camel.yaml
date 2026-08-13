@@ -3,10 +3,10 @@
     from:
       uri: ai-tool:qdrant-similarity-search
       parameters:
-        tags: qdrant
+        tags: wanaku
         description: "{{tool.description}}"
-        parameter.wanaku_body: string
-        parameter.wanaku_body.description: "The search query or vector data for similarity search"
+        parameter.query: string
+        parameter.query.description: "The search query or vector data for similarity search"
       steps:
         - setHeader:
             name: CamelQdrantAction

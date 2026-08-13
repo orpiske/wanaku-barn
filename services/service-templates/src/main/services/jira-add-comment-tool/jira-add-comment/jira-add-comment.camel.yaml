@@ -3,10 +3,10 @@
     from:
       uri: ai-tool:jira-add-comment
       parameters:
-        tags: jira
+        tags: wanaku
         description: "{{tool.description}}"
-        parameter.wanaku_body: string
-        parameter.wanaku_body.description: "The comment text to add to the issue"
+        parameter.comment: string
+        parameter.comment.description: "The comment text to add to the issue"
       steps:
         - to:
             uri: jira:addComment

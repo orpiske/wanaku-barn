@@ -3,10 +3,10 @@
     from:
       uri: ai-tool:telegram-send-message
       parameters:
-        tags: telegram
+        tags: wanaku
         description: "{{tool.description}}"
-        parameter.wanaku_body: string
-        parameter.wanaku_body.description: "The message text to send via Telegram"
+        parameter.message: string
+        parameter.message.description: "The message text to send via Telegram"
       steps:
         - to:
             uri: telegram:bots

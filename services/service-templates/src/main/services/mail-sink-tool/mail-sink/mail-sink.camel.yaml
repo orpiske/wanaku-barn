@@ -3,10 +3,10 @@
     from:
       uri: ai-tool:mail-send
       parameters:
-        tags: mail
+        tags: wanaku
         description: "{{tool.description}}"
-        parameter.wanaku_body: string
-        parameter.wanaku_body.description: "The email body content"
+        parameter.content: string
+        parameter.content.description: "The email body content"
       steps:
         - to:
             uri: smtp:{{smtp.host}}:{{smtp.port}}
