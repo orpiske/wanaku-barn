@@ -376,6 +376,19 @@
                                     </descriptors>
                                 </configuration>
                             </execution>
+                            <execution>
+                                <id>make-plugin-distribution</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>single</goal>
+                                </goals>
+                                <configuration>
+                                    <finalName>wanaku-barn-plugin-${project.version}</finalName>
+                                    <descriptors>
+                                        <descriptor>src/main/assembly/plugin-assembly.xml</descriptor>
+                                    </descriptors>
+                                </configuration>
+                            </execution>
                         </executions>
                     </plugin>
                 </plugins>

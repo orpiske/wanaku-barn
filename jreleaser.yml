@@ -75,6 +75,10 @@ distributions:
     artifacts:
       - path: services/service-templates/target/distributions/service-templates-{{projectVersion}}.zip
     type: JAVA_BINARY
+  wanaku-barn-plugin:
+    artifacts:
+      - path: apps/wanaku-router-backend/target/distributions/wanaku-barn-plugin-{{projectVersion}}.zip
+    type: JAVA_BINARY
 
   cli-native:
     artifacts:
