@@ -3,10 +3,10 @@
     from:
       uri: ai-tool:tavily-search
       parameters:
-        tags: search
+        tags: wanaku
         description: "Search the web using the Tavily AI-optimized search engine"
-        parameter.wanaku_body: string
-        parameter.wanaku_body.description: "The search term"
+        parameter.query: string
+        parameter.query.description: "The search term"
       steps:
         - to:
             uri: langchain4j-web-search:wanakuTavily

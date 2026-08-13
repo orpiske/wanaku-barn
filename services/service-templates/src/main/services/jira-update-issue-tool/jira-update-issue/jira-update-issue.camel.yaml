@@ -3,10 +3,10 @@
     from:
       uri: ai-tool:jira-update-issue
       parameters:
-        tags: jira
+        tags: wanaku
         description: "{{tool.description}}"
-        parameter.wanaku_body: string
-        parameter.wanaku_body.description: "The issue fields to update"
+        parameter.fields: string
+        parameter.fields.description: "The issue fields to update"
       steps:
         - to:
             uri: jira:updateIssue

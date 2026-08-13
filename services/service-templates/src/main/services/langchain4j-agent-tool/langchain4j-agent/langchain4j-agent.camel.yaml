@@ -3,10 +3,10 @@
     from:
       uri: ai-tool:langchain4j-agent-chat
       parameters:
-        tags: langchain4j
+        tags: wanaku
         description: "{{tool.description}}"
-        parameter.wanaku_body: string
-        parameter.wanaku_body.description: "The user message to send to the AI agent"
+        parameter.message: string
+        parameter.message.description: "The user message to send to the AI agent"
         parameter.systemMessage: string
         parameter.systemMessage.description: "Optional system prompt to set the agent's behavior"
       steps:

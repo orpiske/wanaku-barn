@@ -3,7 +3,7 @@
     from:
       uri: ai-tool:github-pr-comments
       parameters:
-        tags: github
+        tags: wanaku
         description: "{{tool.description}}"
       steps:
       - setHeader:

@@ -3,10 +3,10 @@
     from:
       uri: ai-tool:send-message-to-aws-sqs
       parameters:
-        tags: aws-sqs
+        tags: wanaku
         description: "{{tool.description}}"
-        parameter.wanaku_body: string
-        parameter.wanaku_body.description: "The message to send to AWS SQS"
+        parameter.message: string
+        parameter.message.description: "The message to send to AWS SQS"
       steps:
         - setExchangePattern:
             pattern: InOut

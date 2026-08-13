@@ -3,10 +3,10 @@
     from:
       uri: ai-tool:google-vertexai-generate
       parameters:
-        tags: google-vertexai
+        tags: wanaku
         description: "{{tool.description}}"
-        parameter.wanaku_body: string
-        parameter.wanaku_body.description: "The prompt text to send to Google Vertex AI for content generation"
+        parameter.prompt: string
+        parameter.prompt.description: "The prompt text to send to Google Vertex AI for content generation"
       steps:
         - to:
             uri: "google-vertexai:{{google.vertexai.project.id}}:{{google.vertexai.location}}:{{google.vertexai.model.id}}"
