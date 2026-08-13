@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "orval --config ./orval.config.ts && vite",
     "build": "orval --config ./orval.config.ts && tsc -b && vite build",
-    "build:plugin": "orval --config ./orval.config.ts && tsc -b && vite build --config vite.plugin.config.ts && cp plugin.json plugin-dist/",
+    "build:plugin": "orval --config ./orval.config.ts && tsc -b && vite build --config vite.plugin.config.ts && cp plugin.json plugin-dist/ && cp -r public/* plugin-dist/",
     "lint": "eslint .",
     "preview": "vite preview"
   },

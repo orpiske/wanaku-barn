@@ -35,6 +35,7 @@ apps/wanaku-router-backend/application.dev.properties
 /nbbuild/
 /dist/
 /nbdist/
+plugin-dist/
 /.nb-gradle/
 build/
 !**/src/main/**/build/
