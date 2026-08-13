@@ -7,7 +7,7 @@
 @use "@carbon/react/scss/themes";
 @use "@carbon/react/scss/theme";
 
-.wanaku-classic-plugin {
+.wanaku-barn-plugin {
   @include theme.theme(themes.$g10);
   @include grid.flex-grid();
 
