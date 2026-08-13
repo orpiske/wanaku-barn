@@ -15,7 +15,7 @@
     <modules>
         <module>wanaku-cli</module>
         <module>wanaku-jbang</module>
-        <module>wanaku-router-backend</module>
+        <module>wanaku-barn-backend</module>
         <module>wanaku-operator</module>
     </modules>
 

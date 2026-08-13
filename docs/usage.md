@@ -423,7 +423,7 @@ It automates the creation and configuration of all necessary resources, making i
 
 You can build the container image and push it to a container registry, or use a pre-built image.
 
-There is a pre-built image in `quay.io/wanaku/wanaku-router-backend:latest`
+There is a pre-built image in `quay.io/wanaku/wanaku-barn-backend:latest`
 
 **Install the operator:**
 
@@ -506,11 +506,11 @@ For example, to change the HTTP port:
 
 ```shell
 # Via system property
-java -Dquarkus.http.port=9090 -jar wanaku-router-backend-runner.jar
+java -Dquarkus.http.port=9090 -jar wanaku-barn-backend-runner.jar
 
 # Via environment variable
 export QUARKUS_HTTP_PORT=9090
-java -jar wanaku-router-backend-runner.jar
+java -jar wanaku-barn-backend-runner.jar
 ```
 
 For the full list of available properties and more details on configuration precedence, see the
@@ -3507,7 +3507,7 @@ This section provides solutions to common issues you may encounter while using W
 1. Verify the container image exists and is accessible:
 
    ```shell
-   podman pull quay.io/wanaku/wanaku-router-backend:latest
+   podman pull quay.io/wanaku/wanaku-barn-backend:latest
    ```
 
 2. Check pod logs for startup errors:
@@ -3612,7 +3612,7 @@ wanaku tools list --plain
 
 Check logs in these locations:
 
-- **Router backend:** Look for `wanaku-router-backend.log` or check container logs
+- **Router backend:** Look for `wanaku-barn-backend.log` or check container logs
 - **Capability services:** Check individual service log files
 - **Kubernetes:** `kubectl logs <pod-name>`
 

@@ -8,8 +8,8 @@
         <version>0.3.0-SNAPSHOT</version>
     </parent>
 
-    <artifactId>wanaku-router-backend</artifactId>
-    <name>Wanaku :: Apps :: Router Backend</name>
+    <artifactId>wanaku-barn-backend</artifactId>
+    <name>Wanaku :: Apps :: Barn Backend</name>
 
     <properties>
         <keycloak.docker.image>quay.io/keycloak/keycloak:26.7</keycloak.docker.image>

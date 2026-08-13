@@ -29,7 +29,7 @@ docker-compose -f deploy/docker-compose/docker-compose-noauth.yml up
 export WANAKU_HTTP_AUTH=none
 
 # Option 3: Set system property
-java -Dwanaku.http.auth=none -jar wanaku-router-backend-runner.jar
+java -Dwanaku.http.auth=none -jar wanaku-barn-backend-runner.jar
 ```
 
 ### No human user account exists in Keycloak
@@ -338,7 +338,7 @@ The router's CORS allowlist is configured for specific origins: `localhost:8080`
 Add your dev server's origin to the router's configuration:
 
 ```properties
-# In apps/wanaku-router-backend/src/main/resources/application.properties
+# In apps/wanaku-barn-backend/src/main/resources/application.properties
 quarkus.http.cors.origins=http://localhost:8080,http://127.0.0.1:8080,http://localhost:5173,http://localhost:6274,http://localhost:<your-port>
 ```
 

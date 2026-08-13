@@ -70,9 +70,9 @@ public final class RouterResourceFactory {
         final DeploymentSpec serviceSpec = desiredDeployment.getSpec();
 
         serviceSpec.getSelector().getMatchLabels().put("app", routerName(deploymentName));
-        serviceSpec.getSelector().getMatchLabels().put("component", "wanaku-router-backend");
+        serviceSpec.getSelector().getMatchLabels().put("component", "wanaku-barn-backend");
         serviceSpec.getTemplate().getMetadata().getLabels().put("app", routerName(deploymentName));
-        serviceSpec.getTemplate().getMetadata().getLabels().put("component", "wanaku-router-backend");
+        serviceSpec.getTemplate().getMetadata().getLabels().put("component", "wanaku-barn-backend");
 
         setupBackendContainer(resource, serviceSpec, host);
 
@@ -113,11 +113,11 @@ public final class RouterResourceFactory {
         service.getMetadata().setName("internal-" + deploymentName);
         service.getMetadata().setNamespace(ns);
         service.getMetadata().getLabels().put("app", routerName(deploymentName));
-        service.getMetadata().getLabels().put("component", "wanaku-router-backend");
+        service.getMetadata().getLabels().put("component", "wanaku-barn-backend");
         service.getSpec().getSelector().put("app", routerName(deploymentName));
 
         ServiceSpec serviceSpec = service.getSpec();
-        serviceSpec.setSelector(Map.of("app", routerName(deploymentName), "component", "wanaku-router-backend"));
+        serviceSpec.setSelector(Map.of("app", routerName(deploymentName), "component", "wanaku-barn-backend"));
 
         service.addOwnerReference(resource);
 
@@ -141,7 +141,7 @@ public final class RouterResourceFactory {
         route.getMetadata().setName(deploymentName);
         route.getMetadata().setNamespace(ns);
         route.getMetadata().getLabels().put("app", routerName(deploymentName));
-        route.getMetadata().getLabels().put("component", "wanaku-router-backend");
+        route.getMetadata().getLabels().put("component", "wanaku-barn-backend");
         route.getSpec().getTo().setName("internal-" + deploymentName);
 
         applyRouteTls(route, resource.getSpec().getExposure());
@@ -203,7 +203,7 @@ public final class RouterResourceFactory {
         ingress.getMetadata().setName(deploymentName);
         ingress.getMetadata().setNamespace(ns);
         ingress.getMetadata().getLabels().put("app", routerName(deploymentName));
-        ingress.getMetadata().getLabels().put("component", "wanaku-router-backend");
+        ingress.getMetadata().getLabels().put("component", "wanaku-barn-backend");
 
         ingress.getSpec().getRules().getFirst().setHost(host);
         ingress.getSpec()

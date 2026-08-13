@@ -24,7 +24,7 @@
 
 **Purpose**: OpenAPI contract and project scaffolding
 
-- [x] T001 Add service catalog endpoints to OpenAPI spec in wanaku-router/wanaku-router-backend/src/main/webui/openapi.yaml per contracts/service-catalog-api.yaml
+- [x] T001 Add service catalog endpoints to OpenAPI spec in wanaku-router/wanaku-barn-backend/src/main/webui/openapi.yaml per contracts/service-catalog-api.yaml
 
 ---
 
@@ -43,8 +43,8 @@
 
 - [x] T004 [P] Create ServiceCatalogIndex parser — reads index.properties from ZIP InputStream, validates required properties (catalog.name, catalog.services, route/rule entries), validates referenced files exist in ZIP, exposes typed accessors, protects against ZIP path traversal — in core/core-services-api/src/main/java/ai/wanaku/core/services/api/ServiceCatalogIndex.java
 - [x] T005 [P] Create ServiceCatalogService interface with list, get, deploy, remove methods in core/core-services-api/src/main/java/ai/wanaku/core/services/api/ServiceCatalogService.java
-- [x] T006 Implement ServiceCatalogBean — delegates to DataStoreRepository with fileType=CATALOG filtering, uses ServiceCatalogIndex to parse ZIP metadata for list/get, validates ZIP on deploy — in wanaku-router/wanaku-router-backend/src/main/java/ai/wanaku/backend/api/v1/servicecatalog/ServiceCatalogBean.java
-- [x] T007 Implement ServiceCatalogResource REST endpoints (GET /list, GET /get, POST /deploy, DELETE /remove) in wanaku-router/wanaku-router-backend/src/main/java/ai/wanaku/backend/api/v1/servicecatalog/ServiceCatalogResource.java
+- [x] T006 Implement ServiceCatalogBean — delegates to DataStoreRepository with fileType=CATALOG filtering, uses ServiceCatalogIndex to parse ZIP metadata for list/get, validates ZIP on deploy — in wanaku-router/wanaku-barn-backend/src/main/java/ai/wanaku/backend/api/v1/servicecatalog/ServiceCatalogBean.java
+- [x] T007 Implement ServiceCatalogResource REST endpoints (GET /list, GET /get, POST /deploy, DELETE /remove) in wanaku-router/wanaku-barn-backend/src/main/java/ai/wanaku/backend/api/v1/servicecatalog/ServiceCatalogResource.java
 
 **Checkpoint**: Foundation ready — backend API operational, user story implementation can begin
 
@@ -139,7 +139,7 @@
 **Purpose**: Unit and integration tests for backend, CLI, and parser
 
 - [x] T026 [P] Write ServiceCatalogIndex parser tests — valid index parsing, missing required properties, invalid ZIP, path traversal rejection, multi-system catalogs — in core/core-services-api/src/test/java/ai/wanaku/core/services/api/ServiceCatalogIndexTest.java
-- [x] T027 [P] Write ServiceCatalogResource API tests — list (empty, populated, search), get (found, not found), deploy (valid, invalid ZIP), remove (found, not found) — in wanaku-router/wanaku-router-backend/src/test/java/ai/wanaku/backend/api/v1/servicecatalog/ServiceCatalogResourceTest.java
+- [x] T027 [P] Write ServiceCatalogResource API tests — list (empty, populated, search), get (found, not found), deploy (valid, invalid ZIP), remove (found, not found) — in wanaku-router/wanaku-barn-backend/src/test/java/ai/wanaku/backend/api/v1/servicecatalog/ServiceCatalogResourceTest.java
 - [x] T028 [P] Write ServiceInitTest — verify directory structure creation, index.properties content, skeleton file generation — in cli/src/test/java/ai/wanaku/cli/main/commands/service/ServiceInitTest.java
 - [x] T029 [P] Write ServiceExposeTest — verify rules YAML generation from route YAML, namespace support, error on missing routes — in cli/src/test/java/ai/wanaku/cli/main/commands/service/ServiceExposeTest.java
 - [x] T030 [P] Write ServiceDeployTest — verify ZIP creation, Base64 encoding, API upload invocation, validation errors — in cli/src/test/java/ai/wanaku/cli/main/commands/service/ServiceDeployTest.java

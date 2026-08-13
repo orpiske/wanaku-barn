@@ -58,7 +58,7 @@ core/
         └── ServiceCatalogService.java          # New service interface
 
 wanaku-router/
-├── wanaku-router-backend/
+├── wanaku-barn-backend/
 │   └── src/main/java/ai/wanaku/backend/api/v1/
 │       └── servicecatalog/
 │           ├── ServiceCatalogResource.java     # REST endpoints

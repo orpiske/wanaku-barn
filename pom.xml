@@ -173,7 +173,7 @@
                             <version>${maven-scm-plugin.version}</version>
                             <configuration>
                                 <message>[maven-scm-plugin] Update version in files</message>
-                                <includes>apps/ui/admin/**/*.ts,apps/wanaku-router-backend/src/main/webui/openapi.json,apps/wanaku-router-backend/src/main/webui/openapi.yaml,jbang-catalog.json</includes>
+                                <includes>apps/ui/admin/**/*.ts,apps/wanaku-barn-backend/src/main/webui/openapi.json,apps/wanaku-barn-backend/src/main/webui/openapi.yaml,jbang-catalog.json</includes>
                                 <excludes>apps/ui/admin/node_modules/**</excludes>
                             </configuration>
                         </plugin>

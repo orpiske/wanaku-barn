@@ -399,7 +399,7 @@ void shouldHandleConcurrentInvocations() throws InterruptedException {
 ### Integration Tests Fail to Start
 
 - Ensure Docker is running (for Keycloak Testcontainers)
-- Verify artifacts are in the correct location: `artifacts/wanaku-router-backend-*/quarkus-run.jar`
+- Verify artifacts are in the correct location: `artifacts/wanaku-barn-backend-*/quarkus-run.jar`
 - Kill orphan processes: `pkill -f quarkus-run.jar`
 
 ### MCP Inspector Cannot Connect

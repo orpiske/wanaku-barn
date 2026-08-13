@@ -53,7 +53,7 @@ java -jar target/quarkus-app/quarkus-run.jar
 ### Container
 
 ```shell
-podman run -p 8080:8080 quay.io/wanaku/wanaku-router-backend:latest
+podman run -p 8080:8080 quay.io/wanaku/wanaku-barn-backend:latest
 ```
 
 ## Configuration

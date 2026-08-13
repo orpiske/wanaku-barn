@@ -128,8 +128,8 @@ This workflow will:
 The `commitFiles` profile auto-commits these version-sensitive files during release:
 
 - `apps/ui/admin/**/*.ts` (generated TypeScript API types)
-- `apps/wanaku-router-backend/src/main/webui/openapi.json`
-- `apps/wanaku-router-backend/src/main/webui/openapi.yaml`
+- `apps/wanaku-barn-backend/src/main/webui/openapi.json`
+- `apps/wanaku-barn-backend/src/main/webui/openapi.yaml`
 - `jbang-catalog.json`
 
 ### Verify Maven Release
@@ -161,7 +161,7 @@ This workflow will:
   - [ ] Router backend ZIP
   - [ ] Service templates ZIP
 - [ ] Container images available on quay.io:
-  - [ ] `quay.io/wanaku/wanaku-router-backend:${CURRENT_VERSION}`
+  - [ ] `quay.io/wanaku/wanaku-barn-backend:${CURRENT_VERSION}`
   - [ ] `quay.io/wanaku/wanaku-operator:${CURRENT_VERSION}`
 - [ ] Multi-arch manifests are published (verify with `podman manifest inspect`)
 - [ ] JBang installation works: `jbang app install wanaku@wanaku-ai/wanaku`

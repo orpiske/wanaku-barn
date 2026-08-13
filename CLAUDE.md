@@ -20,7 +20,7 @@ Last updated: 2026-07-02
 ```text
 apps/
   wanaku-cli/              # CLI (Picocli + Quarkus)
-  wanaku-router-backend/   # Router backend (Quarkus REST)
+  wanaku-barn-backend/   # Router backend (Quarkus REST)
   wanaku-operator/         # Kubernetes operator (JOSDK)
   wanaku-jbang/            # JBang integration
   ui/admin/                # Admin UI (React + Vite + Carbon)
