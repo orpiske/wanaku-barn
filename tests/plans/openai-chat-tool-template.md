@@ -77,7 +77,7 @@ export MCP_SERVER_URI="${MCP_SERVER_URI:-http://localhost:8080/public/mcp/sse}"
 mvn -DskipTests -Pdist clean package
 
 VERSION=$(cat core/core-util/target/classes/version.txt)
-ROUTER_ZIP="apps/wanaku-router-backend/target/distributions/wanaku-router-backend-${VERSION}.zip"
+ROUTER_ZIP="apps/wanaku-barn-backend/target/distributions/wanaku-barn-backend-${VERSION}.zip"
 ROUTER_DIR="/tmp/wanaku-router"
 
 rm -rf "${ROUTER_DIR}"

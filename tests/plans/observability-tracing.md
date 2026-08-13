@@ -66,7 +66,7 @@ echo "PASS: all prerequisites met"
 
 ```bash
 export WANAKU_REPO_ROOT="${WANAKU_REPO_ROOT:-.}"
-export WANAKU_ROUTER_IMAGE="${WANAKU_ROUTER_IMAGE:-quay.io/wanaku/wanaku-router-backend:latest}"
+export WANAKU_ROUTER_IMAGE="${WANAKU_ROUTER_IMAGE:-quay.io/wanaku/wanaku-barn-backend:latest}"
 export WANAKU_CAPABILITY_HTTP_IMAGE="${WANAKU_CAPABILITY_HTTP_IMAGE:-quay.io/wanaku/wanaku-tool-service-http:latest}"
 export OTEL_COLLECTOR_IMAGE="${OTEL_COLLECTOR_IMAGE:-otel/opentelemetry-collector-contrib:0.127.0}"
 export JAEGER_IMAGE="${JAEGER_IMAGE:-jaegertracing/jaeger:latest}"
@@ -139,7 +139,7 @@ gh run watch $(gh run list --branch ci-observability-tracing --limit 1 --json da
 Once CI completes, set the image variables to the CI-built tags:
 
 ```bash
-export WANAKU_ROUTER_IMAGE="quay.io/wanaku/wanaku-router-backend:<ci-tag>"
+export WANAKU_ROUTER_IMAGE="quay.io/wanaku/wanaku-barn-backend:<ci-tag>"
 export WANAKU_CAPABILITY_HTTP_IMAGE="quay.io/wanaku/wanaku-tool-service-http:<ci-tag>"
 ```
 
@@ -672,7 +672,7 @@ fi
 After the tool invocation in Phase 5, the router logs should contain structured fields.
 
 ```bash
-ROUTER_POD=$(oc get pods -l component=wanaku-router-backend -n "${WANAKU_NAMESPACE}" \
+ROUTER_POD=$(oc get pods -l component=wanaku-barn-backend -n "${WANAKU_NAMESPACE}" \
   -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || \
   oc get pods -l app=wanaku-tracing-router-mcp-router -n "${WANAKU_NAMESPACE}" \
   -o jsonpath='{.items[0].metadata.name}')

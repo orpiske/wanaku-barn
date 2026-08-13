@@ -36,7 +36,7 @@ echo "routers-deleted=$?"
 
 ```bash
 # Wait for operator-managed deployments to be garbage-collected (excludes the operator itself and keycloak)
-oc wait --for=delete deployment -l component=wanaku-router-backend -n "${WANAKU_NAMESPACE}" --timeout=60s 2>/dev/null || true
+oc wait --for=delete deployment -l component=wanaku-barn-backend -n "${WANAKU_NAMESPACE}" --timeout=60s 2>/dev/null || true
 oc wait --for=delete deployment -l component=wanaku-capability -n "${WANAKU_NAMESPACE}" --timeout=60s 2>/dev/null || true
 
 # Verify no operator-managed deployments remain (except the operator itself and keycloak)

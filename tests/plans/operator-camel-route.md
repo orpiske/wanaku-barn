@@ -62,7 +62,7 @@ Set these before running the plan. All image tags default to `latest` but can be
 
 ```bash
 export WANAKU_REPO_ROOT="${WANAKU_REPO_ROOT:-.}"
-export WANAKU_ROUTER_IMAGE="${WANAKU_ROUTER_IMAGE:-quay.io/wanaku/wanaku-router-backend:latest}"
+export WANAKU_ROUTER_IMAGE="${WANAKU_ROUTER_IMAGE:-quay.io/wanaku/wanaku-barn-backend:latest}"
 # OIDC client secret for operator-to-router authentication (defaults to "mypasswd")
 export WANAKU_OIDC_CLIENT_SECRET="${WANAKU_OIDC_CLIENT_SECRET:-mypasswd}"
 # Isolate credentials per test run to avoid contention (see #1697)
