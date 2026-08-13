@@ -2,10 +2,10 @@
 
 This rule file contains project-specific metadata used by OSS Helper. Commands detect the current project by matching `git remote get-url origin` against the remote pattern below.
 
-- **Remote pattern:** `wanaku-ai/wanaku`
-- **GitHub repo:** `wanaku-ai/wanaku`
+- **Remote pattern:** `wanaku-ai/wanaku-barn`
+- **GitHub repo:** `wanaku-ai/wanaku-barn`
 - **Issue tracker:** GitHub
-- **Issue tracker URL:** `https://github.com/wanaku-ai/wanaku/issues`
+- **Issue tracker URL:** `https://github.com/wanaku-ai/wanaku-barn/issues`
 - **Issue ID format:** numeric
 - **SonarCloud component key:** _(none)_
 - **Documentation URL:** https://wanaku.ai/docs/

@@ -4,7 +4,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>ai.wanaku</groupId>
-    <artifactId>wanaku</artifactId>
+    <artifactId>wanaku-barn</artifactId>
     <name>Wanaku</name>
     <inceptionYear>2025</inceptionYear>
     <url>https://github.com/wanaku-ai/wanaku-barn</url>
