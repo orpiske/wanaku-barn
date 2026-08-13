@@ -1,4 +1,4 @@
-package ai.wanaku.backend.core.mcp.providers;
+package ai.wanaku.backend.core.persistence.api;
 
 import java.util.List;
 import ai.wanaku.capabilities.sdk.api.types.discovery.ActivityRecord;

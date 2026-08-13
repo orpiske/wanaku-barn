@@ -7,7 +7,6 @@
 
 export * from "./activityRecord";
 export * from "./callableReference";
-export * from "./capabilityStatistics";
 export * from "./codeExecutionError";
 export * from "./codeExecutionErrorDetails";
 export * from "./codeExecutionRequest";

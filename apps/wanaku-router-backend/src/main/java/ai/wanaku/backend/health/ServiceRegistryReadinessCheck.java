@@ -8,7 +8,7 @@ import org.eclipse.microprofile.health.HealthCheck;
 import org.eclipse.microprofile.health.HealthCheckResponse;
 import org.eclipse.microprofile.health.HealthCheckResponseBuilder;
 import org.eclipse.microprofile.health.Readiness;
-import ai.wanaku.backend.core.mcp.providers.ServiceRegistry;
+import ai.wanaku.backend.core.persistence.api.ServiceRegistry;
 
 @Readiness
 @ApplicationScoped

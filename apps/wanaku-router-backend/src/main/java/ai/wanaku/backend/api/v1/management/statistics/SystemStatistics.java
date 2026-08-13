@@ -5,24 +5,15 @@ public class SystemStatistics {
     private long serviceTemplatesCount;
     private long toolsetReposCount;
     private long dataStoresCount;
-    private CapabilityStatistics toolCapabilities;
-    private CapabilityStatistics resourceCapabilities;
 
     public SystemStatistics() {}
 
     public SystemStatistics(
-            long serviceCatalogsCount,
-            long serviceTemplatesCount,
-            long toolsetReposCount,
-            long dataStoresCount,
-            CapabilityStatistics toolCapabilities,
-            CapabilityStatistics resourceCapabilities) {
+            long serviceCatalogsCount, long serviceTemplatesCount, long toolsetReposCount, long dataStoresCount) {
         this.serviceCatalogsCount = serviceCatalogsCount;
         this.serviceTemplatesCount = serviceTemplatesCount;
         this.toolsetReposCount = toolsetReposCount;
         this.dataStoresCount = dataStoresCount;
-        this.toolCapabilities = toolCapabilities;
-        this.resourceCapabilities = resourceCapabilities;
     }
 
     public long getServiceCatalogsCount() {
@@ -55,21 +46,5 @@ public class SystemStatistics {
 
     public void setDataStoresCount(long dataStoresCount) {
         this.dataStoresCount = dataStoresCount;
-    }
-
-    public CapabilityStatistics getToolCapabilities() {
-        return toolCapabilities;
-    }
-
-    public void setToolCapabilities(CapabilityStatistics toolCapabilities) {
-        this.toolCapabilities = toolCapabilities;
-    }
-
-    public CapabilityStatistics getResourceCapabilities() {
-        return resourceCapabilities;
-    }
-
-    public void setResourceCapabilities(CapabilityStatistics resourceCapabilities) {
-        this.resourceCapabilities = resourceCapabilities;
     }
 }

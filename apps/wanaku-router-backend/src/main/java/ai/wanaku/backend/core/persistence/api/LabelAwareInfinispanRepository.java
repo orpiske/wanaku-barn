@@ -1,7 +1,7 @@
 package ai.wanaku.backend.core.persistence.api;
 
 import java.util.List;
-import ai.wanaku.backend.core.mcp.util.LabelExpressionParser;
+import ai.wanaku.backend.common.util.LabelExpressionParser;
 import ai.wanaku.capabilities.sdk.api.exceptions.WanakuException;
 import ai.wanaku.capabilities.sdk.api.types.LabelsAwareEntity;
 
