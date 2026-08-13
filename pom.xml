@@ -7,7 +7,7 @@
     <artifactId>wanaku</artifactId>
     <name>Wanaku</name>
     <inceptionYear>2025</inceptionYear>
-    <url>https://github.com/wanaku-ai/wanaku</url>
+    <url>https://github.com/wanaku-ai/wanaku-barn</url>
     <description>Wanaku MCP Router</description>
 
     <version>0.3.0-SNAPSHOT</version>
@@ -24,9 +24,9 @@
     </developers>
 
     <scm>
-        <connection>scm:git:https://github.com/wanaku-ai/wanaku.git</connection>
-        <developerConnection>scm:git:https://github.com/wanaku-ai/wanaku.git</developerConnection>
-        <url>https://github.com/wanaku-ai/wanaku</url>
+        <connection>scm:git:https://github.com/wanaku-ai/wanaku-barn.git</connection>
+        <developerConnection>scm:git:https://github.com/wanaku-ai/wanaku-barn.git</developerConnection>
+        <url>https://github.com/wanaku-ai/wanaku-barn</url>
         <tag>HEAD</tag>
     </scm>
 
