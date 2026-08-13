@@ -1,13 +1,13 @@
 {
-  "id": "wanaku-classic",
-  "name": "Wanaku Classic",
+  "id": "wanaku-barn",
+  "name": "Wanaku Barn",
   "version": "0.3.0",
   "entrypoint": "plugin.js",
   "styles": ["plugin.css"],
   "requires": {
     "hostApi": ">=1.0 <2.0",
     "services": [
-      {"id": "wanaku-classic-api", "version": "1.0"}
+      {"id": "wanaku-barn-api", "version": "1.0"}
     ]
   }
 }

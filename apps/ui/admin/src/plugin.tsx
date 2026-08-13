@@ -14,7 +14,7 @@ const disposables: Disposable[] = [];
 const roots: Root[] = [];
 
 function mountPage(container: HTMLElement, Page: React.FC): Disposable {
-  container.classList.add("wanaku-classic-plugin");
+  container.classList.add("wanaku-barn-plugin");
   const root = createRoot(container);
   roots.push(root);
   root.render(

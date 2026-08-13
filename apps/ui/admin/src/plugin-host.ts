@@ -1,4 +1,4 @@
-export const SERVICE_ID = "wanaku-classic-api";
+export const SERVICE_ID = "wanaku-barn-api";
 
 interface PluginHostHttp {
   get<T>(service: string, path: string): Promise<T>;
