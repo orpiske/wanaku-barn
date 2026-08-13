@@ -174,7 +174,7 @@ echo "WANAKU_VERSION=${WANAKU_VERSION}"
 **Verification:**
 
 ```bash
-ROUTER_DIST="${WANAKU_REPO_ROOT}/apps/wanaku-router-backend/target/distributions/wanaku-router-backend-${WANAKU_VERSION}.tar.gz"
+ROUTER_DIST="${WANAKU_REPO_ROOT}/apps/wanaku-barn-backend/target/distributions/wanaku-barn-backend-${WANAKU_VERSION}.tar.gz"
 TOOL_NOOP_DIST="${WANAKU_REPO_ROOT}/capabilities/tools/wanaku-tool-performance-noop/target/distributions/wanaku-tool-performance-noop-${WANAKU_VERSION}.tar.gz"
 PROVIDER_STATIC_DIST="${WANAKU_REPO_ROOT}/capabilities/providers/wanaku-provider-performance-static-file/target/distributions/wanaku-provider-performance-static-file-${WANAKU_VERSION}.tar.gz"
 
@@ -605,7 +605,7 @@ This phase downloads baseline artifacts from CI, runs the same tests against the
 ```bash
 mkdir -p "${EVAL_DIR}"
 BASELINE_ROUTER_DIST="${EVAL_DIR}/baseline-router.tar.gz"
-CI_ROUTER="${CI_BASE}/${BASELINE_BRANCH}/lastBuild/artifact/wanaku/apps/wanaku-router-backend/target/distributions/wanaku-router-backend-${WANAKU_VERSION}.tar.gz"
+CI_ROUTER="${CI_BASE}/${BASELINE_BRANCH}/lastBuild/artifact/wanaku/apps/wanaku-barn-backend/target/distributions/wanaku-barn-backend-${WANAKU_VERSION}.tar.gz"
 
 curl -fsSL -o "${BASELINE_ROUTER_DIST}" "${CI_ROUTER}"
 if [ ! -f "${BASELINE_ROUTER_DIST}" ]; then

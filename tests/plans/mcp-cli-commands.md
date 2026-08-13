@@ -46,7 +46,7 @@ mvn -DskipTests -Pdist clean package
 # Start the local stack (auth disabled automatically)
 VERSION=$(cat core/core-util/target/classes/version.txt)
 java -jar apps/wanaku-cli/target/quarkus-app/quarkus-run.jar start local \
-  --local-dist apps/wanaku-router-backend/target/distributions/wanaku-router-backend-${VERSION}.zip \
+  --local-dist apps/wanaku-barn-backend/target/distributions/wanaku-barn-backend-${VERSION}.zip \
   --local-dist capabilities/tools/wanaku-tool-service-http/target/distributions/wanaku-tool-service-http-${VERSION}.zip
 ```
 
@@ -390,7 +390,7 @@ The first `oc login` step is manual; everything else is automatable.
 
 ```bash
 export WANAKU_REPO_ROOT="${WANAKU_REPO_ROOT:-.}"
-export WANAKU_ROUTER_IMAGE="${WANAKU_ROUTER_IMAGE:-quay.io/wanaku/wanaku-router-backend:latest}"
+export WANAKU_ROUTER_IMAGE="${WANAKU_ROUTER_IMAGE:-quay.io/wanaku/wanaku-barn-backend:latest}"
 export WANAKU_CAPABILITY_HTTP_IMAGE="${WANAKU_CAPABILITY_HTTP_IMAGE:-quay.io/wanaku/wanaku-tool-service-http:latest}"
 export WANAKU_PROVIDER_STATIC_FILE_IMAGE="${WANAKU_PROVIDER_STATIC_FILE_IMAGE:-quay.io/wanaku/wanaku-provider-performance-static-file:latest}"
 # Isolate credentials per test run to avoid contention (see #1697)

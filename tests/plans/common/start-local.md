@@ -37,7 +37,7 @@ mvn -DskipTests -Pdist clean package
 ```bash
 VERSION=$(cat core/core-util/target/classes/version.txt)
 CLI_JAR="apps/wanaku-cli/target/quarkus-app/quarkus-run.jar"
-ROUTER_DIST="apps/wanaku-router-backend/target/distributions/wanaku-router-backend-${VERSION}.zip"
+ROUTER_DIST="apps/wanaku-barn-backend/target/distributions/wanaku-barn-backend-${VERSION}.zip"
 HTTP_TOOL_DIST="capabilities/tools/wanaku-tool-service-http/target/distributions/wanaku-tool-service-http-${VERSION}.zip"
 
 for FILE in "${CLI_JAR}" "${ROUTER_DIST}" "${HTTP_TOOL_DIST}"; do

@@ -151,7 +151,7 @@ mvn -DskipTests -Pdist clean package
 
 VERSION=$(cat core/core-util/target/classes/version.txt)
 CLI_JAR="apps/wanaku-cli/target/quarkus-app/quarkus-run.jar"
-ROUTER_DIST="apps/wanaku-router-backend/target/distributions/wanaku-router-backend-${VERSION}.zip"
+ROUTER_DIST="apps/wanaku-barn-backend/target/distributions/wanaku-barn-backend-${VERSION}.zip"
 HTTP_TOOL_DIST="capabilities/tools/wanaku-tool-service-http/target/distributions/wanaku-tool-service-http-${VERSION}.zip"
 
 for FILE in "${CLI_JAR}" "${ROUTER_DIST}" "${HTTP_TOOL_DIST}"; do
@@ -449,23 +449,23 @@ fi
 
 The `-Dwanaku.home` system property is a JVM argument, so it cannot be passed through `start local` to child processes. This phase tests the system property by starting the router JAR directly with the property set.
 
-**Note:** This phase requires the router to have been deployed (extracted) by a previous `start local` run. The extracted router lives under `${HOME}/.wanaku/local/wanaku-router-backend/quarkus-app/` (from Phase 2) or `${CUSTOM_HOME_DIR}/local/wanaku-router-backend/quarkus-app/` (from Phase 3).
+**Note:** This phase requires the router to have been deployed (extracted) by a previous `start local` run. The extracted router lives under `${HOME}/.wanaku/local/wanaku-barn-backend/quarkus-app/` (from Phase 2) or `${CUSTOM_HOME_DIR}/local/wanaku-barn-backend/quarkus-app/` (from Phase 3).
 
 ### Test 4.1: Locate the extracted router JAR
 
 ```bash
 # Try the default location first; fall back to the custom home if needed
-ROUTER_QUARKUS_APP="${HOME}/.wanaku/local/wanaku-router-backend/quarkus-app"
+ROUTER_QUARKUS_APP="${HOME}/.wanaku/local/wanaku-barn-backend/quarkus-app"
 if [ ! -f "${ROUTER_QUARKUS_APP}/quarkus-run.jar" ]; then
-  ROUTER_QUARKUS_APP="${CUSTOM_HOME_DIR}/local/wanaku-router-backend/quarkus-app"
+  ROUTER_QUARKUS_APP="${CUSTOM_HOME_DIR}/local/wanaku-barn-backend/quarkus-app"
 fi
 
 if [ -f "${ROUTER_QUARKUS_APP}/quarkus-run.jar" ]; then
   echo "PASS: router JAR found at ${ROUTER_QUARKUS_APP}/quarkus-run.jar"
 else
   echo "FAIL: router JAR not found in any expected location"
-  echo "  Checked: ${HOME}/.wanaku/local/wanaku-router-backend/quarkus-app/"
-  echo "  Checked: ${CUSTOM_HOME_DIR}/local/wanaku-router-backend/quarkus-app/"
+  echo "  Checked: ${HOME}/.wanaku/local/wanaku-barn-backend/quarkus-app/"
+  echo "  Checked: ${CUSTOM_HOME_DIR}/local/wanaku-barn-backend/quarkus-app/"
   exit 1
 fi
 ```
