@@ -13,7 +13,7 @@ project:
   license: Apache-2.0
   links:
     homepage: https://wanaku.ai
-    bugTracker: https://github.com/wanaku-ai/wanaku/issues
+    bugTracker: https://github.com/wanaku-ai/wanaku-barn/issues
   languages:
     java:
       groupId: ai.wanaku
@@ -32,6 +32,7 @@ signing:
 release:
   github:
     owner: wanaku-ai
+    name: wanaku-barn
     overwrite: false
     issues:
       enabled: true
