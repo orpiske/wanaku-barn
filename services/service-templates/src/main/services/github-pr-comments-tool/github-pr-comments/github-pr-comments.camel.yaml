@@ -1,8 +1,10 @@
 - route:
     id: github-pr-comments
-    description: Fetch comments from a GitHub Pull Request
     from:
-      uri: direct:wanaku
+      uri: ai-tool:github-pr-comments
+      parameters:
+        tags: github
+        description: "{{tool.description}}"
       steps:
       - setHeader:
           name: CamelHttpMethod

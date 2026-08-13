@@ -1,8 +1,12 @@
 - route:
     id: qdrant-similarity-search
-    description: Perform vectorized similarity search in Qdrant
     from:
-      uri: direct:wanaku
+      uri: ai-tool:qdrant-similarity-search
+      parameters:
+        tags: qdrant
+        description: "{{tool.description}}"
+        parameter.wanaku_body: string
+        parameter.wanaku_body.description: "The search query or vector data for similarity search"
       steps:
         - setHeader:
             name: CamelQdrantAction

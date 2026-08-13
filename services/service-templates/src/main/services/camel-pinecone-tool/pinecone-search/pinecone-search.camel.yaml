@@ -1,8 +1,12 @@
 - route:
     id: pinecone-search
-    description: Vectorized search in Pinecone
     from:
-      uri: direct:wanaku
+      uri: ai-tool:pinecone-search
+      parameters:
+        tags: pinecone
+        description: "{{tool.description}}"
+        parameter.wanaku_body: string
+        parameter.wanaku_body.description: "The search query vector or text to search in Pinecone"
       steps:
         - setHeader:
             name: CamelPineconeAction

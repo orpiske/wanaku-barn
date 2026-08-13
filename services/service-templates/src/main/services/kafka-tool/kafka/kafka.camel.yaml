@@ -1,8 +1,12 @@
 - route:
     id: kafka-request-reply
-    description: Send a Kafka request and wait for the correlated reply
     from:
-      uri: direct:wanaku
+      uri: ai-tool:send-message-to-kafka
+      parameters:
+        tags: kafka
+        description: "{{tool.description}}"
+        parameter.wanaku_body: string
+        parameter.wanaku_body.description: "The message to send to Kafka"
       steps:
         - setExchangePattern:
             pattern: InOut

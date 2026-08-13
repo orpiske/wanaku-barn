@@ -1,7 +1,20 @@
 - route:
     id: github-pullrequest-source
     from:
-      uri: direct:wanaku
+      uri: ai-tool:github-pullrequest-source
+      parameters:
+        tags: github
+        description: "Fetch pull request information from a GitHub repository"
+        parameter.state: string
+        parameter.state.description: "Filter PRs by state (open, closed, all). Default: open"
+        parameter.head: string
+        parameter.head.description: "Filter by head user or head organization and branch (user:branch)"
+        parameter.base: string
+        parameter.base.description: "Filter by base branch name"
+        parameter.sort: string
+        parameter.sort.description: "What to sort results by (created, updated, popularity, long-running). Default: created"
+        parameter.direction: string
+        parameter.direction.description: "The direction of the sort (asc, desc)"
     steps:
       - setHeader:
           name: CamelHttpPath

@@ -1,7 +1,12 @@
 - route:
-    description: Create an issue in Jira
+    id: jira-add-issue
     from:
-      uri: direct:wanaku
+      uri: ai-tool:jira-add-issue
+      parameters:
+        tags: jira
+        description: "{{tool.description}}"
+        parameter.wanaku_body: string
+        parameter.wanaku_body.description: "The issue summary and description"
       steps:
         - to:
             uri: jira:addIssue
@@ -10,4 +15,3 @@
               accessToken: "{{jira.access.token}}"
               projectKey: "{{jira.project.key}}"
               issueTypeName: "{{jira.issue.type}}"
-    id: jira-add-issue

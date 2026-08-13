@@ -1,7 +1,12 @@
 - route:
-    description: Send an email via SMTP
+    id: mail-send
     from:
-      uri: direct:wanaku
+      uri: ai-tool:mail-send
+      parameters:
+        tags: mail
+        description: "{{tool.description}}"
+        parameter.wanaku_body: string
+        parameter.wanaku_body.description: "The email body content"
       steps:
         - to:
             uri: smtp:{{smtp.host}}:{{smtp.port}}
@@ -11,4 +16,3 @@
               to: "{{mail.to}}"
               from: "{{mail.from}}"
               subject: "{{mail.subject}}"
-    id: mail-send

@@ -1,7 +1,12 @@
 - route:
-    description: Search the web using the Tavily AI-optimized search engine
+    id: tavily-search
     from:
-      uri: direct:wanaku
+      uri: ai-tool:tavily-search
+      parameters:
+        tags: search
+        description: "Search the web using the Tavily AI-optimized search engine"
+        parameter.wanaku_body: string
+        parameter.wanaku_body.description: "The search term"
       steps:
         - to:
             uri: langchain4j-web-search:wanakuTavily
@@ -9,4 +14,3 @@
               webSearchEngine: "#web-search-engine"
               resultType: SNIPPET
               maxResults: "{{max.results}}"
-    id: tavily-search
