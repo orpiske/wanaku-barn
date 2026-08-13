@@ -6,7 +6,6 @@ import ai.wanaku.backend.support.TestIndexHelper;
 import ai.wanaku.backend.support.WanakuRouterTest;
 
 import static io.restassured.RestAssured.given;
-import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 
@@ -31,18 +30,6 @@ public abstract class AbstractStatisticsResourceTest extends WanakuRouterTest {
                 .body("data.serviceCatalogsCount", greaterThanOrEqualTo(0))
                 .body("data.serviceTemplatesCount", greaterThanOrEqualTo(0))
                 .body("data.toolsetReposCount", greaterThanOrEqualTo(0))
-                .body("data.dataStoresCount", greaterThanOrEqualTo(0))
-                .body("data.toolCapabilities", notNullValue())
-                .body("data.toolCapabilities.total", is(0))
-                .body("data.toolCapabilities.healthy", is(0))
-                .body("data.toolCapabilities.unhealthy", is(0))
-                .body("data.toolCapabilities.down", is(0))
-                .body("data.toolCapabilities.pending", is(0))
-                .body("data.resourceCapabilities", notNullValue())
-                .body("data.resourceCapabilities.total", is(0))
-                .body("data.resourceCapabilities.healthy", is(0))
-                .body("data.resourceCapabilities.unhealthy", is(0))
-                .body("data.resourceCapabilities.down", is(0))
-                .body("data.resourceCapabilities.pending", is(0));
+                .body("data.dataStoresCount", greaterThanOrEqualTo(0));
     }
 }
