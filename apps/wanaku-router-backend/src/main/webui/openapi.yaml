@@ -17,24 +17,6 @@ components:
             $ref: "#/components/schemas/ServiceState"
         active:
           type: boolean
-    CapabilityStatistics:
-      type: object
-      properties:
-        total:
-          type: integer
-          format: int64
-        healthy:
-          type: integer
-          format: int64
-        unhealthy:
-          type: integer
-          format: int64
-        down:
-          type: integer
-          format: int64
-        pending:
-          type: integer
-          format: int64
     CodeExecutionError:
       type: object
       properties:
@@ -308,10 +290,6 @@ components:
         dataStoresCount:
           type: integer
           format: int64
-        toolCapabilities:
-          $ref: "#/components/schemas/CapabilityStatistics"
-        resourceCapabilities:
-          $ref: "#/components/schemas/CapabilityStatistics"
     TemplateInstantiationRequest:
       type: object
       properties:

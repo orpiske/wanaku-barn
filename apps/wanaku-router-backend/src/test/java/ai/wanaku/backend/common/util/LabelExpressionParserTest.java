@@ -1,4 +1,4 @@
-package ai.wanaku.backend.core.mcp.util;
+package ai.wanaku.backend.common.util;
 
 import java.util.function.Predicate;
 import ai.wanaku.capabilities.sdk.api.types.LabelsAwareEntity;
