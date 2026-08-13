@@ -3,7 +3,7 @@ import { defineConfig, devices } from '@playwright/test';
 const routerUrl = process.env.WANAKU_ROUTER_URL ?? 'http://localhost:8180';
 const isLocalhost = new URL(routerUrl).hostname === 'localhost' || new URL(routerUrl).hostname === '127.0.0.1';
 
-const routerJar = '../../../apps/wanaku-router-backend/target/quarkus-app/quarkus-run.jar';
+const routerJar = '../../../apps/wanaku-barn-backend/target/quarkus-app/quarkus-run.jar';
 
 export default defineConfig({
   testDir: './tests',

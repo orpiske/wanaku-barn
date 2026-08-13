@@ -151,7 +151,7 @@ Defines a Wanaku router instance.
 | `spec.exposure.tls.key` | string | No | `""` | PEM-encoded TLS private key inlined into the OpenShift Route TLSConfig. Only used when `type: route`. |
 | `spec.exposure.tls.caCertificate` | string | No | `""` | PEM-encoded CA certificate used to verify the route certificate. Only used when `type: route`. |
 | `spec.exposure.tls.destinationCACertificate` | string | No | `""` | PEM-encoded CA certificate used to verify the backend pod's certificate when `termination: reencrypt`. Only used when `type: route`. |
-| `spec.router.image` | string | No | `quay.io/wanaku/wanaku-router-backend:latest` | Router container image. |
+| `spec.router.image` | string | No | `quay.io/wanaku/wanaku-barn-backend:latest` | Router container image. |
 | `spec.router.env` | list | No | `[]` | List of `{name, value}` environment variables for the router (e.g., to set `wanaku.http.auth=none`). |
 | `spec.router.imagePullPolicy` | string | No | inherits `spec.imagePullPolicy` | Override pull policy for router pod only. |
 
@@ -535,7 +535,7 @@ spec:
   auth:
     authServer: http://keycloak:8080
   router:
-    image: quay.io/wanaku/wanaku-router-backend:0.1.3
+    image: quay.io/wanaku/wanaku-barn-backend:0.1.3
     env:
       - name: JAVA_OPTS
         value: "-Xmx512m -XX:MaxDirectMemorySize=256m"
@@ -698,7 +698,7 @@ The operator detects changes and reconciles automatically. For deployments, this
 ```yaml
 spec:
   router:
-    image: quay.io/wanaku/wanaku-router-backend:1.0.0
+    image: quay.io/wanaku/wanaku-barn-backend:1.0.0
 ```
 
 ### Removing Resources

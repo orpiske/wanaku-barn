@@ -65,7 +65,7 @@ graph TB
 
 ### Core Router Components
 
-#### Router Backend (`wanaku-router-backend`)
+#### Router Backend (`wanaku-barn-backend`)
 
 The main MCP server engine that:
 

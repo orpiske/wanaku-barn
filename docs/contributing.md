@@ -171,16 +171,16 @@ Requirements:
 eval $(minikube docker-env)
 ```
 
-1. Build the container image from wanaku-router-backend and wanaku-operator.
+1. Build the container image from wanaku-barn-backend and wanaku-operator.
 
 ```shell
-mvn -ntp -Dquarkus.container-image.build=true -Dquarkus.container-image.push=false -DskipTests package -pl :wanaku-operator,:wanaku-router-backend
+mvn -ntp -Dquarkus.container-image.build=true -Dquarkus.container-image.push=false -DskipTests package -pl :wanaku-operator,:wanaku-barn-backend
 ```
 
 If everything went well, you should see the container is pushed to the registry:
 
 ```shell
-[io.quarkus.container.image.jib.deployment.JibProcessor] Created container image quay.io/wanaku/wanaku-router-backend (sha256:3d3ad35a4c6f3bc04c07388fb52f6b0caabae7d35c8d3cc217f40f589f6bbcd3)
+[io.quarkus.container.image.jib.deployment.JibProcessor] Created container image quay.io/wanaku/wanaku-barn-backend (sha256:3d3ad35a4c6f3bc04c07388fb52f6b0caabae7d35c8d3cc217f40f589f6bbcd3)
 ```
 
 Note that as the minikube registry docker is exposed, the image is already available in the registry once the container build finishes.
@@ -188,7 +188,7 @@ You can look with the cli: `docker images --format=table|grep wanaku`.
 
 ```shell
 quay.io/wanaku/wanaku-operator            latest         fadfce7976a5   4 hours ago     463MB
-quay.io/wanaku/wanaku-router-backend      latest         8cc535c47cad   4 hours ago     535MB
+quay.io/wanaku/wanaku-barn-backend      latest         8cc535c47cad   4 hours ago     535MB
 ```
 
 1. Deploy to Minikube
@@ -204,7 +204,7 @@ NOTE: You can customize some environment variables:
 - `WANAKU_ADMIN_PASSWORD`: Keycloak admin password (default:  `admin`)
 - `WANAKU_INGRESS_HOST`: The ingress host (default `wanaku.$(minikube ip).nip.io}`)
 - `WANAKU_OPERATOR_IMAGE`: Wanaku operator image (default:  `quay.io/wanaku/wanaku-operator:latest`)
-- `WANAKU_ROUTER_IMAGE`: Wanaku router backend image (default:  `quay.io/wanaku/wanaku-router-backend:latest`)
+- `WANAKU_ROUTER_IMAGE`: Wanaku router backend image (default:  `quay.io/wanaku/wanaku-barn-backend:latest`)
 
 ### Building for OpenShift
 
@@ -231,7 +231,7 @@ podman login -u $(oc whoami) -p $(oc whoami -t) --tls-verify=false $REGISTRY
 1. Build all container images
 
 ```shell
-mvn -ntp -Dquarkus.container-image.build=true -Dquarkus.container-image.push=true -DskipTests package -Dquarkus.container-image.registry=$REGISTRY -Dquarkus.container-image.insecure=true -Dopenshift -pl :wanaku-operator,:wanaku-router-backend
+mvn -ntp -Dquarkus.container-image.build=true -Dquarkus.container-image.push=true -DskipTests package -Dquarkus.container-image.registry=$REGISTRY -Dquarkus.container-image.insecure=true -Dopenshift -pl :wanaku-operator,:wanaku-barn-backend
 ```
 
 The `-Dopenshift` activates the maven profile to set the quarkus-openshift dependencies.
@@ -239,7 +239,7 @@ The `-Dopenshift` activates the maven profile to set the quarkus-openshift depen
 If everything goes well, you should see the container being pushed to the registry:
 
 ```shell
-[io.quarkus.container.image.jib.deployment.JibProcessor] Pushed container image default-route-openshift-image-registry.apps-crc.testing/wanaku/wanaku-router-backend (sha256:a5d17a6d1bc1f7f0d2992872d37e5b00b444c9ab567a1ad97303acbb763ae132)
+[io.quarkus.container.image.jib.deployment.JibProcessor] Pushed container image default-route-openshift-image-registry.apps-crc.testing/wanaku/wanaku-barn-backend (sha256:a5d17a6d1bc1f7f0d2992872d37e5b00b444c9ab567a1ad97303acbb763ae132)
 ```
 
 1. Deploy to OpenShift:
@@ -249,7 +249,7 @@ The default username/password is `admin/admin`, you can override it with the env
 
 ```shell
 export WANAKU_OPERATOR_IMAGE=$(oc get is/wanaku-operator  -ojsonpath='{.status.dockerImageRepository}')":latest"
-export WANAKU_ROUTER_IMAGE=$(oc get is/wanaku-router-backend  -ojsonpath='{.status.dockerImageRepository}')":latest"
+export WANAKU_ROUTER_IMAGE=$(oc get is/wanaku-barn-backend  -ojsonpath='{.status.dockerImageRepository}')":latest"
 ./deploy/deploy-to-dev-env.sh
 ```
 

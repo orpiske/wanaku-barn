@@ -40,7 +40,7 @@ Each Wanaku component ships with a built-in `application.properties` file inside
 
 For the main components:
 
-- **Router Backend**: `apps/wanaku-router-backend/src/main/resources/application.properties`
+- **Router Backend**: `apps/wanaku-barn-backend/src/main/resources/application.properties`
 - **Tool Services**: `capabilities/tools/<service>/src/main/resources/application.properties`
 - **CLI**: `apps/wanaku-cli/src/main/resources/application.properties`
 
@@ -56,7 +56,7 @@ it and any properties defined there override the built-in defaults:
 
 ```text
 my-deployment/
-├── wanaku-router-backend-runner.jar
+├── wanaku-barn-backend-runner.jar
 └── config/
     └── application.properties    ← your overrides go here
 ```
@@ -68,7 +68,7 @@ You only need to include the properties you want to change, not the entire file.
 Pass individual properties on the command line using `-D`:
 
 ```shell
-java -Dquarkus.http.port=9090 -jar wanaku-router-backend-runner.jar
+java -Dquarkus.http.port=9090 -jar wanaku-barn-backend-runner.jar
 ```
 
 #### 3. Environment variables
@@ -78,7 +78,7 @@ Export properties as environment variables. Convert the property name to upperca
 
 ```shell
 export QUARKUS_HTTP_PORT=9090
-java -jar wanaku-router-backend-runner.jar
+java -jar wanaku-barn-backend-runner.jar
 ```
 
 #### Priority order
@@ -94,7 +94,7 @@ For complete details, see the [Quarkus Configuration Guide](https://quarkus.io/g
 
 ## 1. Router Backend
 
-Configuration for the main Wanaku Router Backend (`wanaku-router-backend`), which orchestrates all services.
+Configuration for the main Wanaku Router Backend (`wanaku-barn-backend`), which orchestrates all services.
 
 ### General & HTTP
 

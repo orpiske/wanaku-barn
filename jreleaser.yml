@@ -50,7 +50,7 @@ distributions:
     type: JAVA_BINARY
   router:
     artifacts:
-      - path: apps/wanaku-router-backend/target/distributions/wanaku-router-backend-{{projectVersion}}.zip
+      - path: apps/wanaku-barn-backend/target/distributions/wanaku-barn-backend-{{projectVersion}}.zip
         platform: linux-x86_64
     type: JAVA_BINARY
   service-http:
@@ -78,7 +78,7 @@ distributions:
     type: JAVA_BINARY
   wanaku-barn-plugin:
     artifacts:
-      - path: apps/wanaku-router-backend/target/distributions/wanaku-barn-plugin-{{projectVersion}}.zip
+      - path: apps/wanaku-barn-backend/target/distributions/wanaku-barn-plugin-{{projectVersion}}.zip
     type: JAVA_BINARY
 
   cli-native:

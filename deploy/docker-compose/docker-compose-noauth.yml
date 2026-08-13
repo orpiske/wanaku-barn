@@ -16,7 +16,7 @@ services:
       - "16686:16686"
 
   wanaku-router:
-    image: quay.io/wanaku/wanaku-router-backend:latest
+    image: quay.io/wanaku/wanaku-barn-backend:latest
     environment:
       WANAKU_HTTP_AUTH: none
       QUARKUS_HTTP_HOST: 0.0.0.0

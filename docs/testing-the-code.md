@@ -107,13 +107,13 @@ These tests demonstrate the custom assertions:
 
 - `cli/src/test/java/ai/wanaku/cli/main/commands/tools/ToolsLabelAddTest.java`
 - `cli/src/test/java/ai/wanaku/cli/main/commands/tools/ToolsLabelRemoveTest.java`
-- `wanaku-router/wanaku-router-backend/src/test/java/ai/wanaku/backend/api/v1/namespaces/NamespacesBeanTest.java`
-- `wanaku-router/wanaku-router-backend/src/test/java/ai/wanaku/backend/api/v1/tools/ToolsResourceTest.java`
-- `wanaku-router/wanaku-router-backend/src/test/java/ai/wanaku/backend/api/v1/resources/ResourcesResourceTest.java`
-- `apps/wanaku-router-backend/src/test/java/ai/wanaku/backend/api/v1/namespaces/NamespacesBeanTest.java`
-- `apps/wanaku-router-backend/src/test/java/ai/wanaku/backend/api/v1/tools/ToolsResourceTest.java`
-- `apps/wanaku-router-backend/src/test/java/ai/wanaku/backend/api/v1/resources/ResourcesResourceTest.java`
-- `apps/wanaku-router-backend/src/test/java/ai/wanaku/backend/api/v1/prompts/PromptsResourceTest.java`
+- `wanaku-router/wanaku-barn-backend/src/test/java/ai/wanaku/backend/api/v1/namespaces/NamespacesBeanTest.java`
+- `wanaku-router/wanaku-barn-backend/src/test/java/ai/wanaku/backend/api/v1/tools/ToolsResourceTest.java`
+- `wanaku-router/wanaku-barn-backend/src/test/java/ai/wanaku/backend/api/v1/resources/ResourcesResourceTest.java`
+- `apps/wanaku-barn-backend/src/test/java/ai/wanaku/backend/api/v1/namespaces/NamespacesBeanTest.java`
+- `apps/wanaku-barn-backend/src/test/java/ai/wanaku/backend/api/v1/tools/ToolsResourceTest.java`
+- `apps/wanaku-barn-backend/src/test/java/ai/wanaku/backend/api/v1/resources/ResourcesResourceTest.java`
+- `apps/wanaku-barn-backend/src/test/java/ai/wanaku/backend/api/v1/prompts/PromptsResourceTest.java`
 
 ## Migration Guide
 

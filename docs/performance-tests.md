@@ -65,7 +65,7 @@ Tests the MCP bridge path where the router forwards requests to a remote MCP ser
 #### Build
 
 ```bash
-mvn package -pl apps/wanaku-router-backend,tests/mcp-servers/wanaku-performance-test-mock-mcp -am -DskipTests -T1C -q
+mvn package -pl apps/wanaku-barn-backend,tests/mcp-servers/wanaku-performance-test-mock-mcp -am -DskipTests -T1C -q
 ```
 
 #### Run Manually
@@ -84,7 +84,7 @@ podman run -d --name keycloak --rm -p 0.0.0.0:8543:8080 \
 java -XX:+UseNUMA -Xmx4G -Xms4G \
   -Dquarkus.http.host=0.0.0.0 \
   -Dauth.server="http://$(hostname -f):8543" \
-  -jar apps/wanaku-router-backend/target/quarkus-app/quarkus-run.jar &
+  -jar apps/wanaku-barn-backend/target/quarkus-app/quarkus-run.jar &
 
 # 3. Wait for router to be ready
 until curl -fsSo /dev/null http://localhost:8080 2>/dev/null; do sleep 2; done
@@ -138,14 +138,14 @@ For comparing main vs a feature branch through the MCP bridge, build and test ea
 ```bash
 # 1. Build baseline from main
 git checkout main
-mvn package -pl apps/wanaku-router-backend,tests/mcp-servers/wanaku-performance-test-mock-mcp -am -DskipTests -T1C -q
+mvn package -pl apps/wanaku-barn-backend,tests/mcp-servers/wanaku-performance-test-mock-mcp -am -DskipTests -T1C -q
 # Copy baseline jars to a safe location
-cp -r apps/wanaku-router-backend/target/quarkus-app /tmp/baseline-router
+cp -r apps/wanaku-barn-backend/target/quarkus-app /tmp/baseline-router
 cp -r tests/mcp-servers/wanaku-performance-test-mock-mcp/target/quarkus-app /tmp/baseline-mock
 
 # 2. Build patched from feature branch
 git checkout my-feature-branch
-mvn package -pl apps/wanaku-router-backend,tests/mcp-servers/wanaku-performance-test-mock-mcp -am -DskipTests -T1C -q
+mvn package -pl apps/wanaku-barn-backend,tests/mcp-servers/wanaku-performance-test-mock-mcp -am -DskipTests -T1C -q
 
 # 3. Run baseline tests, then patched tests (same VU levels, same duration)
 #    Save results to: $EVAL_DIR/baseline/tools-invoke-sse/test-summary-vus-*.json

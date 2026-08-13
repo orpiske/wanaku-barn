@@ -34,6 +34,6 @@ spec:
 #      - name: ENVIRONMENT_VARIABLE_2
 #        value: value2
 # You can also set a custom image for the router
-#    image: quay.io/wanaku/wanaku-router-backend:latest # Optional
+#    image: quay.io/wanaku/wanaku-barn-backend:latest # Optional
 # Override pull policy for router only (takes precedence over global setting)
 #    imagePullPolicy: Always

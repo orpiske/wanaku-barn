@@ -63,7 +63,7 @@ services:
       - wanaku-services:/home/jboss/.wanaku/services
 
   wanaku-router:
-    image: quay.io/wanaku/wanaku-router-backend:latest
+    image: quay.io/wanaku/wanaku-barn-backend:latest
     environment:
       QUARKUS_HTTP_HOST: 0.0.0.0
       AUTH_SERVER: http://localhost:8543

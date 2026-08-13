@@ -3,7 +3,7 @@ needs-review:
       - any-glob-to-any-file:
           - core/**
           - apps/**
-          - apps/wanaku-router-backend/**
+          - apps/wanaku-barn-backend/**
           - docs/**
           - '**/*.md'
           - services/**
@@ -12,7 +12,7 @@ needs-test:
   - changed-files:
       - any-glob-to-any-file:
           - apps/wanaku-cli/**
-          - apps/wanaku-router-backend/**
+          - apps/wanaku-barn-backend/**
 
 needs-e2e-test:
   - changed-files:

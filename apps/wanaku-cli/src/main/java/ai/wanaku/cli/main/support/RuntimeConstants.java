@@ -4,7 +4,7 @@ import java.io.File;
 import ai.wanaku.core.util.WanakuHome;
 
 public class RuntimeConstants {
-    public static final String WANAKU_ROUTER_BACKEND = "wanaku-router-backend";
+    public static final String WANAKU_ROUTER_BACKEND = "wanaku-barn-backend";
 
     private RuntimeConstants() {}
 
