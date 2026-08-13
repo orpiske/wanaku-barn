@@ -34,6 +34,16 @@ spec:
           steps:
             - log:
                 message: "Received Kafka reply"
+  mcp:
+    tools:
+      - name: send-message-to-kafka
+        routeId: kafka-request-reply
+        description: Send a message to Kafka and wait for the correlated reply
+        properties:
+          - name: wanaku_body
+            type: string
+            description: The message to send to Kafka
+            required: true
   properties:
     kafka.brokers: "{{kafka.brokers}}"
     kafka.request.topic: "{{kafka.request.topic}}"
