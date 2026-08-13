@@ -1,9 +1,12 @@
 - route:
-    description: Send and receive messages to and from RabbitMQ
+    id: rabbitmq-send
     from:
-      uri: direct
+      uri: ai-tool:send-message-to-rabbitmq
       parameters:
-        name: wanaku
+        tags: rabbitmq
+        description: "Send a message to RabbitMQ"
+        parameter.wanaku_body: string
+        parameter.wanaku_body.description: "The message to send to RabbitMQ"
       steps:
         - log: ${body}
         - to:
@@ -12,5 +15,3 @@
               queues: "{{rabbitmq.queue}}"
               exchangeName: "{{rabbitmq.exchange}}"
               connectionFactory: "#rabbitConnectionFactory"
-      id: from-rabbitmq
-    id: rabbitmq-send

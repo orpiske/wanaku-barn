@@ -1,8 +1,20 @@
 - route:
     id: openai-chat-completion
-    description: Chat completion using OpenAI models
     from:
-      uri: direct:wanaku
+      uri: ai-tool:openai-chat-completion
+      parameters:
+        tags: openai
+        description: "{{tool.description}}"
+        parameter.wanaku_body: string
+        parameter.wanaku_body.description: "The prompt text to send to OpenAI for chat completion"
+        parameter.systemMessage: string
+        parameter.systemMessage.description: "Optional system message to set the behavior of the assistant"
+        parameter.model: string
+        parameter.model.description: "Override the default OpenAI model (e.g., gpt-4, gpt-3.5-turbo)"
+        parameter.temperature: number
+        parameter.temperature.description: "Sampling temperature (0.0 to 2.0)"
+        parameter.maxTokens: integer
+        parameter.maxTokens.description: "Maximum number of tokens to generate"
       steps:
         - setHeader:
             name: CamelOpenAI.operation

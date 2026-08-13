@@ -1,8 +1,12 @@
 - route:
+    id: route-3543
     from:
-      uri: direct
+      uri: ai-tool:send-message-using-jms
       parameters:
-        name: wanaku
+        tags: jms
+        description: "Send messages using JMS"
+        parameter.wanaku_body: string
+        parameter.wanaku_body.description: "Send messages using JMS"
       steps:
         - log: ${body}
         - to:
@@ -13,5 +17,3 @@
               destinationName: "{{request.queue}}"
               replyTo: "{{response.queue}}"
               connectionFactory: "#connectionFactory"
-      id: from-1655
-    id: route-3543

@@ -1,8 +1,12 @@
 - route:
     id: aws-sqs-request-reply
-    description: Send an AWS SQS request and wait for the correlated reply
     from:
-      uri: direct:wanaku
+      uri: ai-tool:send-message-to-aws-sqs
+      parameters:
+        tags: aws-sqs
+        description: "{{tool.description}}"
+        parameter.wanaku_body: string
+        parameter.wanaku_body.description: "The message to send to AWS SQS"
       steps:
         - setExchangePattern:
             pattern: InOut

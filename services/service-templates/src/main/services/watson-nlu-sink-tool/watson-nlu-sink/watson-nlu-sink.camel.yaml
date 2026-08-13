@@ -1,8 +1,12 @@
 - route:
     id: watson-nlu-analyze
-    description: Analyze text using IBM Watson Natural Language Understanding
     from:
-      uri: direct:wanaku
+      uri: ai-tool:watson-nlu-analyze
+      parameters:
+        tags: watson-nlu
+        description: "{{tool.description}}"
+        parameter.wanaku_body: string
+        parameter.wanaku_body.description: "The text to analyze for sentiment, entities, keywords, and other NLU features"
       steps:
         - to:
             uri: ibm-watson-language:wanaku

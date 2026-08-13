@@ -1,8 +1,12 @@
 - route:
     id: echo-tool
-    description: Echo back the input message duplicated with a configurable separator
     from:
-      uri: direct:wanaku
+      uri: ai-tool:echo
+      parameters:
+        tags: echo
+        description: "Echo back the input message duplicated with a separator"
+        parameter.wanaku_body: string
+        parameter.wanaku_body.description: "The message to echo back"
       steps:
         - setBody:
             expression:
