@@ -8,7 +8,6 @@
 export type GetApiV1ServiceCatalogInstructionsModel =
   (typeof GetApiV1ServiceCatalogInstructionsModel)[keyof typeof GetApiV1ServiceCatalogInstructionsModel];
 
-// eslint-disable-next-line @typescript-eslint/no-redeclare
 export const GetApiV1ServiceCatalogInstructionsModel = {
   local: "local",
   docker: "docker",
