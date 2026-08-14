@@ -9,18 +9,6 @@ import ai.wanaku.core.config.WanakuConfig;
 @ConfigMapping(prefix = "wanaku.cli")
 public interface WanakuCliConfig extends WanakuConfig {
 
-    interface Tool {
-        String createCmd();
-    }
-
-    interface Resource {
-        String createCmd();
-    }
-
-    interface Mcp {
-        String createCmd();
-    }
-
     interface Auth {
         @WithDefault("none")
         String mode();
@@ -31,12 +19,6 @@ public interface WanakuCliConfig extends WanakuConfig {
         @WithDefault("false")
         boolean enabled();
     }
-
-    Tool tool();
-
-    Resource resource();
-
-    Mcp mcp();
 
     Auth auth();
 

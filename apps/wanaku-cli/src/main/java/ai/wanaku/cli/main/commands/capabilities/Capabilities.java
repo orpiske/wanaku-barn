@@ -12,7 +12,6 @@ import picocli.CommandLine;
  * </p>
  * <ul>
  *   <li>Listing available capability providers</li>
- *   <li>Creating new capability instances (tools, resources, MCP servers)</li>
  *   <li>Viewing capability provider details and schemas</li>
  * </ul>
  * <p>
@@ -25,11 +24,9 @@ import picocli.CommandLine;
         description = "Manage capabilities",
         subcommands = {
             CapabilitiesList.class,
-            CapabilitiesCreate.class,
             CapabilitiesShow.class,
             CapabilitiesStatus.class,
-            CapabilitiesWatch.class,
-            CapabilitiesCleanup.class
+            CapabilitiesWatch.class
         })
 public class Capabilities extends BaseCommand {
 
