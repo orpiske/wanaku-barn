@@ -4,8 +4,8 @@ import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.Response;
 
 import java.util.List;
-import java.util.Map;
 import org.jline.terminal.Terminal;
+import ai.wanaku.capabilities.sdk.api.types.ServiceTemplateSummary;
 import ai.wanaku.capabilities.sdk.api.types.WanakuResponse;
 import ai.wanaku.cli.main.commands.BaseCommand;
 import ai.wanaku.cli.main.support.WanakuPrinter;
@@ -38,8 +38,8 @@ public class ServiceTemplateList extends BaseCommand {
         ServiceTemplateService service = initAuthenticatedService(ServiceTemplateService.class, host);
 
         try {
-            WanakuResponse<List<Map<String, Object>>> response = service.list(search);
-            List<Map<String, Object>> templates = response.data();
+            WanakuResponse<List<ServiceTemplateSummary>> response = service.list(search);
+            List<ServiceTemplateSummary> templates = response.data();
 
             if (templates == null || templates.isEmpty()) {
                 printer.printInfoMessage("No service templates found");

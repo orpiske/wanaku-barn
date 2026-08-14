@@ -76,6 +76,51 @@ components:
       properties:
         version:
           type: string
+    ServiceTemplateDetail:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        icon:
+          type: string
+        description:
+          type: string
+        services:
+          type: array
+          items:
+            $ref: "#/components/schemas/ServiceTemplateSystem"
+    ServiceTemplateSummary:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        icon:
+          type: string
+        description:
+          type: string
+        services:
+          type: array
+          items:
+            type: string
+        hasProperties:
+          type: boolean
+    ServiceTemplateSystem:
+      type: object
+      properties:
+        name:
+          type: string
+        routesFile:
+          type: string
+        rulesFile:
+          type: string
+        dependenciesFile:
+          type: string
+        propertiesFile:
+          type: string
     SystemInstruction:
       type: object
       properties:
@@ -201,6 +246,15 @@ components:
             type: object
             additionalProperties:
               type: string
+    WanakuResponseListServiceTemplateSummary:
+      type: object
+      properties:
+        error:
+          $ref: "#/components/schemas/WanakuError"
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ServiceTemplateSummary"
     WanakuResponseListToolReference:
       type: object
       properties:
@@ -245,6 +299,13 @@ components:
           $ref: "#/components/schemas/WanakuError"
         data:
           $ref: "#/components/schemas/ServerInfo"
+    WanakuResponseServiceTemplateDetail:
+      type: object
+      properties:
+        error:
+          $ref: "#/components/schemas/WanakuError"
+        data:
+          $ref: "#/components/schemas/ServiceTemplateDetail"
     WanakuResponseSystemStatistics:
       type: object
       properties:
@@ -569,7 +630,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/WanakuResponseMapStringObject"
+                $ref: "#/components/schemas/WanakuResponseServiceTemplateDetail"
       summary: Get
       tags:
       - Service Template Resource
@@ -606,7 +667,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/WanakuResponseListMapStringObject"
+                $ref: "#/components/schemas/WanakuResponseListServiceTemplateSummary"
       summary: List
       tags:
       - Service Template Resource

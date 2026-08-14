@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import org.jline.terminal.Terminal;
+import ai.wanaku.capabilities.sdk.api.types.io.TemplateInstantiationRequest;
 import ai.wanaku.cli.main.commands.BaseCommand;
 import ai.wanaku.cli.main.support.WanakuPrinter;
 import ai.wanaku.core.services.api.ServiceTemplateService;
@@ -121,8 +122,7 @@ public class ServiceTemplateInstantiate extends BaseCommand {
                 String.format("Instantiating template '%s' with %d properties...", name, propsMap.size()));
 
         try {
-            ServiceTemplateService.TemplateInstantiationRequest request =
-                    new ServiceTemplateService.TemplateInstantiationRequest();
+            TemplateInstantiationRequest request = new TemplateInstantiationRequest();
             request.setTemplateName(name);
             request.setProperties(propsMap);
             request.setServiceName(serviceName);
