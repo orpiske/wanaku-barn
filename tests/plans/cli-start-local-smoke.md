@@ -236,44 +236,22 @@ fi
 
 ## Phase 4: Smoke Test -- Prompts
 
-### Test 4.1: Add a prompt
-
-```bash
-java -jar ${CLI_JAR} prompts add \
-  --host "${WANAKU_ROUTER_URL}" \
-  --name smoke-test-prompt \
-  --namespace public \
-  --description "Smoke prompt for local validation" \
-  --message "user:text:Hello {{name}}" \
-  --argument "name:The name to greet:true"
-
-EXIT_CODE=$?
-if [ "${EXIT_CODE}" -eq 0 ]; then
-  echo "PASS: smoke-test-prompt added"
-else
-  echo "FAIL: could not add smoke-test-prompt (exit code ${EXIT_CODE})"
-  exit 1
-fi
-```
-
-### Test 4.2: List prompts and verify smoke-test-prompt appears
+### Test 4.1: List prompts returns successfully
 
 ```bash
 OUTPUT=$(java -jar ${CLI_JAR} prompts list --host "${WANAKU_ROUTER_URL}" --plain 2>&1)
 EXIT_CODE=$?
 
-if [ "${EXIT_CODE}" -ne 0 ]; then
+if [ "${EXIT_CODE}" -eq 0 ]; then
+  echo "PASS: prompts list returned successfully"
+else
   echo "FAIL: prompts list command failed (exit code ${EXIT_CODE})"
   echo "${OUTPUT}"
   exit 1
 fi
-
-echo "${OUTPUT}" | grep -q "smoke-test-prompt" \
-  && echo "PASS: smoke-test-prompt is listed" \
-  || echo "FAIL: smoke-test-prompt not found in prompts list"
 ```
 
-### Test 4.3: List prompts via MCP and verify smoke-test-prompt appears
+### Test 4.2: List prompts via MCP returns successfully
 
 ```bash
 OUTPUT=$(java -jar ${CLI_JAR} mcp prompt list --uri "${MCP_SERVER_URI}" --plain 2>&1)
@@ -285,52 +263,7 @@ if [ "${EXIT_CODE}" -ne 0 ]; then
   exit 1
 fi
 
-echo "${OUTPUT}" | grep -q "smoke-test-prompt" \
-  && echo "PASS: smoke-test-prompt visible via MCP" \
-  || echo "FAIL: smoke-test-prompt not visible via MCP"
-```
-
-### Test 4.4: Remove the prompt
-
-```bash
-java -jar ${CLI_JAR} prompts remove \
-  --host "${WANAKU_ROUTER_URL}" \
-  --name smoke-test-prompt
-
-EXIT_CODE=$?
-if [ "${EXIT_CODE}" -eq 0 ]; then
-  echo "PASS: smoke-test-prompt removed"
-else
-  echo "FAIL: could not remove smoke-test-prompt (exit code ${EXIT_CODE})"
-fi
-```
-
-### Test 4.5: Verify prompt is no longer listed
-
-```bash
-OUTPUT=$(java -jar ${CLI_JAR} prompts list --host "${WANAKU_ROUTER_URL}" --plain 2>&1)
-
-echo "${OUTPUT}" | grep -q "smoke-test-prompt"
-if [ $? -ne 0 ]; then
-  echo "PASS: smoke-test-prompt no longer listed after removal"
-else
-  echo "FAIL: smoke-test-prompt still appears after removal"
-fi
-```
-
-### Test 4.6: Remove a non-existent prompt should fail
-
-```bash
-OUTPUT=$(java -jar ${CLI_JAR} prompts remove \
-  --host "${WANAKU_ROUTER_URL}" \
-  --name "nonexistent-prompt-12345" 2>&1)
-EXIT_CODE=$?
-
-if [ "${EXIT_CODE}" -ne 0 ]; then
-  echo "PASS: removing non-existent prompt failed as expected (exit code ${EXIT_CODE})"
-else
-  echo "FAIL: removing non-existent prompt should have failed"
-fi
+echo "PASS: MCP prompt list returned successfully"
 ```
 
 ---
@@ -363,16 +296,7 @@ echo "${CONTENT_TYPE}" | grep -qi "text/html" \
 
 ## Phase 6: Cleanup
 
-### Step 6.1: Remove registered prompts (idempotent)
-
-```bash
-java -jar ${CLI_JAR} prompts remove \
-  --host "${WANAKU_ROUTER_URL}" \
-  --name smoke-test-prompt 2>/dev/null || true
-echo "PASS: smoke-test-prompt removed (or already absent)"
-```
-
-### Step 6.3: Kill the Wanaku process
+### Step 6.1: Kill the Wanaku process
 
 ```bash
 if [ -n "${WANAKU_PID}" ]; then
@@ -384,7 +308,7 @@ else
 fi
 ```
 
-### Step 6.4: Verify process is gone
+### Step 6.2: Verify process is gone
 
 ```bash
 if [ -n "${WANAKU_PID}" ]; then
@@ -415,14 +339,9 @@ fi
 | 2 | 2.3 | Call non-existent tool (negative) | High |
 | 3 | 3.1 | List resources returns successfully | Medium |
 | 3 | 3.2 | List resources via MCP returns successfully | Medium |
-| 4 | 4.1 | Add a prompt | Critical |
-| 4 | 4.2 | List prompts and verify registration | Critical |
-| 4 | 4.3 | List prompts via MCP | High |
-| 4 | 4.4 | Remove the prompt | Critical |
-| 4 | 4.5 | Verify prompt removed from list | High |
-| 4 | 4.6 | Remove non-existent prompt (negative) | High |
+| 4 | 4.1 | List prompts returns successfully | High |
+| 4 | 4.2 | List prompts via MCP returns successfully | High |
 | 5 | 5.1 | Admin UI returns HTTP 200 | High |
 | 5 | 5.2 | Admin UI serves HTML content | Medium |
-| 6 | 6.1 | Remove registered prompts | Critical |
-| 6 | 6.2 | Kill the Wanaku process | Critical |
-| 6 | 6.3 | Verify process is gone | High |
+| 6 | 6.1 | Kill the Wanaku process | Critical |
+| 6 | 6.2 | Verify process is gone | High |

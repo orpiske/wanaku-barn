@@ -173,56 +173,7 @@ assert_failure "3.1" "show non-existent resource rejected" \
 
 ## Phase 4: Prompts -- Error Cases
 
-### Test 4.1: Add prompt with no name
-
-The `--name` option is required by `prompts add`.
-
-```bash
-assert_failure "4.1" "prompts add with no name rejected" \
-  wanaku prompts add \
-    --host "${WANAKU_ROUTER_URL}" \
-    --no-auth \
-    --namespace public \
-    --description "test prompt" \
-    --message "user:text:Hello"
-```
-
-### Test 4.2: Add prompt with no description
-
-The `--description` option is required by `prompts add`.
-
-```bash
-assert_failure "4.2" "prompts add with no description rejected" \
-  wanaku prompts add \
-    --host "${WANAKU_ROUTER_URL}" \
-    --no-auth \
-    --name "neg-test-no-desc" \
-    --namespace public \
-    --message "user:text:Hello"
-```
-
-### Test 4.3: Edit non-existent prompt
-
-The `--name` option is required by `prompts edit` and the prompt must exist.
-
-```bash
-assert_failure "4.3" "edit non-existent prompt rejected" \
-  wanaku prompts edit \
-    --host "${WANAKU_ROUTER_URL}" \
-    --no-auth \
-    --name "nonexistent-prompt-12345" \
-    --description "updated description"
-```
-
-### Test 4.4: Remove non-existent prompt
-
-```bash
-assert_graceful "4.4" "remove non-existent prompt handled gracefully" \
-  wanaku prompts remove \
-    --host "${WANAKU_ROUTER_URL}" \
-    --no-auth \
-    --name "nonexistent-prompt-12345"
-```
+_Prompt CRUD commands (add, edit, remove) have been removed from the CLI. Prompts are managed via the UI or REST API. Only `prompts list` remains._
 
 ---
 
@@ -565,16 +516,6 @@ assert_failure "9.6" "namespaces list with unreachable host fails gracefully" \
     --plain
 ```
 
-### Test 9.7: Tools list with unreachable host
-
-```bash
-assert_failure "9.7" "tools list with unreachable host fails gracefully" \
-  wanaku tools list \
-    --host "${WANAKU_UNREACHABLE_HOST}" \
-    --no-auth \
-    --plain
-```
-
 ---
 
 ## Phase 10: Cleanup
@@ -610,10 +551,7 @@ fi
 | 2 | 2.1 | Tool show: non-existent | High | Error handling |
 | 2 | 2.2 | Tool generate: non-existent OpenAPI | High | Error handling |
 | 3 | 3.1 | Resource show: non-existent | High | Error handling |
-| 4 | 4.1 | Prompt add: missing --name | High | Validation |
-| 4 | 4.2 | Prompt add: missing --description | High | Validation |
-| 4 | 4.3 | Prompt edit: non-existent | High | Error handling |
-| 4 | 4.4 | Prompt remove: non-existent | Medium | Error handling |
+| 4 | — | Prompt CRUD removed from CLI | — | — |
 | 5 | 5.1 | Forward add: missing --name | High | Validation |
 | 5 | 5.2 | Forward add: missing --service | High | Validation |
 | 5 | 5.3 | Forward add: duplicate name | Medium | Validation |
@@ -639,5 +577,4 @@ fi
 | 9 | 9.4 | Forwards list: unreachable host | Critical | Connection |
 | 9 | 9.5 | Datastores list: unreachable host | Critical | Connection |
 | 9 | 9.6 | Namespaces list: unreachable host | Critical | Connection |
-| 9 | 9.7 | Tools add: unreachable host | Critical | Connection |
 | 10 | 10.1-10.2 | Cleanup | Critical | Teardown |

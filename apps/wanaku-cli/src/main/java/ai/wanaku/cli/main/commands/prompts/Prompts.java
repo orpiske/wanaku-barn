@@ -8,7 +8,7 @@ import picocli.CommandLine;
 @CommandLine.Command(
         name = "prompts",
         description = "Manage prompts",
-        subcommands = {PromptsAdd.class, PromptsEdit.class, PromptsRemove.class, PromptsList.class})
+        subcommands = {PromptsList.class})
 public class Prompts extends BaseCommand {
     @Override
     public Integer doCall(Terminal terminal, WanakuPrinter printer) {
