@@ -12,7 +12,10 @@ import jakarta.ws.rs.core.MediaType;
 import java.util.List;
 import java.util.Map;
 import ai.wanaku.capabilities.sdk.api.types.DataStore;
+import ai.wanaku.capabilities.sdk.api.types.ServiceTemplateDetail;
+import ai.wanaku.capabilities.sdk.api.types.ServiceTemplateSummary;
 import ai.wanaku.capabilities.sdk.api.types.WanakuResponse;
+import ai.wanaku.capabilities.sdk.api.types.io.TemplateInstantiationRequest;
 
 /**
  * Service interface for Service Template operations via REST API.
@@ -31,14 +34,14 @@ public interface ServiceTemplateService {
     @Path("/list")
     @GET
     @Produces(MediaType.APPLICATION_JSON)
-    WanakuResponse<List<Map<String, Object>>> list(@QueryParam("search") String search);
+    WanakuResponse<List<ServiceTemplateSummary>> list(@QueryParam("search") String search);
 
     /**
      * List all service template entries without filtering.
      *
      * @return response with list of all template summaries
      */
-    default WanakuResponse<List<Map<String, Object>>> list() {
+    default WanakuResponse<List<ServiceTemplateSummary>> list() {
         return list(null);
     }
 
@@ -51,7 +54,7 @@ public interface ServiceTemplateService {
     @Path("/get")
     @GET
     @Produces(MediaType.APPLICATION_JSON)
-    WanakuResponse<DataStore> get(@QueryParam("name") String name);
+    WanakuResponse<ServiceTemplateDetail> get(@QueryParam("name") String name);
 
     /**
      * Deploy a service template ZIP package.
@@ -111,46 +114,4 @@ public interface ServiceTemplateService {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     WanakuResponse<DataStore> instantiate(TemplateInstantiationRequest request);
-
-    /**
-     * Request body for template instantiation.
-     */
-    class TemplateInstantiationRequest {
-        private String templateName;
-        private Map<String, String> properties;
-        private String serviceName;
-        private String serviceSystem;
-
-        public String getTemplateName() {
-            return templateName;
-        }
-
-        public void setTemplateName(String templateName) {
-            this.templateName = templateName;
-        }
-
-        public Map<String, String> getProperties() {
-            return properties;
-        }
-
-        public void setProperties(Map<String, String> properties) {
-            this.properties = properties;
-        }
-
-        public String getServiceName() {
-            return serviceName;
-        }
-
-        public void setServiceName(String serviceName) {
-            this.serviceName = serviceName;
-        }
-
-        public String getServiceSystem() {
-            return serviceSystem;
-        }
-
-        public void setServiceSystem(String serviceSystem) {
-            this.serviceSystem = serviceSystem;
-        }
-    }
 }

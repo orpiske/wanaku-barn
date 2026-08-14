@@ -12,7 +12,6 @@ import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.jboss.logging.Logger;
@@ -20,9 +19,12 @@ import ai.wanaku.backend.api.v1.exceptions.ServiceTemplateNotFoundException;
 import ai.wanaku.capabilities.sdk.api.exceptions.DataStoreResourceNotFoundException;
 import ai.wanaku.capabilities.sdk.api.exceptions.WanakuException;
 import ai.wanaku.capabilities.sdk.api.types.DataStore;
+import ai.wanaku.capabilities.sdk.api.types.ServiceTemplateDetail;
+import ai.wanaku.capabilities.sdk.api.types.ServiceTemplateSummary;
+import ai.wanaku.capabilities.sdk.api.types.ServiceTemplateSystem;
 import ai.wanaku.capabilities.sdk.api.types.WanakuResponse;
+import ai.wanaku.capabilities.sdk.api.types.io.TemplateInstantiationRequest;
 import ai.wanaku.core.services.api.ServiceCatalogIndex;
-import ai.wanaku.core.services.api.ServiceTemplateService;
 import ai.wanaku.core.util.StringHelper;
 
 /**
@@ -49,7 +51,7 @@ public class ServiceTemplateResource {
      */
     @Path("/list")
     @GET
-    public WanakuResponse<List<Map<String, Object>>> list(@QueryParam("search") String search) {
+    public WanakuResponse<List<ServiceTemplateSummary>> list(@QueryParam("search") String search) {
         if (search != null && !search.isBlank()) {
             LOG.debugf("REST: Listing service templates with search: %s", search);
         } else {
@@ -57,17 +59,17 @@ public class ServiceTemplateResource {
         }
 
         List<DataStore> templates = serviceTemplateBean.list(search);
-        List<Map<String, Object>> summaries = new ArrayList<>();
+        List<ServiceTemplateSummary> summaries = new ArrayList<>();
 
         for (DataStore ds : templates) {
             try {
                 ServiceCatalogIndex index = serviceTemplateBean.parseIndex(ds);
-                Map<String, Object> summary = new HashMap<>();
-                summary.put("id", ds.getId());
-                summary.put("name", index.getName());
-                summary.put("icon", index.getIcon());
-                summary.put("description", index.getDescription());
-                summary.put("services", index.getServiceNames());
+                ServiceTemplateSummary summary = new ServiceTemplateSummary();
+                summary.setId(ds.getId());
+                summary.setName(index.getName());
+                summary.setIcon(index.getIcon());
+                summary.setDescription(index.getDescription());
+                summary.setServices(index.getServiceNames());
                 boolean hasProps = index.hasServiceProperties();
                 if (!hasProps) {
                     try {
@@ -77,14 +79,14 @@ public class ServiceTemplateResource {
                     } catch (WanakuException ignored) {
                     }
                 }
-                summary.put("hasProperties", hasProps);
+                summary.setHasProperties(hasProps);
                 summaries.add(summary);
             } catch (WanakuException e) {
                 LOG.warnf("Failed to parse template index for '%s': %s", ds.getName(), e.getMessage());
             }
         }
 
-        return new WanakuResponse(summaries);
+        return new WanakuResponse<>(summaries);
     }
 
     /**
@@ -96,7 +98,7 @@ public class ServiceTemplateResource {
      */
     @Path("/get")
     @GET
-    public WanakuResponse<Map<String, Object>> get(@QueryParam("name") String name) {
+    public WanakuResponse<ServiceTemplateDetail> get(@QueryParam("name") String name) {
         LOG.debugf("REST: Getting service template: %s", name);
 
         if (StringHelper.isBlank(name)) {
@@ -109,25 +111,25 @@ public class ServiceTemplateResource {
         }
 
         ServiceCatalogIndex index = serviceTemplateBean.parseIndex(template);
-        Map<String, Object> detail = new HashMap<>();
-        detail.put("id", template.getId());
-        detail.put("name", index.getName());
-        detail.put("icon", index.getIcon());
-        detail.put("description", index.getDescription());
+        ServiceTemplateDetail detail = new ServiceTemplateDetail();
+        detail.setId(template.getId());
+        detail.setName(index.getName());
+        detail.setIcon(index.getIcon());
+        detail.setDescription(index.getDescription());
 
-        List<Map<String, String>> systems = new ArrayList<>();
+        List<ServiceTemplateSystem> systems = new ArrayList<>();
         for (String system : index.getServiceNames()) {
-            Map<String, String> systemInfo = new HashMap<>();
-            systemInfo.put("name", system);
-            systemInfo.put("routesFile", index.getRoutesFile(system));
-            systemInfo.put("rulesFile", index.getRulesFile(system));
-            systemInfo.put("dependenciesFile", index.getDependenciesFile(system));
-            systemInfo.put("propertiesFile", index.getPropertiesFile(system));
+            ServiceTemplateSystem systemInfo = new ServiceTemplateSystem();
+            systemInfo.setName(system);
+            systemInfo.setRoutesFile(index.getRoutesFile(system));
+            systemInfo.setRulesFile(index.getRulesFile(system));
+            systemInfo.setDependenciesFile(index.getDependenciesFile(system));
+            systemInfo.setPropertiesFile(index.getPropertiesFile(system));
             systems.add(systemInfo);
         }
-        detail.put("services", systems);
+        detail.setServices(systems);
 
-        return new WanakuResponse(detail);
+        return new WanakuResponse<>(detail);
     }
 
     /**
@@ -222,7 +224,7 @@ public class ServiceTemplateResource {
      */
     @Path("/instantiate")
     @POST
-    public WanakuResponse<DataStore> instantiate(ServiceTemplateService.TemplateInstantiationRequest request) {
+    public WanakuResponse<DataStore> instantiate(TemplateInstantiationRequest request) {
         LOG.debugf("REST: Instantiating template: %s", request.getTemplateName());
 
         if (StringHelper.isBlank(request.getTemplateName())) {
