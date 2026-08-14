@@ -2424,7 +2424,12 @@ We try to make it simple for users to create custom services that solve their pa
 To create a custom resource provider, you can run:
 
 ```shell
-wanaku capabilities create resource --name y4
+mvn -B archetype:generate \
+  -DarchetypeGroupId=ai.wanaku \
+  -DarchetypeArtifactId=wanaku-provider-archetype \
+  -DgroupId=ai.wanaku \
+  -DartifactId=wanaku-provider-y4 \
+  -Dname=Y4
 ```
 
 To run the newly created service enter the directory that was created (i.e.,; `cd wanaku-provider-y4`),
@@ -2432,7 +2437,7 @@ then build the project using Maven (`mvn clean package`).
 
 > [!NOTE]
 > Capabilities services are created, by default, using [Apache Camel](http://camel.apache.org). However, it is possible to create
-> purely Quarkus-based capabilities using the option `--type=quarkus`.
+> purely Quarkus-based capabilities by adding `-Dwanaku-capability-type=quarkus` to the Maven command.
 
 Then, launch it using:
 
@@ -2457,12 +2462,17 @@ necessary, coerce (convert) the response from its specific type to String.
 To create a custom tool service, you can run:
 
 ```shell
-wanaku capabilities create tool --name jms
+mvn -B archetype:generate \
+  -DarchetypeGroupId=ai.wanaku \
+  -DarchetypeArtifactId=wanaku-tool-service-archetype \
+  -DgroupId=ai.wanaku \
+  -DartifactId=wanaku-tool-service-jms \
+  -Dname=Jms
 ```
 
 > [!NOTE]
 > Capabilities services are created, by default, using [Apache Camel](http://camel.apache.org). However, it is possible to create
-> purely Quarkus-based capabilities using the option `--type=quarkus`.
+> purely Quarkus-based capabilities by adding `-Dwanaku-capability-type=quarkus` to the Maven command.
 
 To run the newly created service enter the directory that was created (i.e.,; `cd wanaku-tool-service-jms`), then build the project using Maven (`mvn clean package`).
 
@@ -2494,7 +2504,12 @@ and (or, sometimes, both) `ConsumerTemplate` to interact with the system you are
 To create a custom mcp server, you can run:
 
 ```shell
-wanaku capabilities create mcp --name s3
+mvn -B archetype:generate \
+  -DarchetypeGroupId=ai.wanaku \
+  -DarchetypeArtifactId=wanaku-mcp-servers-archetype \
+  -DgroupId=ai.wanaku \
+  -DartifactId=wanaku-mcp-servers-s3 \
+  -Dname=S3
 ```
 
 To run the newly created service enter the directory that was created (i.e.,; `cd wanaku-mcp-servers-s3`),
@@ -2502,7 +2517,7 @@ then build the project using Maven (`mvn clean package`).
 
 > [!NOTE]
 > Capabilities services are created, by default, using [Apache Camel](http://camel.apache.org). However, it is possible to create
-> purely Quarkus-based capabilities using the option `--type=quarkus`.
+> purely Quarkus-based capabilities by adding `-Dwanaku-capability-type=quarkus` to the Maven command.
 
 Then, launch it using:
 

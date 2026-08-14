@@ -4,7 +4,7 @@
 
 This test plan verifies the `wanaku capabilities` CLI commands against a locally running Wanaku instance (no authentication). Capabilities are services (tool providers, resource providers) that register with the router. When started via `wanaku start local` with the HTTP tool distribution, the HTTP tool service automatically registers as a capability.
 
-The plan covers listing, showing details, checking status, and cleaning up capabilities using the CLI.
+The plan covers listing, showing details, and checking status of capabilities using the CLI.
 
 Every step is fully automatable.
 
@@ -63,7 +63,7 @@ export WANAKU_ROUTER_URL="${WANAKU_ROUTER_URL:-http://localhost:8080}"
 
 ### Known limitations for local testing
 
-- **Capabilities commands do not use `--no-auth`:** The `capabilities list`, `show`, `status`, and `cleanup` commands use a static service initializer that does not pass the `--no-auth` flag. When running locally with `start local`, the router runs in `noauth` profile so authentication is not enforced. Do not pass `--no-auth` to capabilities commands -- it has no effect.
+- **Capabilities commands do not use `--no-auth`:** The `capabilities list`, `show`, and `status` commands use a static service initializer that does not pass the `--no-auth` flag. When running locally with `start local`, the router runs in `noauth` profile so authentication is not enforced. Do not pass `--no-auth` to capabilities commands -- it has no effect.
 - **Only the HTTP tool service is available locally:** The `start local` command only supports tool services. No resource providers register as capabilities locally. The test plan uses the HTTP tool capability as the test subject.
 - **`capabilities show` is interactive when multiple instances exist:** If multiple capability instances share the same service name, `show` presents an interactive selection menu. In local testing only one HTTP instance is expected.
 
@@ -347,79 +347,9 @@ fi
 
 ---
 
-## Phase 5: Capabilities Cleanup
+## Phase 5: Negative Tests
 
-### Test 5.1: Cleanup with default max-age finds no stale capabilities
-
-The HTTP tool capability was just started, so it should not be stale (default max-age is 1 day).
-
-```bash
-OUTPUT=$(wanaku capabilities cleanup --host "${WANAKU_ROUTER_URL}" -y --plain 2>&1)
-EXIT_CODE=$?
-
-if [ "${EXIT_CODE}" -ne 0 ]; then
-  echo "FAIL: capabilities cleanup failed (exit code ${EXIT_CODE})"
-  echo "${OUTPUT}"
-  exit 1
-fi
-
-echo "${OUTPUT}" | grep -qi "no stale" \
-  && echo "PASS: no stale capabilities found (expected for fresh start)" \
-  || echo "WARN: cleanup output did not contain 'no stale' message"
-
-echo "Cleanup output: ${OUTPUT}"
-```
-
-### Test 5.2: Cleanup does not remove the healthy HTTP capability
-
-```bash
-# Run cleanup
-wanaku capabilities cleanup --host "${WANAKU_ROUTER_URL}" -y --plain 2>&1
-
-# Verify the HTTP capability is still registered
-OUTPUT=$(wanaku capabilities list --host "${WANAKU_ROUTER_URL}" --plain 2>&1)
-echo "${OUTPUT}" | grep -q "http" \
-  && echo "PASS: HTTP capability still registered after cleanup" \
-  || echo "FAIL: HTTP capability was removed by cleanup"
-```
-
-### Test 5.3: Cleanup with --inactive-only and default max-age
-
-```bash
-OUTPUT=$(wanaku capabilities cleanup --host "${WANAKU_ROUTER_URL}" --inactive-only -y --plain 2>&1)
-EXIT_CODE=$?
-
-if [ "${EXIT_CODE}" -ne 0 ]; then
-  echo "FAIL: capabilities cleanup --inactive-only failed (exit code ${EXIT_CODE})"
-  echo "${OUTPUT}"
-  exit 1
-fi
-
-echo "PASS: cleanup --inactive-only succeeded"
-echo "${OUTPUT}"
-```
-
-### Test 5.4: Cleanup with custom max-age-days
-
-```bash
-OUTPUT=$(wanaku capabilities cleanup --host "${WANAKU_ROUTER_URL}" --max-age-days 365 -y --plain 2>&1)
-EXIT_CODE=$?
-
-if [ "${EXIT_CODE}" -ne 0 ]; then
-  echo "FAIL: capabilities cleanup --max-age-days 365 failed (exit code ${EXIT_CODE})"
-  echo "${OUTPUT}"
-  exit 1
-fi
-
-echo "PASS: cleanup with custom max-age-days succeeded"
-echo "${OUTPUT}"
-```
-
----
-
-## Phase 6: Negative Tests
-
-### Test 6.1: Show with no service name should fail
+### Test 5.1: Show with no service name should fail
 
 ```bash
 OUTPUT=$(wanaku capabilities show --host "${WANAKU_ROUTER_URL}" --plain 2>&1)
@@ -432,7 +362,7 @@ else
 fi
 ```
 
-### Test 6.2: List against a non-existent host should fail gracefully
+### Test 5.2: List against a non-existent host should fail gracefully
 
 ```bash
 OUTPUT=$(wanaku capabilities list --host "http://localhost:59999" --plain 2>&1)
@@ -445,7 +375,7 @@ else
 fi
 ```
 
-### Test 6.3: Status against a non-existent host should fail gracefully
+### Test 5.3: Status against a non-existent host should fail gracefully
 
 ```bash
 OUTPUT=$(wanaku capabilities status --host "http://localhost:59999" --plain 2>&1)
@@ -458,33 +388,7 @@ else
 fi
 ```
 
-### Test 6.4: Cleanup against a non-existent host should fail gracefully
-
-```bash
-OUTPUT=$(wanaku capabilities cleanup --host "http://localhost:59999" -y --plain 2>&1)
-EXIT_CODE=$?
-
-if [ "${EXIT_CODE}" -ne 0 ]; then
-  echo "PASS: cleanup against non-existent host failed gracefully (exit code ${EXIT_CODE})"
-else
-  echo "FAIL: cleanup against non-existent host should fail"
-fi
-```
-
-### Test 6.5: Cleanup with nothing stale is a successful no-op
-
-```bash
-OUTPUT=$(wanaku capabilities cleanup --host "${WANAKU_ROUTER_URL}" -y --plain 2>&1)
-EXIT_CODE=$?
-
-if [ "${EXIT_CODE}" -eq 0 ]; then
-  echo "PASS: cleanup with no stale capabilities is a successful no-op"
-else
-  echo "FAIL: cleanup should succeed even when nothing is stale"
-fi
-```
-
-### Test 6.6: Status with invalid filter value
+### Test 5.4: Status with invalid filter value
 
 ```bash
 OUTPUT=$(wanaku capabilities status --host "${WANAKU_ROUTER_URL}" --filter "invalid-status-value" --plain 2>&1)
@@ -503,9 +407,9 @@ fi
 
 ---
 
-## Phase 7: Cleanup
+## Phase 6: Cleanup
 
-### Step 7.1: Kill the local Wanaku process
+### Step 6.1: Kill the local Wanaku process
 
 ```bash
 if [ -n "${WANAKU_PID}" ]; then
@@ -517,7 +421,7 @@ else
 fi
 ```
 
-### Step 7.2: Verify the process is stopped
+### Step 6.2: Verify the process is stopped
 
 ```bash
 if [ -n "${WANAKU_PID}" ]; then
@@ -542,6 +446,5 @@ fi
 | 2 | 2.1-2.4 | Capabilities list, column output, label expression filter | Critical |
 | 3 | 3.1-3.5 | Capabilities show (details, content verification, non-existent) | Critical |
 | 4 | 4.1-4.5 | Capabilities status (summary, health categories, filter) | High |
-| 5 | 5.1-5.4 | Capabilities cleanup (no stale, healthy preserved, inactive-only, custom max-age) | High |
-| 6 | 6.1-6.6 | Negative tests (missing args, bad host, invalid filter, no-op cleanup) | High |
-| 7 | 7.1-7.2 | Process cleanup | Critical |
+| 5 | 5.1-5.4 | Negative tests (missing args, bad host, invalid filter) | High |
+| 6 | 6.1-6.2 | Process cleanup | Critical |

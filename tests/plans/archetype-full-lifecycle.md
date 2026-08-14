@@ -24,16 +24,21 @@ Every step except "Phase 0: Prerequisites" is fully automatable.
 | `wanaku` | build from source | `wanaku --version` |
 | `jq` | 1.6+ | `jq --version` |
 
-### CLI invocation
+### Archetype invocation
 
-When using the CLI from a local build (not installed), use `java -jar` directly:
+Archetypes are invoked with Maven directly:
 
 ```bash
-CLI_JAR="apps/wanaku-cli/target/quarkus-app/quarkus-run.jar"
-java -jar ${CLI_JAR} capabilities create tool --name ...
+mvn -B archetype:generate \
+  -DarchetypeGroupId=ai.wanaku \
+  -DarchetypeArtifactId=wanaku-tool-service-archetype \
+  -DarchetypeVersion=${VERSION} \
+  -DgroupId=ai.wanaku \
+  -DartifactId=wanaku-tool-service-<name> \
+  -Dname=<Name> \
+  -Dwanaku-version=${VERSION} \
+  -Dwanaku-capability-type=quarkus
 ```
-
-Do **not** assign the full command to a single variable (e.g., `WANAKU_CLI="java -jar path/to/jar"`) -- zsh treats it as a single token. Use `CLI_JAR` for the path and call `java -jar ${CLI_JAR}` explicitly.
 
 ### Environment variables
 
@@ -197,7 +202,16 @@ fi
 
 ```bash
 cd "${ARCHETYPE_WORK_DIR}"
-wanaku capabilities create tool --name e2e-test-tool
+mvn -B archetype:generate \
+  -DarchetypeGroupId=ai.wanaku \
+  -DarchetypeArtifactId=wanaku-tool-service-archetype \
+  -DarchetypeVersion=${VERSION} \
+  -DgroupId=ai.wanaku \
+  -Dpackage=ai.wanaku.tool.e2etesttool \
+  -DartifactId=wanaku-tool-service-e2etesttool \
+  -Dname=E2etesttool \
+  -Dwanaku-version=${VERSION} \
+  -Dwanaku-capability-type=quarkus
 EXIT_CODE=$?
 if [ "${EXIT_CODE}" -eq 0 ]; then
   echo "PASS: scaffolding succeeded"
@@ -396,7 +410,16 @@ fi
 
 ```bash
 cd "${ARCHETYPE_WORK_DIR}"
-wanaku capabilities create tool --name e2e-test-camel --type camel
+mvn -B archetype:generate \
+  -DarchetypeGroupId=ai.wanaku \
+  -DarchetypeArtifactId=wanaku-tool-service-archetype \
+  -DarchetypeVersion=${VERSION} \
+  -DgroupId=ai.wanaku \
+  -Dpackage=ai.wanaku.tool.e2etestcamel \
+  -DartifactId=wanaku-tool-service-e2etestcamel \
+  -Dname=E2etestcamel \
+  -Dwanaku-version=${VERSION} \
+  -Dwanaku-capability-type=camel
 EXIT_CODE=$?
 if [ "${EXIT_CODE}" -eq 0 ]; then
   echo "PASS: Camel tool scaffolding succeeded"
@@ -461,7 +484,16 @@ fi
 
 ```bash
 cd "${ARCHETYPE_WORK_DIR}"
-wanaku capabilities create resource --name e2e-test-provider
+mvn -B archetype:generate \
+  -DarchetypeGroupId=ai.wanaku \
+  -DarchetypeArtifactId=wanaku-provider-archetype \
+  -DarchetypeVersion=${VERSION} \
+  -DgroupId=ai.wanaku \
+  -Dpackage=ai.wanaku.provider.e2etestprovider \
+  -DartifactId=wanaku-provider-e2etestprovider \
+  -Dname=E2etestprovider \
+  -Dwanaku-version=${VERSION} \
+  -Dwanaku-capability-type=quarkus
 EXIT_CODE=$?
 if [ "${EXIT_CODE}" -eq 0 ]; then
   echo "PASS: resource provider scaffolding succeeded"
@@ -526,7 +558,16 @@ fi
 
 ```bash
 cd "${ARCHETYPE_WORK_DIR}"
-wanaku capabilities create resource --name e2e-test-camel-provider --type camel
+mvn -B archetype:generate \
+  -DarchetypeGroupId=ai.wanaku \
+  -DarchetypeArtifactId=wanaku-provider-archetype \
+  -DarchetypeVersion=${VERSION} \
+  -DgroupId=ai.wanaku \
+  -Dpackage=ai.wanaku.provider.e2etestcamelprovider \
+  -DartifactId=wanaku-provider-e2etestcamelprovider \
+  -Dname=E2etestcamelprovider \
+  -Dwanaku-version=${VERSION} \
+  -Dwanaku-capability-type=camel
 EXIT_CODE=$?
 if [ "${EXIT_CODE}" -eq 0 ]; then
   echo "PASS: Camel resource provider scaffolding succeeded"
@@ -587,15 +628,19 @@ fi
 
 ## Phase 9: Negative Tests
 
-### Test 9.1: Scaffold with missing `--name` should fail
+### Test 9.1: Scaffold with missing required parameters should fail
 
 ```bash
-wanaku capabilities create tool 2>&1
+mvn -B archetype:generate \
+  -DarchetypeGroupId=ai.wanaku \
+  -DarchetypeArtifactId=wanaku-tool-service-archetype \
+  -DarchetypeVersion=${VERSION} \
+  -DgroupId=ai.wanaku 2>&1
 EXIT_CODE=$?
 if [ "${EXIT_CODE}" -ne 0 ]; then
-  echo "PASS: missing --name rejected (exit code ${EXIT_CODE})"
+  echo "PASS: missing required parameters rejected (exit code ${EXIT_CODE})"
 else
-  echo "FAIL: missing --name should have failed"
+  echo "FAIL: missing required parameters should have failed"
 fi
 ```
 
