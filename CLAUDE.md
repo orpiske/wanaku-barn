@@ -1,6 +1,6 @@
 # Wanaku Development Guidelines
 
-Last updated: 2026-07-02
+Last updated: 2026-08-17
 
 ## Core Guidelines
 

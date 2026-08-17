@@ -476,14 +476,22 @@ The persistence layer is located within the backend module:
 
 ```text
 apps/wanaku-barn-backend/src/main/java/ai/wanaku/backend/core/persistence/
+├── api/
+│   └── {Domain}Repository.java
 ├── infinispan/
 │   ├── AbstractInfinispanRepository.java
 │   ├── AbstractLabelAwareInfinispanRepository.java
 │   ├── Infinispan{Domain}Repository.java
 │   ├── InfinispanPersistenceConfiguration.java
+│   ├── codeexecution/
+│   │   └── InfinispanCodeTaskRepository.java
+│   ├── discovery/
+│   │   └── InfinispanCapabilitiesRepository.java
 │   ├── providers/
 │   │   └── InfinispanConfigurationProvider.java
 │   └── protostream/
+│       ├── marshaller/
+│       │   └── {Domain}Marshaller.java
 │       └── schema/
 │           ├── AbstractWanakuSerializationContextInitializer.java
 │           └── {Domain}Schema.java

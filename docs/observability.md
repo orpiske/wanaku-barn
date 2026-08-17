@@ -111,8 +111,8 @@ The following custom span attributes are set:
 
 | Attribute | Set By | Description |
 |-----------|--------|-------------|
-| `wanaku.mcp.request_id` | MCP tracing instrumentation | MCP request ID |
-| `wanaku.mcp.connection_id` | MCP tracing instrumentation | MCP connection/session ID |
+| `wanaku.mcp.request_id` | Router request handling | MCP request ID |
+| `wanaku.mcp.connection_id` | Router request handling | MCP connection/session ID |
 | `wanaku.mcp.tool_name` | Router tool routing | Name of the tool being invoked |
 | `wanaku.mcp.resource_name` | Router resource routing | Name of the resource being acquired |
 
