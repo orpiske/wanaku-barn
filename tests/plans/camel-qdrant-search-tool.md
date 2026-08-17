@@ -774,7 +774,7 @@ echo "PASS: pre-flight checks passed (qdrant=${QDRANT_HOST}:${QDRANT_GRPC_PORT},
 
 The Camel Integration Capability must be started with a `--service-catalog` pointing to the
 instantiated `camel-qdrant-search-tool` catalog, so it downloads the routes, rules, and
-dependencies from the router and registers its gRPC endpoint for tool execution.
+dependencies from the router and registers its MCP endpoint for tool execution.
 
 ```bash
 CATALOG_NAME="${TEMPLATE_NAME}"
@@ -783,7 +783,7 @@ CATALOG_SYSTEM="${SYSTEM_NAME}"
 java -jar "${CIC_JAR}" \
   --registration-url "${WANAKU_HOST}" \
   --registration-announce-address localhost \
-  --grpc-port 9190 \
+  --port 9190 \
   --name qdrant-camel \
   --service-catalog "${CATALOG_NAME}" \
   --service-catalog-system "${CATALOG_SYSTEM}" &
@@ -820,8 +820,8 @@ TOOL=$(echo "${RESPONSE}" | jq '.data[] | select(.name | test("qdrant"))')
 if [ -n "${TOOL}" ]; then
   echo "PASS: qdrant tool registered after capability launch"
   TARGET=$(echo "${TOOL}" | jq -r '.uri // .target // empty')
-  if echo "${TARGET}" | grep -q "localhost:9190\|grpc"; then
-    echo "PASS: tool target points to capability gRPC endpoint"
+  if echo "${TARGET}" | grep -q "localhost:9190\|mcp"; then
+    echo "PASS: tool target points to capability MCP endpoint"
   else
     echo "INFO: tool target: ${TARGET}"
   fi

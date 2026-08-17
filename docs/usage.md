@@ -2564,16 +2564,10 @@ The details below describe how Wanaku MCP router can be used with some prominent
 
 ### Embedded LLMChat for testing
 
-Wanaku Console includes simple LLMChat specifically designed for quick testing of the tools.
+The Wanaku Praxis router includes an embedded LLMChat page for quick testing of tools.
 
 > [!NOTE]
-> At the moment, the Embedded LLMChat supports only the tools.
-
-```shell
-open http://localhost:8080
-```
-
-![Embedded LLMChat for testing](https://github.com/user-attachments/assets/7a80aacd-0da8-435b-8cd9-75cc073dfc79)
+> The LLMChat feature is part of the [Wanaku Praxis](https://github.com/wanaku-ai/wanaku) admin UI.
 
 1. Setup LLM - `baseurl`, `api key`, `model`, and extra parameters
 2. Select tools

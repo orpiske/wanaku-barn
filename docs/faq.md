@@ -44,7 +44,7 @@ A capability is a service that provides specific functionality to the Wanaku rou
 
 ### How does Wanaku communicate with capability services?
 
-Wanaku uses MCP for communication between the router and capability services. Capabilities register with the router and exchange requests via the Model Context Protocol.
+Wanaku uses the MCP protocol for communication between the router and capability services. Capabilities register with the router via REST and exchange tool/resource requests via MCP. With Camel 4.22+, Apache Camel has native MCP server support, so no separate bridge is needed.
 
 ### What is the role of Keycloak in Wanaku?
 
@@ -144,21 +144,31 @@ Yes, Wanaku works with Claude Desktop and other MCP-compatible clients. See the 
 
 ### How do I create a custom capability?
 
-Use the Wanaku CLI to generate a project template:
+Use the Maven archetypes from the [Wanaku Capabilities Java SDK](https://github.com/wanaku-ai/wanaku-capabilities-java-sdk) to generate a project template:
 
 **For a tool service:**
 
 ```shell
-wanaku services create tool --name my-tool
+mvn -B archetype:generate \
+  -DarchetypeGroupId=ai.wanaku \
+  -DarchetypeArtifactId=wanaku-tool-service-archetype \
+  -DgroupId=ai.wanaku \
+  -DartifactId=wanaku-tool-service-my-tool \
+  -Dname=MyTool
 ```
 
 **For a resource provider:**
 
 ```shell
-wanaku services create provider --name my-provider
+mvn -B archetype:generate \
+  -DarchetypeGroupId=ai.wanaku \
+  -DarchetypeArtifactId=wanaku-provider-archetype \
+  -DgroupId=ai.wanaku \
+  -DartifactId=wanaku-provider-my-provider \
+  -Dname=MyProvider
 ```
 
-See the [Contributing Guide](contributing.md) for detailed instructions.
+See the [Contributing Guide](contributing.md) and the [Usage Guide](usage.md#extending-wanaku-adding-your-own-capabilities) for detailed instructions.
 
 ### Should I use Camel or plain Quarkus for my capability?
 
@@ -176,7 +186,7 @@ See the [Contributing Guide](contributing.md) for detailed instructions.
 
 ### Can I write capability services in languages other than Java?
 
-Yes! Capability services can be created in multiple languages. The service must implement the appropriate protocol defined in the Wanaku core-exchange module.
+Yes! Capability services can be created in multiple languages. The service must implement the MCP protocol. For Java, the [Wanaku Capabilities Java SDK](https://github.com/wanaku-ai/wanaku-capabilities-java-sdk) provides the necessary base classes and archetypes.
 
 ### Where should I put my custom capabilities?
 

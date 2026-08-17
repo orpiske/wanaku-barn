@@ -2,30 +2,26 @@
 
 ## Overview
 
-Core library modules providing fundamental functionality for the Wanaku MCP Router ecosystem.
+Core library modules providing fundamental functionality for the Wanaku ecosystem.
 
 ## Purpose
 
 This directory contains essential libraries and infrastructure used throughout Wanaku:
 
-- MCP protocol implementation
-- Communication protocols
-- Data persistence abstractions
+- MCP protocol client implementation
 - Service discovery mechanisms
+- Service API interfaces
+- Common utilities
 
 ## Sub-Modules
 
-### core-mcp
+### core-mcp-client
 
-MCP protocol client and server implementations using the Quarkus MCP extension.
+MCP protocol client implementation for communicating with capability services.
 
-### core-exchange
+### core-services-api
 
-Protocol definitions and message exchange contracts for communication between router and capability services.
-
-### core-persistence
-
-Data persistence abstractions with Infinispan implementation for storing tools, resources, and router state.
+Service API interfaces that define the contracts for tools, resources, namespaces, capabilities, and other domain services.
 
 ### core-service-discovery
 

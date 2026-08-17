@@ -5,8 +5,8 @@
 This test plan verifies the OpenTelemetry tracing, Micrometer metrics, and MCP request ID propagation introduced in PR #1311 ("feat: Implement OpenTelemetry for distributed tracing and request ID propagation"). It covers:
 
 - OTEL Collector and Jaeger deployment on OpenShift
-- W3C `traceparent` propagation across router → gRPC → capability
-- `x-wanaku-request-id` header propagation via gRPC interceptors
+- W3C `traceparent` propagation across router → MCP → capability
+- `x-wanaku-request-id` header propagation via MCP request handlers
 - Structured log output with `traceId` and `requestId` MDC keys
 - Prometheus metrics endpoint on the router
 - End-to-end trace visibility in Jaeger UI
@@ -546,7 +546,7 @@ echo "tool-list-exit-code=$?"
 
 ### Test 5.2: Invoke a tool and capture the response
 
-Invoke an HTTP tool that was registered by the capability service. This generates a full trace: MCP client → router → gRPC → capability → downstream HTTP.
+Invoke an HTTP tool that was registered by the capability service. This generates a full trace: MCP client → router → MCP → capability → downstream HTTP.
 
 ```bash
 # First, check what tools are available
@@ -738,7 +738,7 @@ if [ -n "${LAST_REQUEST_ID}" ] && [ "${LAST_REQUEST_ID}" != "" ]; then
     if echo "${CAP_LOGS_FRESH}" | grep -q "requestId=${LAST_REQUEST_ID}"; then
       echo "PASS: same requestId found in capability logs — end-to-end correlation confirmed"
     else
-      echo "WARN: requestId not found in capability logs (may depend on gRPC interceptor activation)"
+      echo "WARN: requestId not found in capability logs (may depend on MCP request propagation activation)"
     fi
   fi
 else
@@ -888,7 +888,7 @@ SPAN_COUNT=$(echo "${RECENT_TRACES}" | jq '.data[0].spans | length')
 echo "Latest trace ${LATEST_TRACE_ID}: ${SPAN_COUNT} span(s)"
 
 if [ "${SPAN_COUNT}" -ge 2 ]; then
-  echo "PASS: trace has multiple spans (expected: HTTP receive + gRPC call at minimum)"
+  echo "PASS: trace has multiple spans (expected: HTTP receive + MCP call at minimum)"
 else
   echo "WARN: trace has only ${SPAN_COUNT} span(s) — may indicate incomplete propagation"
 fi

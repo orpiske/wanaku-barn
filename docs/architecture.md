@@ -17,10 +17,10 @@ The Wanaku MCP Router is a distributed system for managing Model Context Protoco
 
 Wanaku doesn't directly host tools or resources. Instead, it acts as a central hub that manages and governs how AI agents access specific resources and capabilities through registered services.
 
-The router uses a **bridge architecture** with **composition over inheritance** to separate transport concerns from business logic, enabling flexible and testable implementations.
-
 > [!NOTE]
-> For detailed information about the router's internal implementation, including the bridge pattern and transport abstraction, see [Wanaku Router Internals](wanaku-router-internals.md).
+> The primary MCP routing engine is now [Wanaku Praxis](https://github.com/wanaku-ai/wanaku), a Rust-based router.
+> This repository (wanaku-barn) provides the "Classic Wanaku" Java backend for persistence, service catalogs, the operator, and administration.
+> For detailed information about the backend's internal implementation, see [Wanaku Router Internals](wanaku-router-internals.md).
 
 ## System Components
 
@@ -124,18 +124,16 @@ Shared libraries providing foundational functionality:
 
 | Library | Purpose |
 |---------|---------|
-| **core-exchange** | Protocol definitions and message exchange contracts |
-| **core-mcp** | MCP protocol implementation and client libraries |
-| **wanaku-capabilities-base** | Base classes for capability implementations (in `capabilities-quarkus-sdk`) |
+| **core-mcp-client** | MCP protocol client for communicating with capability services |
+| **core-services-api** | Service API interfaces for tools, resources, namespaces, and capabilities |
 | **core-service-discovery** | Service registration and health monitoring |
-| **core-persistence** | Data persistence abstractions with Infinispan |
+| **core-util** | Common utilities, constants, and helper classes |
 
 ### Development Tools
 
 | Tool | Purpose |
 |------|---------|
-| **Archetypes** | Maven archetypes for creating new capabilities |
-| **MCP Servers** | Specialized MCP server implementations for bridging |
+| **[Wanaku Capabilities Java SDK](https://github.com/wanaku-ai/wanaku-capabilities-java-sdk)** | SDK and archetypes for creating new capability services |
 
 ## Architecture Patterns
 
@@ -370,7 +368,7 @@ graph LR
 
 **Steps:**
 
-1. Use `wanaku services create tool --name my-tool` to generate project
+1. Use the [Wanaku Capabilities Java SDK](https://github.com/wanaku-ai/wanaku-capabilities-java-sdk) archetypes to generate a project
 2. Implement tool logic using Java/Camel or other supported language
 3. Configure service registration and OIDC credentials
 4. Deploy service (standalone or containerized)
@@ -378,7 +376,7 @@ graph LR
 
 #### 2. Resource Providers
 
-Similar pattern to tool services, using `wanaku services create provider`
+Similar pattern to tool services, using the `wanaku-provider-archetype` from the Java SDK
 
 #### 3. MCP Server Bridging
 
@@ -413,12 +411,6 @@ Leverage 300+ Camel components for rapid integration:
 - **Independent Scaling**: Scale services based on demand
 - **Technology Flexibility**: Use different tech stacks per service
 - **Security**: Contain potential vulnerabilities to specific services
-
-### Why Bridge Pattern?
-
-- **Separation of Concerns**: Business logic separated from protocol handling
-- **Testability**: Easy to mock for unit testing
-- **Maintainability**: Clear separation between routing logic and MCP communication
 
 ### Why Infinispan for Persistence?
 

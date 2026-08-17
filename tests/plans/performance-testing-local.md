@@ -56,7 +56,7 @@ export WANAKU_CREDENTIALS="${WANAKU_CREDENTIALS:-/tmp/wanaku-creds-perf-$$}"
 export VU_LEVELS="${VU_LEVELS:-1 10 500 1000 2000 30000}"
 export TEST_DURATION="${TEST_DURATION:-30s}"
 export TEST_BASE_DIR="${TEST_BASE_DIR:-$HOME/perf-results}"
-export GRPC_PORT_START="${GRPC_PORT_START:-9190}"
+export MCP_PORT_START="${MCP_PORT_START:-9190}"
 
 # For baseline comparison mode only:
 export BASELINE_BRANCH="${BASELINE_BRANCH:-main}"
@@ -346,33 +346,33 @@ echo "PASS: client secret obtained (length: ${#CLIENT_SECRET})"
 ### Test 4.1: Start the performance noop tool
 
 ```bash
-GRPC_PORT=${GRPC_PORT_START}
+MCP_PORT=${MCP_PORT_START}
 
 java ${JAVA_OPTS} -Dquarkus.profile=perf \
-  -Dquarkus.grpc.server.port="${GRPC_PORT}" \
+  -Dquarkus.http.port="${MCP_PORT}" \
   -Dwanaku.service.registration.uri="${ROUTER_URL}" \
   -Dquarkus.oidc-client.auth-server-url="${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}" \
   -Dquarkus.oidc-client.client-id=wanaku-service \
   -Dquarkus.oidc-client.credentials.secret="${CLIENT_SECRET}" \
   -jar "${TOOL_JAR}" &
 TOOL_PID=$!
-echo "Tool noop started with PID ${TOOL_PID} on gRPC port ${GRPC_PORT}"
+echo "Tool noop started with PID ${TOOL_PID} on MCP port ${MCP_PORT}"
 ```
 
 ### Test 4.2: Start the static file provider
 
 ```bash
-GRPC_PORT=$((GRPC_PORT_START + 1))
+MCP_PORT=$((MCP_PORT_START + 1))
 
 java ${JAVA_OPTS} -Dquarkus.profile=perf \
-  -Dquarkus.grpc.server.port="${GRPC_PORT}" \
+  -Dquarkus.http.port="${MCP_PORT}" \
   -Dwanaku.service.registration.uri="${ROUTER_URL}" \
   -Dquarkus.oidc-client.auth-server-url="${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}" \
   -Dquarkus.oidc-client.client-id=wanaku-service \
   -Dquarkus.oidc-client.credentials.secret="${CLIENT_SECRET}" \
   -jar "${PROVIDER_JAR}" &
 PROVIDER_PID=$!
-echo "Provider static-file started with PID ${PROVIDER_PID} on gRPC port ${GRPC_PORT}"
+echo "Provider static-file started with PID ${PROVIDER_PID} on MCP port ${MCP_PORT}"
 ```
 
 ### Test 4.3: Wait for capabilities to register

@@ -472,31 +472,21 @@ int count = repository.removeByFields(fields);
 
 ## Directory Structure
 
+The persistence layer is located within the backend module:
+
 ```text
-core/core-persistence/
-├── core-persistence-api/
-│   └── src/main/java/ai/wanaku/core/persistence/api/
-│       ├── WanakuRepository.java
-│       ├── LabelAwareInfinispanRepository.java
-│       └── {Domain}Repository.java
-│
-└── core-persistence-infinispan/
-    └── src/main/
-        ├── java/ai/wanaku/core/persistence/infinispan/
-        │   ├── AbstractInfinispanRepository.java
-        │   ├── AbstractLabelAwareInfinispanRepository.java
-        │   ├── Infinispan{Domain}Repository.java
-        │   ├── InfinispanPersistenceConfiguration.java
-        │   ├── providers/
-        │   │   └── InfinispanConfigurationProvider.java
-        │   └── protostream/
-        │       ├── schema/
-        │       │   ├── AbstractWanakuSerializationContextInitializer.java
-        │       │   └── {Domain}Schema.java
-        │       └── marshaller/
-        │           └── {Domain}Marshaller.java
-        └── resources/proto/
-            └── {domain}.proto
+apps/wanaku-barn-backend/src/main/java/ai/wanaku/backend/core/persistence/
+├── infinispan/
+│   ├── AbstractInfinispanRepository.java
+│   ├── AbstractLabelAwareInfinispanRepository.java
+│   ├── Infinispan{Domain}Repository.java
+│   ├── InfinispanPersistenceConfiguration.java
+│   ├── providers/
+│   │   └── InfinispanConfigurationProvider.java
+│   └── protostream/
+│       └── schema/
+│           ├── AbstractWanakuSerializationContextInitializer.java
+│           └── {Domain}Schema.java
 ```
 
 ## Implementation Checklist

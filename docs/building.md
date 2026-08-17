@@ -34,11 +34,11 @@ To build the project with native CLI support, run:
 mvn -Pnative clean package
 ```
 
-## Building with Native Router Support
+## Building with Native Backend Support
 
-Wanaku Router also supports native mode, but this feature has not been fully tested.
+The Wanaku backend also supports native mode, but this feature has not been fully tested.
 
-To enable native mode for the router, run:
+To enable native mode for the backend, run:
 
 ```shell
 mvn -Pdist -Dnative -Dnative-router clean package
@@ -47,20 +47,7 @@ mvn -Pdist -Dnative -Dnative-router clean package
 > [!IMPORTANT]
 > Native support is experimental
 
-## Building with Native Services Support
-
-Wanaku services also supports native mode, but this feature has not been fully tested.
-
-To enable native mode for the router, run:
-
-```shell
-mvn -Pdist -Dnative -Dnative-services clean package
-```
-
-> [!IMPORTANT]
-> Native support is experimental
-
-By following these steps, you should be able to successfully build the Wanaku MCP Router project and prepare it for deployment.
+By following these steps, you should be able to successfully build the Wanaku project and prepare it for deployment.
 
 ## Native build tips
 
