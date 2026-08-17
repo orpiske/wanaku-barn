@@ -41,7 +41,7 @@ Each Wanaku component ships with a built-in `application.properties` file inside
 For the main components:
 
 - **Router Backend**: `apps/wanaku-barn-backend/src/main/resources/application.properties`
-- **Tool Services**: `capabilities/tools/<service>/src/main/resources/application.properties`
+- **Tool Services**: each capability service has its own `src/main/resources/application.properties` (see the [Wanaku Capabilities Java SDK](https://github.com/wanaku-ai/wanaku-capabilities-java-sdk))
 - **CLI**: `apps/wanaku-cli/src/main/resources/application.properties`
 
 ### How to override configuration at runtime
@@ -245,7 +245,7 @@ These `wanaku.router.health-check.*` properties control the periodic health prob
 | `wanaku.router.health-check.interval-seconds` | `60` - The interval in seconds between health check sweeps.                |
 | `wanaku.router.health-check.max-concurrent`   | `10` - The maximum number of concurrent health check probes.               |
 
-### Persistence (`core-persistence-infinispan`)
+### Persistence (Infinispan)
 
 | Property                                    | Description                                                                   |
 |---------------------------------------------|-------------------------------------------------------------------------------|

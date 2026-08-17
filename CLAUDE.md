@@ -17,31 +17,30 @@ Last updated: 2026-07-02
 
 ## Project Structure
 
+> **Note:** The MCP routing engine has moved to the Rust-based [Praxis](https://github.com/wanaku-ai/wanaku) project.
+> This repository (wanaku-barn) provides the "Classic Wanaku" Java backend: persistence, service catalogs, operator, CLI, and admin UI.
+> Capability services are developed using the [Wanaku Capabilities Java SDK](https://github.com/wanaku-ai/wanaku-capabilities-java-sdk).
+
 ```text
 apps/
   wanaku-cli/              # CLI (Picocli + Quarkus)
-  wanaku-barn-backend/   # Router backend (Quarkus REST)
+  wanaku-barn-backend/     # Backend server (Quarkus REST, persistence, service catalogs)
   wanaku-operator/         # Kubernetes operator (JOSDK)
   wanaku-jbang/            # JBang integration
   ui/admin/                # Admin UI (React + Vite + Carbon)
-archetypes/                # Maven archetypes for tools/providers/MCP servers
-capabilities/              # Built-in capability services
-capabilities-quarkus-sdk/  # Quarkus SDK for capabilities
 core/
   core-util/               # Shared utilities
-  core-exchange/           # Message exchange types
   core-services-api/       # Service API interfaces
   core-service-discovery/  # Service discovery (capabilities)
-  core-mcp-client/         # MCP client (router)
+  core-mcp-client/         # MCP client
 deploy/                    # Deployment scripts and configs
 docs/                      # Documentation
 parent/                    # Maven parent POM
 services/
+  service-catalogs/        # Service catalog support
   service-templates/       # Service templates
 tests/
   e2e/                     # End-to-end tests
-  archetype-tests/         # Archetype tests
-  mcp-servers/             # MCP server tests
   load/                    # Load tests
   plans/                   # Test plans for humans and AI agents
 ```

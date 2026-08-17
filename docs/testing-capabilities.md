@@ -85,61 +85,34 @@ Projects using the Wanaku Capabilities Java SDK already have the exchange classe
 
 ### Mocking Tool Invocations
 
-Create a test that invokes your tool implementation directly:
+Create a test that invokes your tool implementation directly. With Camel 4.22+, capabilities use the native MCP server support, so tests use standard MCP types:
 
 ```java
 package ai.test;
 
-import ai.wanaku.core.exchange.v1.ToolInvokeReply;
-import ai.wanaku.core.exchange.v1.ToolInvokeRequest;
-import io.grpc.stub.StreamObserver;
+import io.quarkiverse.mcp.server.ToolArg;
 import org.junit.jupiter.api.Test;
-
-import java.util.List;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class AppToolTest {
 
     @Test
-    void shouldInvokeToolAndReturnResponse() throws InterruptedException {
+    void shouldInvokeToolAndReturnResponse() {
         AppTool tool = new AppTool();
-        ToolInvokeRequest request = ToolInvokeRequest.newBuilder()
-            .putArguments("wanaku_body", "test input")
-            .build();
 
-        CountDownLatch latch = new CountDownLatch(1);
-        ToolInvokeReply[] responseHolder = new ToolInvokeReply[1];
+        // Build arguments matching your tool's @ToolArg parameters
+        String result = tool.invoke("test input");
 
-        StreamObserver<ToolInvokeReply> observer = new StreamObserver<>() {
-            @Override
-            public void onNext(ToolInvokeReply reply) {
-                responseHolder[0] = reply;
-            }
-
-            @Override
-            public void onError(Throwable t) {
-                fail("Tool invocation failed: " + t.getMessage());
-                latch.countDown();
-            }
-
-            @Override
-            public void onCompleted() {
-                latch.countDown();
-            }
-        };
-
-        tool.invokeTool(request, observer);
-        assertTrue(latch.await(5, TimeUnit.SECONDS));
-
-        assertNotNull(responseHolder[0]);
-        assertEquals(1, responseHolder[0].getContentCount());
-        assertEquals("expected output", responseHolder[0].getContent(0));
+        assertNotNull(result);
+        assertEquals("expected output", result);
     }
 }
 ```
+
+> [!NOTE]
+> The exact test pattern depends on how your tool is implemented. Tools using the Quarkus MCP Server extension
+> are plain CDI beans annotated with `@Tool`, making them straightforward to unit test.
 
 ### Testing with Mocked Dependencies
 

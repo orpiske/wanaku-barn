@@ -1,10 +1,15 @@
 # Wanaku MCP Router Internals
 
-This document provides a detailed look at the internal architecture and implementation of the Wanaku MCP Router backend.
+This document provides a detailed look at the internal architecture and implementation of the Wanaku backend.
+
+> [!NOTE]
+> The primary MCP routing engine is now [Wanaku Praxis](https://github.com/wanaku-ai/wanaku), a Rust-based router.
+> The wanaku-barn backend described here handles persistence, service catalogs, capability registration, and administration.
+> In hybrid deployments, Praxis routes MCP requests while proxying management operations to this backend.
 
 ## Overview
 
-The Wanaku router backend acts as a centralized MCP hub that routes requests from LLM clients to capability services. It handles authentication, service discovery, namespace isolation, and request routing.
+The Wanaku backend provides persistence, service catalog management, capability registration, and administration APIs. It handles authentication, service discovery, namespace management, and request routing for capability services.
 
 ## Resources
 

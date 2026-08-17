@@ -2,7 +2,7 @@
 
 ## Overview
 
-This test plan verifies the Camel Integration Capability (CIC) deployed on OpenShift via the Wanaku operator CRDs. The CIC loads Apache Camel routes from YAML and exposes them as MCP tools and resources via gRPC. It registers with a Wanaku MCP Router for AI agent discovery.
+This test plan verifies the Camel Integration Capability (CIC) deployed on OpenShift via the Wanaku operator CRDs. The CIC loads Apache Camel routes from YAML and exposes them as MCP tools and resources. It registers with a Wanaku MCP Router for AI agent discovery.
 
 The operator manages the entire lifecycle: the WanakuCamelRoute CRD packages routes into a service catalog ZIP, deploys the catalog to the router via REST API, and creates a CIC Deployment and Service automatically. The WanakuCapability CRD (with `type: "camel-integration-capability"`) and WanakuServiceCatalog CRD provide alternative deployment modes.
 
@@ -439,7 +439,7 @@ echo "cic-deployment-available=$?"
 
 ### Test 4.7: Verify CIC Service created by operator
 
-**Description:** The operator creates a ClusterIP Service named `<cr-name>-cic` for the gRPC port (9190).
+**Description:** The operator creates a ClusterIP Service named `<cr-name>-cic` for the MCP port (9190).
 
 ```bash
 oc get service cic-hello-world-cic -n "${WANAKU_NAMESPACE}" -o name
