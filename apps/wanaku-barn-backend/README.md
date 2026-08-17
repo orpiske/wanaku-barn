@@ -1,28 +1,30 @@
-# Wanaku Router Backend
+# Wanaku Barn Backend
 
 ## Overview
 
-The main MCP server engine that receives MCP requests and routes them to appropriate capability services.
+The Wanaku Barn backend provides persistence, service catalog management, capability registration, and administration APIs for the Wanaku ecosystem.
+
+> **Note:** The primary MCP routing engine is now [Wanaku Praxis](https://github.com/wanaku-ai/wanaku) (Rust). This backend serves as the "Classic Wanaku" component, handling persistence and management operations that Praxis proxies to in hybrid deployments.
 
 ## Purpose
 
-The router backend is the central component of Wanaku that:
+The backend is responsible for:
 
-- Serves MCP protocol requests from AI clients
+- Managing tool and resource registrations (persistence)
+- Providing HTTP management API for configuration
+- Handling authentication and authorization
+- Managing multiple MCP namespaces
+- Serving service catalogs and data stores
 - Routes tool invocations to appropriate tool services via MCP
 - Routes resource read requests to appropriate providers via MCP
-- Manages tool and resource registrations
-- Provides HTTP management API for configuration
-- Handles authentication and authorization
-- Manages multiple MCP namespaces
 
 ## Key Features
 
 - **MCP Protocol Support**: SSE and Streamable HTTP transports
 - **Multi-Namespace**: Support for 10+ isolated namespaces
 - **MCP Communication**: Communication with capability services via MCP protocol
-- **Management API**: REST API for router configuration
-- **Web UI**: React-based administration interface
+- **Management API**: REST API for configuration
+- **Web UI**: React-based administration interface (Praxis plugin)
 - **Authentication**: OIDC integration via Keycloak
 - **Service Discovery**: Automatic registration and health monitoring of capabilities
 - **Data Persistence**: Infinispan-based storage for router state

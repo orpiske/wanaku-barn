@@ -326,7 +326,7 @@ These `wanaku.service.registration.*` properties are available for all capabilit
 
 | Property                                         | Description                                                                          |
 |--------------------------------------------------|--------------------------------------------------------------------------------------|
-| `wanaku.service.registration.enabled`            | `true` - Enables the service registration feature. Found in archetypes.              |
+| `wanaku.service.registration.enabled`            | `true` - Enables the service registration feature.                                   |
 | `wanaku.service.registration.uri`                | The URI of the router backend for registration (e.g., `http://localhost:8080`).      |
 | `wanaku.service.registration.interval`           | `10s` - The interval at which the service should ping the router to show it's alive. |
 | `wanaku.service.registration.retries`            | `3` - Number of times to retry a failed registration.                                |
