@@ -1543,7 +1543,6 @@ wanaku prompts list
 
 This displays all prompts with their names, descriptions, and namespaces.
 
-
 ## Managing Shared Data
 
 Wanaku provides a data store feature that allows you to share static data between Wanaku and its downstream MCP servers.
