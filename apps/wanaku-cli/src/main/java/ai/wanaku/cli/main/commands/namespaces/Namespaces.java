@@ -14,7 +14,7 @@ import static picocli.CommandLine.usage;
  * </p>
  * <ul>
  *   <li>Listing available namespaces</li>
- *   <li>Creating, updating, and deleting namespaces</li>
+ *   <li>Creating and deleting namespaces</li>
  *   <li>Cleaning up stale namespaces</li>
  * </ul>
  * <p>
@@ -29,10 +29,8 @@ import static picocli.CommandLine.usage;
             NamespaceList.class,
             NamespacesShow.class,
             NamespacesCreate.class,
-            NamespacesUpdate.class,
             NamespacesDelete.class,
-            NamespacesCleanup.class,
-            NamespacesLabel.class
+            NamespacesCleanup.class
         })
 public class Namespaces extends BaseCommand {
 

@@ -205,7 +205,7 @@ kubectl -n ingress-nginx patch cm/ingress-nginx-controller --type=merge -p '{"da
 **Symptoms:**
 
 - MCP server starts successfully and passes health checks
-- `wanaku capabilities list` shows no registered services
+- The admin UI shows no registered services
 - Service logs show warnings like `Unable to register service because of: Connection refused`
 
 **Why this happens:**
@@ -226,7 +226,7 @@ Ensure the router is started and healthy before starting downstream MCP servers.
 
 **Symptoms:**
 
-- Capability appears in `wanaku capabilities list`
+- Capability appears in the admin UI
 - Tool invocations fail with connection timeouts
 - Router logs show connection errors to an unexpected IP address
 

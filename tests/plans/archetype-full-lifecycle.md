@@ -61,7 +61,7 @@ wait_for_capability() {
   local ELAPSED=0
 
   while true; do
-    OUTPUT=$(wanaku capabilities list --host "${HOST}" --plain 2>&1)
+    OUTPUT=$(curl -s "${HOST}/api/v1/capabilities" 2>&1)
     if echo "${OUTPUT}" | grep -q "${SERVICE_NAME}"; then
       echo "PASS: capability '${SERVICE_NAME}' registered (${ELAPSED}s)"
       return 0
@@ -322,10 +322,10 @@ wait_for_process_health "${TOOL_HTTP_PORT}" 60
 wait_for_capability "e2etesttool" "${WANAKU_ROUTER_URL}" 120
 ```
 
-### Test 4.4: Verify capability appears in capabilities list
+### Test 4.4: Verify capability appears in registered services
 
 ```bash
-OUTPUT=$(wanaku capabilities list --host "${WANAKU_ROUTER_URL}" --plain 2>&1)
+OUTPUT=$(curl -s "${WANAKU_ROUTER_URL}/api/v1/capabilities" 2>&1)
 echo "${OUTPUT}" | grep -q "e2etesttool" \
   && echo "PASS: e2etesttool is listed in capabilities" \
   || echo "FAIL: e2etesttool not found in capabilities list"
