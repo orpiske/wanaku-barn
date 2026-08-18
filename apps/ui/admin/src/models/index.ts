@@ -152,3 +152,8 @@ export * from "./wanakuResponseString";
 export * from "./wanakuResponseSystemStatistics";
 export * from "./wanakuResponseToolReference";
 export * from "./wanakuResponseVoid";
+export * from "./serviceTemplateDetail";
+export * from "./serviceTemplateSummary";
+export * from "./serviceTemplateSystem";
+export * from "./wanakuResponseListServiceTemplateSummary";
+export * from "./wanakuResponseServiceTemplateDetail";

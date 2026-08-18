@@ -26,11 +26,13 @@ import type {
   WanakuResponseListDataStore,
   WanakuResponseListMapStringObject,
   WanakuResponseListMapStringString,
+  WanakuResponseListServiceTemplateSummary,
   WanakuResponseListToolReference,
   WanakuResponseMapStringMapStringString,
   WanakuResponseMapStringObject,
   WanakuResponseMapStringString,
   WanakuResponseServerInfo,
+  WanakuResponseServiceTemplateDetail,
   WanakuResponseSystemStatistics,
   WanakuResponseVoid,
 } from "../models";
@@ -717,7 +719,7 @@ export const getApiV1ServiceTemplateDownload = async (
  * @summary Get
  */
 export type getApiV1ServiceTemplateGetResponse200 = {
-  data: WanakuResponseMapStringObject;
+  data: WanakuResponseServiceTemplateDetail;
   status: 200;
 };
 
@@ -808,7 +810,7 @@ export const postApiV1ServiceTemplateInstantiate = async (
  * @summary List
  */
 export type getApiV1ServiceTemplateListResponse200 = {
-  data: WanakuResponseListMapStringObject;
+  data: WanakuResponseListServiceTemplateSummary;
   status: 200;
 };
 
