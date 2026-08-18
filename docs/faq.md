@@ -4,7 +4,7 @@
 
 ### What is Wanaku?
 
-Wanaku is an MCP (Model Context Protocol) Router that acts as a centralized hub for managing and governing how AI agents access tools and resources. It doesn't host tools or resources directly but instead routes requests to specialized capability services, providing unified access, security, and resource management for AI-enabled applications.
+Wanaku is an MCP (Model Context Protocol) Router that acts as a centralized hub for managing and governing how AI agents access tools and resources. It doesn't host tools or resources directly but instead routes requests to MCP servers providing unified access, security, and resource management for AI-enabled applications.
 
 ### What does "Wanaku" mean?
 
@@ -29,22 +29,10 @@ Yes, Wanaku is open source and licensed under Apache 2.0. You can find the sourc
 
 The router architecture provides several advantages:
 
-- **Isolation**: Each capability service runs independently, improving security and reliability
+- **Isolation**: Each MCP service runs independently, improving security and reliability
 - **Scalability**: Services can be scaled independently based on demand
 - **Flexibility**: Easy to add, remove, or update capabilities without affecting the router
-- **Language independence**: Capability services can be written in any supported language
-
-### What is a "capability" in Wanaku?
-
-A capability is a service that provides specific functionality to the Wanaku router. Capabilities can be:
-
-- **Tool services**: Provide executable tools (HTTP client, exec, Tavily search, etc.)
-- **Resource providers**: Provide read access to resources (files, S3, FTP, etc.)
-- **MCP servers**: Bridge to other MCP servers via HTTP
-
-### How does Wanaku communicate with capability services?
-
-Wanaku uses the MCP protocol for communication between the router and capability services. Capabilities register with the router via REST and exchange tool/resource requests via MCP. With Camel 4.22+, Apache Camel has native MCP server support, so no separate bridge is needed.
+- **Language independence**: MCP services can be written in any supported language
 
 ### What is the role of Keycloak in Wanaku?
 
@@ -140,58 +128,6 @@ See [Supported/Tested Clients](usage.md#supportedtested-clients) for client-spec
 
 Yes, Wanaku works with Claude Desktop and other MCP-compatible clients. See the [Usage Guide](usage.md#claude) for configuration examples.
 
-## Development and Extension
-
-### How do I create a custom capability?
-
-Use the Maven archetypes from the [Wanaku Capabilities Java SDK](https://github.com/wanaku-ai/wanaku-capabilities-java-sdk) to generate a project template:
-
-**For a tool service:**
-
-```shell
-mvn -B archetype:generate \
-  -DarchetypeGroupId=ai.wanaku \
-  -DarchetypeArtifactId=wanaku-tool-service-archetype \
-  -DgroupId=ai.wanaku \
-  -DartifactId=wanaku-tool-service-my-tool \
-  -Dname=MyTool
-```
-
-**For a resource provider:**
-
-```shell
-mvn -B archetype:generate \
-  -DarchetypeGroupId=ai.wanaku \
-  -DarchetypeArtifactId=wanaku-provider-archetype \
-  -DgroupId=ai.wanaku \
-  -DartifactId=wanaku-provider-my-provider \
-  -Dname=MyProvider
-```
-
-See the [Contributing Guide](contributing.md) and the [Usage Guide](usage.md#extending-wanaku-adding-your-own-capabilities) for detailed instructions.
-
-### Should I use Camel or plain Quarkus for my capability?
-
-**Use the Camel Integration Capability** (recommended for most cases):
-
-- When you need to integrate with external systems
-- To leverage 300+ Apache Camel components
-- For rapid development of common integration patterns
-
-**Use plain Quarkus** when:
-
-- You need very specific custom logic
-- You want minimal dependencies
-- Performance is critical and you want full control
-
-### Can I write capability services in languages other than Java?
-
-Yes! Capability services can be created in multiple languages. The service must implement the MCP protocol. For Java, the [Wanaku Capabilities Java SDK](https://github.com/wanaku-ai/wanaku-capabilities-java-sdk) provides the necessary base classes and archetypes.
-
-### Where should I put my custom capabilities?
-
-Custom capabilities should generally go in the [Wanaku Examples](https://github.com/wanaku-ai/wanaku-examples) repository, not in the main Wanaku project. The main project is reserved for core, widely-applicable capabilities.
-
 ## Security
 
 ### Is Wanaku secure for production use?
@@ -225,17 +161,6 @@ While not recommended for production, you can set `wanaku.http.auth=none` to dis
 - Wanaku MCP server: set the environment variable `QUARKUS_TLS_TRUST_ALL=true`.
 
 ## Troubleshooting
-
-### Why aren't my capability services showing up?
-
-Common causes:
-
-1. Service registration is not enabled or misconfigured
-2. Network connectivity issues between service and router
-3. Incorrect OIDC credentials
-4. Service is not running or is crashing
-
-See the [Troubleshooting Guide](usage.md#troubleshooting) for detailed solutions.
 
 ### Why can't my MCP client connect to Wanaku?
 
@@ -272,26 +197,22 @@ When using the Wanaku CLI, set the `--verbose` parameter to show additional logg
 **Minimum for development:**
 
 - Router backend: 512MB RAM, 1 CPU
-- Each capability service: 256MB RAM, 0.5 CPU
-- Keycloak: 512MB RAM, 1 CPU
 
 **Recommended for production:**
 
 - Router backend: 1-2GB RAM, 2 CPU
-- Capability services: 512MB-1GB RAM per service
-- Adequate resources for Keycloak
 
 ### Can Wanaku handle multiple concurrent requests?
 
 Yes, Wanaku is built on Quarkus and designed for concurrent request handling. Performance depends on:
 
 - Available system resources
-- Number and type of capability services
+- Number and type of MCP services
 - Network latency between components
 
 ### Can I scale Wanaku horizontally?
 
-The router backend can be scaled horizontally in Kubernetes. Capability services can also be scaled independently based on demand.
+The router backend can be scaled horizontally in Kubernetes.
 
 ## Compatibility
 
