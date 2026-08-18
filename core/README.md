@@ -17,11 +17,11 @@ This directory contains essential libraries and infrastructure used throughout W
 
 ### core-mcp-client
 
-MCP protocol client implementation for communicating with capability services.
+MCP protocol client implementation for communicating with downstream MCP servers.
 
 ### core-services-api
 
-Service API interfaces that define the contracts for tools, resources, namespaces, capabilities, and other domain services.
+Service API interfaces that define the contracts for tools, resources, namespaces, MCP servers, and other domain services.
 
 ### core-service-discovery
 
