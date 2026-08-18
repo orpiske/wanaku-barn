@@ -6,8 +6,8 @@ The Wanaku MCP Router is a distributed system for managing Model Context Protoco
 
 ### Key Architectural Principles
 
-- **Separation of Concerns**: Router backend handles protocol and routing; capability services handle actual operations
-- **Service Isolation**: Each capability runs independently for security and reliability
+- **Separation of Concerns**: Router backend handles protocol and routing; downstream MCP servers handle actual operations
+- **Service Isolation**: Each MCP server runs independently for security and reliability
 - **Protocol Abstraction**: MCP protocol details are handled by the router; services focus on business logic
 - **Dynamic Discovery**: Services register themselves at runtime, enabling flexible deployment
 
@@ -15,7 +15,7 @@ The Wanaku MCP Router is a distributed system for managing Model Context Protoco
 
 ![Diagram showing Wanaku's layered architecture with LLM client connecting to router backend, which communicates with tool services and resource providers](imgs/wanaku-architecture.jpg)
 
-Wanaku doesn't directly host tools or resources. Instead, it acts as a central hub that manages and governs how AI agents access specific resources and capabilities through registered services.
+Wanaku doesn't directly host tools or resources. Instead, it acts as a central hub that manages and governs how AI agents access specific resources and tools through registered MCP servers.
 
 > [!NOTE]
 > The primary MCP routing engine is now [Wanaku Praxis](https://github.com/wanaku-ai/wanaku), a Rust-based router.
@@ -38,7 +38,7 @@ graph TB
         Auth[Keycloak<br/>Authentication]
     end
 
-    subgraph "Capability Layer"
+    subgraph "MCP Server Layer"
         TS1[Tool Service<br/>HTTP]
         TS2[Tool Service<br/>Exec]
         TS3[Tool Service<br/>Tavily]
@@ -84,8 +84,8 @@ Command-line interface for router configuration and management:
 
 - Tool and resource management
 - Namespace configuration
-- Capability service monitoring
-- Project scaffolding for new capabilities
+- MCP server monitoring
+- Project scaffolding for new MCP servers
 - OAuth 2.0/OIDC authentication
 
 #### Web UI (`ui`)
@@ -93,13 +93,13 @@ Command-line interface for router configuration and management:
 React-based administration interface:
 
 - Visual tool and resource management
-- Capability service status monitoring
+- MCP server status monitoring
 - Configuration management
 - User authentication via Keycloak
 
-### Capability Services
+### Downstream MCP Servers
 
-Capability services extend the router's functionality by providing specific tools or resource access.
+Downstream MCP servers extend the router's functionality by providing specific tools or resource access.
 
 #### Tool Services
 
@@ -124,8 +124,8 @@ Shared libraries providing foundational functionality:
 
 | Library | Purpose |
 |---------|---------|
-| **core-mcp-client** | MCP protocol client for communicating with capability services |
-| **core-services-api** | Service API interfaces for tools, resources, namespaces, and capabilities |
+| **core-mcp-client** | MCP protocol client for communicating with downstream MCP servers |
+| **core-services-api** | Service API interfaces for tools, resources, namespaces, and services |
 | **core-service-discovery** | Service registration and health monitoring |
 | **core-util** | Common utilities, constants, and helper classes |
 
@@ -133,7 +133,7 @@ Shared libraries providing foundational functionality:
 
 | Tool | Purpose |
 |------|---------|
-| **[Wanaku Capabilities Java SDK](https://github.com/wanaku-ai/wanaku-capabilities-java-sdk)** | SDK and archetypes for creating new capability services |
+| **[Wanaku Capabilities Java SDK](https://github.com/wanaku-ai/wanaku-capabilities-java-sdk)** | SDK and archetypes for creating new MCP servers |
 
 ## Architecture Patterns
 
@@ -142,8 +142,8 @@ Shared libraries providing foundational functionality:
 Wanaku follows a distributed microservices architecture where the central router coordinates with independent provider and tool services:
 
 - **Router as Gateway**: Central entry point for all MCP requests
-- **Service Independence**: Each capability service runs as an independent process
-- **Protocol Translation**: Router handles MCP protocol for both clients and capability services
+- **Service Independence**: Each downstream MCP server runs as an independent process
+- **Protocol Translation**: Router handles MCP protocol for both clients and downstream MCP servers
 - **Horizontal Scalability**: Services can be scaled independently
 
 ### Request Flow
@@ -152,7 +152,7 @@ Wanaku follows a distributed microservices architecture where the central router
 sequenceDiagram
     participant Client as LLM Client
     participant Router as Router Backend
-    participant Service as Capability Service
+    participant Service as Downstream MCP Server
     participant Target as External System
 
     Client->>Router: MCP Request (Tool Call)
@@ -169,9 +169,9 @@ sequenceDiagram
 1. **Client Connection**: LLM client connects to router backend via MCP protocol (SSE or HTTP)
 2. **Authentication**: Router authenticates the request using Keycloak/OIDC
 3. **Request Processing**: Router receives MCP requests (tool calls, resource reads, prompt requests)
-4. **Service Routing**: Router determines the appropriate capability service based on tool/resource type and namespace
-5. **Service Communication**: Router forwards request to the capability service via MCP
-6. **Service Processing**: Capability service handles actual resource access or tool execution
+4. **Service Routing**: Router determines the appropriate downstream MCP server based on tool/resource type and namespace
+5. **Service Communication**: Router forwards request to the downstream MCP server via MCP
+6. **Service Processing**: Downstream MCP server handles actual resource access or tool execution
 7. **Response**: Results flow back through the router to the client
 
 ### Tool Invocation Flow
@@ -216,11 +216,11 @@ sequenceDiagram
 
 ### Service Discovery and Registration
 
-The router maintains a dynamic service registry that tracks available capability services.
+The router maintains a dynamic service registry that tracks available downstream MCP servers.
 
 ```mermaid
 sequenceDiagram
-    participant Service as Capability Service
+    participant Service as Downstream MCP Server
     participant Router as Router Backend
     participant Registry as Service Registry
     participant Health as Health Monitor
@@ -243,7 +243,7 @@ sequenceDiagram
 
 **Registration Process:**
 
-1. **Service Startup**: Capability service starts and loads configuration
+1. **Service Startup**: Downstream MCP server starts and loads configuration
 2. **Authentication**: Service authenticates with router using OIDC client credentials
 3. **Registration**: Service registers itself with router, providing:
    - Service name and type
@@ -251,7 +251,7 @@ sequenceDiagram
    - Supported capabilities (tool types or resource protocols)
    - Configuration schema
 4. **Health Monitoring**: Service sends periodic heartbeats to indicate availability
-5. **Dynamic Discovery**: Router updates service registry and makes capabilities available
+5. **Dynamic Discovery**: Router updates service registry and makes services available
 6. **Deregistration**: Service deregisters on shutdown or is marked offline after missed heartbeats
 
 ### Namespace Isolation
@@ -276,7 +276,7 @@ graph TB
         Proxy[Proxy Layer]
     end
 
-    subgraph "Capability Layer"
+    subgraph "MCP Server Layer"
         Service1[Tool Service]
         Service2[Resource Provider]
     end
@@ -302,7 +302,7 @@ graph TB
 
 1. **Client Authentication**: LLM clients authenticate via OIDC with Keycloak
 2. **Token Validation**: Router validates access tokens for each request
-3. **Service-to-Service Auth**: Capability services use client credentials to authenticate with router
+3. **Service-to-Service Auth**: Downstream MCP servers use client credentials to authenticate with router
 4. **RBAC** (Future): Role-based access control for fine-grained permissions
 5. **Provisioning Security**: Sensitive configuration delivered via encrypted channels
 
@@ -343,7 +343,7 @@ Wanaku uses Infinispan embedded data grid for persistence:
 - **Tool Definitions**: Registered tools with URIs, labels, and configuration
 - **Resource Definitions**: Registered resources with URIs and metadata
 - **Namespace Configuration**: Namespace settings and mappings
-- **Service Registry**: Active capability services and their health status
+- **Service Registry**: Active downstream MCP servers and their health status
 - **State History**: Historical snapshots for rollback and auditing (configurable retention)
 
 ### Extensibility Model
@@ -392,7 +392,7 @@ graph LR
     style Client fill:#50C878
 ```
 
-Wanaku can aggregate external MCP servers, presenting them as unified capabilities.
+Wanaku can aggregate external MCP servers, presenting them as unified services.
 
 #### 4. Apache Camel Integration
 
@@ -405,9 +405,9 @@ Leverage 300+ Camel components for rapid integration:
 
 ## Design Decisions
 
-### Why Separate Router and Capability Services?
+### Why Separate Router and MCP Servers?
 
-- **Isolation**: Failures in one capability don't affect others
+- **Isolation**: Failures in one MCP server don't affect others
 - **Independent Scaling**: Scale services based on demand
 - **Technology Flexibility**: Use different tech stacks per service
 - **Security**: Contain potential vulnerabilities to specific services
@@ -461,7 +461,7 @@ graph TB
             UI[Web UI<br/>Deployment]
         end
 
-        subgraph "Namespace: wanaku-capabilities"
+        subgraph "Namespace: wanaku-mcp-servers"
             TS1[HTTP Tool<br/>Deployment]
             TS2[Exec Tool<br/>Deployment]
             RP1[File Provider<br/>Deployment]
@@ -516,13 +516,13 @@ Typical request latency breakdown:
 
 1. **Vertical Scaling**: Increase router resources for higher throughput
 2. **Horizontal Scaling**: Multiple router instances behind load balancer (future)
-3. **Capability Scaling**: Scale individual services based on demand
+3. **MCP Server Scaling**: Scale individual downstream MCP servers based on demand
 4. **Caching**: Infinispan caching reduces repeated lookups
 
 ## Related Documentation
 
 - **[Wanaku Router Internals](wanaku-router-internals.md)** - Deep dive into proxy architecture and implementation
 - **[Configuration Guide](configurations.md)** - Complete configuration reference
-- **[Contributing Guide](../CONTRIBUTING.md)** - How to extend Wanaku with new capabilities
+- **[Contributing Guide](../CONTRIBUTING.md)** - How to extend Wanaku with new MCP servers
 - **[Security Guide](../SECURITY.md)** - Security best practices and policies
 - **[Usage Guide](usage.md)** - Operational guide for using Wanaku
