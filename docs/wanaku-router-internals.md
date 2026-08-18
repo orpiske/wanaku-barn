@@ -4,12 +4,12 @@ This document provides a detailed look at the internal architecture and implemen
 
 > [!NOTE]
 > The primary MCP routing engine is now [Wanaku Praxis](https://github.com/wanaku-ai/wanaku), a Rust-based router.
-> The wanaku-barn backend described here handles persistence, service catalogs, capability registration, and administration.
+> The wanaku-barn backend described here handles persistence, service catalogs, MCP server registration, and administration.
 > In hybrid deployments, Praxis routes MCP requests while proxying management operations to this backend.
 
 ## Overview
 
-The Wanaku backend provides persistence, service catalog management, capability registration, and administration APIs. It handles authentication, service discovery, namespace management, and request routing for capability services.
+The Wanaku backend provides persistence, service catalog management, MCP server registration, and administration APIs. It handles authentication, service discovery, namespace management, and request routing for downstream MCP servers.
 
 ## Resources
 
@@ -38,7 +38,7 @@ Examples:
 
 ## Service Resolution
 
-The router maintains a service registry that tracks which capability services are available to handle specific tool or resource types.
+The router maintains a service registry that tracks which downstream MCP servers are available to handle specific tool or resource types.
 
 ## Component Interaction Patterns
 
@@ -53,7 +53,7 @@ sequenceDiagram
     participant Provider as Resource Provider
 
     MCP->>Router: ReadResource(file:///data/doc.txt)
-    Router->>Router: Resolve capability for "file://"
+    Router->>Router: Resolve MCP server for "file://"
     Router->>Provider: MCP ReadResource(uri)
     Provider->>Provider: Read File from Filesystem
     Provider-->>Router: MCP Response (contents)
@@ -71,7 +71,7 @@ sequenceDiagram
     participant Tool as Tool Service
 
     MCP->>Router: CallTool(http://api.example.com/data)
-    Router->>Router: Resolve capability for "http://"
+    Router->>Router: Resolve MCP server for "http://"
     Router->>Tool: MCP CallTool(uri, params)
     Tool->>Tool: Execute HTTP Request
     Tool-->>Router: MCP Response (result)
@@ -89,7 +89,7 @@ Service creation uses factories to:
 
 ### Strategy Pattern
 
-Different capability types use strategy pattern to:
+Different MCP server types use strategy pattern to:
 
 - Implement specific tool invocation logic
 - Handle different resource types and protocols
@@ -105,7 +105,7 @@ Different capability types use strategy pattern to:
 ### Isolation Guarantees
 
 - **Request Isolation**: Each MCP request is processed independently
-- **Service Isolation**: Capability services run in separate processes
+- **Service Isolation**: MCP servers run in separate processes
 - **Namespace Isolation**: Tools/resources in different namespaces don't interfere
 
 ## Related Documentation
@@ -113,4 +113,4 @@ Different capability types use strategy pattern to:
 - **[Persistence](internals-persistence.md)** - Persistence information
 - **[Architecture Overview](architecture.md)** - High-level system architecture and components
 - **[Configuration Guide](configurations.md)** - Router and service configuration reference
-- **[Contributing Guide](../CONTRIBUTING.md)** - How to extend Wanaku with new capabilities
+- **[Contributing Guide](../CONTRIBUTING.md)** - How to extend Wanaku with new MCP servers

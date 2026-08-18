@@ -12,9 +12,9 @@ The Wanaku MCP Router itself does not directly host tools or resources; instead,
 
 ![Diagram showing Wanaku's layered architecture with LLM client connecting to router backend, which communicates with tool services and resource providers](imgs/wanaku-architecture.jpg)
 
-Wanaku provides specialized services, referred to as "capabilities" that offer specific functionalities to the Wanaku MCP Router.
+Wanaku connects to downstream MCP servers that provide specific functionalities to the Wanaku MCP Router.
 
-These capabilities enable communication with various systems, such as Kafka services, message brokers, cloud services (AWS, Azure, Google, etc.),
+These downstream MCP servers enable communication with various systems, such as Kafka services, message brokers, cloud services (AWS, Azure, Google, etc.),
 databases and a wide range of enterprise systems, including Workday and Salesforce, without directly containing the tools or resources.
 
 Furthermore, Wanaku features an MCP-to-MCP bridge, which allows it to act as a centralized gateway or proxy for other MCP servers
@@ -36,7 +36,7 @@ and introduces how it works.
 Using Wanaku MCP Router involves two key actions:
 
 1. Forwarding other MCP servers via the MCP forwarder
-2. Adding new capabilities via downstream services
+2. Adding new downstream MCP servers
 
 Tools and resources are provided by MCP servers registered with the router. When you add an MCP server,
 its tools and resources become automatically available to agents using Wanaku.
@@ -47,7 +47,7 @@ Wanaku can act as a central gateway or proxy to other MCP servers that use HTTP 
 This feature allows for a centralized endpoint to aggregate tools and resources provided by other MCP servers, making them
 accessible as if they were local to the Wanaku instance.
 
-### Adding new capabilities via downstream services
+### Adding new downstream MCP servers
 
 This refers to extending the router's functionality by integrating with various external systems.
 
@@ -170,9 +170,9 @@ You can optionally customize the keycloak URL, user and password with the follow
 
 ### Importing the Wanaku Realm Configuration (via Keycloak UI)
 
-Alternatively, you may also import the configuration using Keycloak's UI, and then proceed to regenerate the capabilities' client secret.
+Alternatively, you may also import the configuration using Keycloak's UI, and then proceed to regenerate the service client secret.
 
-#### Regenerating the Capabilities' Client Secret
+#### Regenerating the Service Client Secret
 
 Finally, for security, you must regenerate the client secret for the `wanaku-service` client.
 
@@ -229,7 +229,7 @@ without Keycloak:
 docker compose -f deploy/docker-compose/docker-compose-noauth.yml up
 ```
 
-If you extend that compose file with capability services, set `WANAKU_HTTP_AUTH=none` on those services as well.
+If you extend that compose file with downstream MCP servers, set `WANAKU_HTTP_AUTH=none` on those services as well.
 
 > [!WARNING]
 > Running without authentication disables all access control. Do not use it in production environments where
@@ -332,7 +332,7 @@ java "-Djavax.net.ssl.trustStore=my-truststore.p12" "-Djavax.net.ssl.trustStoreP
 ## Installing and Running the Router
 
 There are three ways to run the router. They work similarly, with the distinction that some of them may come with more
-capabilities by default — continue reading the documentation below for details.
+services by default — continue reading the documentation below for details.
 
 > [!IMPORTANT]
 > For production deployments with authentication, the router needs to be configured for secure access and control of its
@@ -351,7 +351,7 @@ wanaku start local
 ```
 
 The local runner disables authentication by default, so **Keycloak is not required**. The router and all
-capability services will start without authentication.
+downstream MCP servers will start without authentication.
 
 If that is successful, open your browser at <http://localhost:8080>, and you should have access to the UI.
 
@@ -521,37 +521,37 @@ and define a password.
 > Wanaku does not yet support fine-grained access control. All authenticated users have admin access to
 > tools and resources. Expect this to change in future versions.
 
-## Installing and Running Capabilities
+## Installing and Running Downstream MCP Servers
 
-Capabilities are standalone services that connect to the Wanaku router to provide new functionalities.
+Downstream MCP servers are standalone services that connect to the Wanaku router to provide new functionalities.
 They can be downloaded from the [release page](https://github.com/wanaku-ai/wanaku/releases),
 deployed to OpenShift using the [operator](https://github.com/wanaku-ai/wanaku/tree/main/apps/wanaku-operator) and [containers](https://quay.io/organization/wanaku)
 or built from source.
 
-To run a capability, you need to configure it to connect to your Wanaku router instance and authenticate with it.
+To run a downstream MCP server, you need to configure it to connect to your Wanaku router instance and authenticate with it.
 This is done by setting a few essential properties.
 
-### Configuring Capabilities
+### Configuring Downstream MCP Servers
 
-You can configure capabilities using environment variables, system properties on the command line, or by placing an
-`application.properties` file in a `config/` directory next to the capability JAR (see the
+You can configure downstream MCP servers using environment variables, system properties on the command line, or by placing an
+`application.properties` file in a `config/` directory next to the service JAR (see the
 [Configuration Basics](configurations.md#configuration-basics) section for details on how Quarkus loads configuration).
 
 Here are the key properties you need to set:
 
-1. Router URI: Each capability needs to know where the Wanaku router is located to register itself.
+1. Router URI: Each downstream MCP server needs to know where the Wanaku router is located to register itself.
 
     ```properties
     wanaku.service.registration.uri=http://localhost:8080
     ```
 
-2. OIDC Client Credentials: Capabilities authenticate with the router using OIDC. You must provide the client secret that you previously regenerated in Keycloak.
+2. OIDC Client Credentials: Downstream MCP servers authenticate with the router using OIDC. You must provide the client secret that you previously regenerated in Keycloak.
 
     ```properties
     quarkus.oidc-client.credentials.secret=your-client-secret-from-keycloak
     ```
 
-3. Announce Address (Optional): If the capability is running in an environment where its address is not directly accessible by the router (e.g., behind a NAT or in a container), you need to specify the address that the router should use to communicate back to it.
+3. Announce Address (Optional): If the downstream MCP server is running in an environment where its address is not directly accessible by the router (e.g., behind a NAT or in a container), you need to specify the address that the router should use to communicate back to it.
 
     ```properties
     wanaku.service.registration.announce-address=your-public-address
@@ -560,25 +560,25 @@ Here are the key properties you need to set:
 > [!TIP]
 > You can check the full set of [configuration](configurations.md) available.
 
-### Running a Capability
+### Running a Downstream MCP Server
 
-Once configured, you can run the capability from the command line. The following example shows how to run a capability while overriding the configuration properties:
+Once configured, you can run the service from the command line. The following example shows how to run a downstream MCP server while overriding the configuration properties:
 
 ```shell
 java -Dwanaku.service.registration.uri=http://<wanaku-router-host>:8080 \
      -Dquarkus.oidc-client.credentials.secret=<your-client-secret> \
      -Dwanaku.service.registration.announce-address=<your-public-address> \
-     -jar <capability-jar-file>.jar
+     -jar <service-jar-file>.jar
 ```
 
 > [!NOTE]
-> Each capability may have its own specific set of configurations. For example, the [Camel Integration Capability for Wanaku](https://wanaku.ai/docs/camel-integration-capability/)
+> Each downstream MCP server may have its own specific set of configurations. For example, the [Camel Integration Capability for Wanaku](https://wanaku.ai/docs/camel-integration-capability/)
 > requires additional properties to connect to different systems.
-> Always consult the specific documentation for the capability you are using for more details.
+> Always consult the specific documentation for the service you are using for more details.
 
-### Running Archetype-Generated Capabilities Locally (No Authentication)
+### Running Archetype-Generated Services Locally (No Authentication)
 
-Capabilities scaffolded with `wanaku services create tool` or `wanaku services create resource` include OIDC authentication by default. When running against a local router in `noauth` mode, the capability fails at startup because it tries to contact a non-existent Keycloak server. To run locally without authentication, reaugment the capability to disable OIDC, then start it:
+Services scaffolded with `wanaku services create tool` or `wanaku services create resource` include OIDC authentication by default. When running against a local router in `noauth` mode, the service fails at startup because it tries to contact a non-existent Keycloak server. To run locally without authentication, reaugment the service to disable OIDC, then start it:
 
 ```shell
 java -Dquarkus.launch.rebuild=true -Dquarkus.oidc-client.enabled=false -jar target/quarkus-app/quarkus-run.jar

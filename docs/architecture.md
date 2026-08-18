@@ -348,7 +348,7 @@ Wanaku uses Infinispan embedded data grid for persistence:
 
 ### Extensibility Model
 
-New capabilities can be added through multiple approaches:
+New MCP servers can be added through multiple approaches:
 
 #### 1. Tool Services
 
@@ -509,7 +509,7 @@ Typical request latency breakdown:
 | MCP Protocol Overhead | ~5ms | SSE/HTTP serialization |
 | Router Processing | ~10ms | Routing, auth validation |
 | Service Communication | ~2ms | Internal network |
-| Capability Processing | Variable | Depends on operation |
+| MCP Server Processing | Variable | Depends on operation |
 | **Total (excluding operation)** | **~17ms** | Overhead without actual work |
 
 ### Scaling Strategies
