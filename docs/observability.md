@@ -6,7 +6,7 @@ This document describes the observability architecture in Wanaku, covering distr
 
 Wanaku integrates OpenTelemetry (OTel) for distributed tracing and Micrometer for metrics, providing end-to-end observability across the entire request chain:
 
-- **MCP Client** → **Router Backend** → **Capability Service** → **Downstream Services**
+- **MCP Client** → **Router Backend** → **Downstream MCP Server** → **Downstream Services**
 
 Every request flowing through the system carries:
 
@@ -19,7 +19,7 @@ Every request flowing through the system carries:
 
 ```text
 ┌──────────┐     HTTP/MCP      ┌────────────────┐                 ┌──────────────────┐
-│ MCP Client │ ──────────────→ │ Router Backend  │ ─────────────→ │ Capability Service│
+│ MCP Client │ ──────────────→ │ Router Backend  │ ─────────────→ │ Downstream MCP Srv│
 │             │  traceparent    │                 │  traceparent   │                   │
 │             │  x-wanaku-      │  MDC: requestId │  x-wanaku-     │  MDC: requestId   │
 │             │  request-id     │  MDC: traceId   │  request-id    │  Span: requestId  │
@@ -64,17 +64,17 @@ quarkus.otel.propagators=tracecontext,baggage
 
 ### Capability Services
 
-Capability services use similar configuration:
+Downstream MCP servers use similar configuration:
 
 ```properties
 quarkus.otel.exporter.otlp.endpoint=http://localhost:4317
 quarkus.otel.exporter.otlp.traces.protocol=grpc
-quarkus.otel.resource.attributes=service.name=${wanaku.service.name:wanaku-capability},service.version=${quarkus.application.version}
+quarkus.otel.resource.attributes=service.name=${wanaku.service.name:wanaku-mcp-server},service.version=${quarkus.application.version}
 quarkus.otel.traces.sampler=parentbased_always_on
 quarkus.otel.propagators=tracecontext,baggage
 ```
 
-Each capability service must set `wanaku.service.name` to identify itself (e.g., `wanaku-file-resource`, `wanaku-http-tool`).
+Each downstream MCP server must set `wanaku.service.name` to identify itself (e.g., `wanaku-file-resource`, `wanaku-http-tool`).
 
 ### Log Format
 
