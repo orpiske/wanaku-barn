@@ -7,6 +7,7 @@ public class WanakuRouterStatus {
     private String host;
     private String sseEndpoint;
     private String streamableEndpoint;
+    private String inferenceEndpoint;
     private List<Condition> conditions;
 
     public String getHost() {
@@ -31,6 +32,14 @@ public class WanakuRouterStatus {
 
     public void setStreamableEndpoint(String streamableEndpoint) {
         this.streamableEndpoint = streamableEndpoint;
+    }
+
+    public String getInferenceEndpoint() {
+        return inferenceEndpoint;
+    }
+
+    public void setInferenceEndpoint(String inferenceEndpoint) {
+        this.inferenceEndpoint = inferenceEndpoint;
     }
 
     public List<Condition> getConditions() {

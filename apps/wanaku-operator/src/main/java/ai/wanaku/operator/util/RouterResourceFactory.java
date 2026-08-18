@@ -401,6 +401,17 @@ public final class RouterResourceFactory {
                 .withValue(classicUrl)
                 .build());
 
+        final WanakuTypes.AuthSpec authSpec = resource.getSpec().getAuth();
+        if (authSpec != null && authSpec.getAuthServer() != null) {
+            String realm = OperatorUtil.resolveAuthRealm(resource);
+            String authServer = authSpec.getAuthServer().replaceAll("/+$", "");
+            String authIssuer = authServer + "/realms/" + realm;
+            envVars.add(new EnvVarBuilder()
+                    .withName("WANAKU_AUTH_ISSUER")
+                    .withValue(authIssuer)
+                    .build());
+        }
+
         final WanakuRouterSpec.PraxisSpec praxisSpec = resource.getSpec().getPraxis();
         if (praxisSpec != null) {
             if (praxisSpec.getImage() != null && !praxisSpec.getImage().isEmpty()) {
@@ -454,6 +465,126 @@ public final class RouterResourceFactory {
 
         service.addOwnerReference(resource);
         return service;
+    }
+
+    public static Route makePraxisExternalRoute(WanakuRouter resource) {
+        Route route = ReconcilerUtilsInternal.loadYaml(
+                Route.class, WanakuRouterReconciler.class, ROUTER_BACKEND_EXTERNAL_SERVICE_FILE);
+
+        String deploymentName = resource.getMetadata().getName();
+        String ns = resource.getMetadata().getNamespace();
+
+        route.getMetadata().setName(deploymentName);
+        route.getMetadata().setNamespace(ns);
+        route.getMetadata().getLabels().put("app", praxisName(deploymentName));
+        route.getMetadata().getLabels().put("component", "wanaku-praxis");
+        route.getSpec().getTo().setName("praxis-" + deploymentName);
+        route.getSpec().getPort().setTargetPort(new io.fabric8.kubernetes.api.model.IntOrString("8081-tcp"));
+
+        applyRouteTls(route, resource.getSpec().getExposure());
+        route.addOwnerReference(resource);
+
+        return route;
+    }
+
+    public static Ingress makePraxisIngress(WanakuRouter resource, String host) {
+        Ingress ingress =
+                ReconcilerUtilsInternal.loadYaml(Ingress.class, WanakuRouterReconciler.class, ROUTER_INGRESS_FILE);
+
+        String deploymentName = resource.getMetadata().getName();
+        String ns = resource.getMetadata().getNamespace();
+
+        ingress.getMetadata().setName(deploymentName);
+        ingress.getMetadata().setNamespace(ns);
+        ingress.getMetadata().getLabels().put("app", praxisName(deploymentName));
+        ingress.getMetadata().getLabels().put("component", "wanaku-praxis");
+
+        ingress.getSpec().getRules().getFirst().setHost(host);
+        ingress.getSpec()
+                .getRules()
+                .getFirst()
+                .getHttp()
+                .getPaths()
+                .getFirst()
+                .getBackend()
+                .getService()
+                .setName("praxis-" + deploymentName);
+        ingress.getSpec()
+                .getRules()
+                .getFirst()
+                .getHttp()
+                .getPaths()
+                .getFirst()
+                .getBackend()
+                .getService()
+                .getPort()
+                .setNumber(8081);
+
+        applyIngressExtras(ingress, resource.getSpec().getExposure(), host);
+        ingress.addOwnerReference(resource);
+
+        return ingress;
+    }
+
+    public static Route makePraxisInferenceExternalRoute(WanakuRouter resource) {
+        Route route = ReconcilerUtilsInternal.loadYaml(
+                Route.class, WanakuRouterReconciler.class, ROUTER_BACKEND_EXTERNAL_SERVICE_FILE);
+
+        String deploymentName = resource.getMetadata().getName();
+        String ns = resource.getMetadata().getNamespace();
+
+        route.getMetadata().setName(deploymentName + "-inference");
+        route.getMetadata().setNamespace(ns);
+        route.getMetadata().getLabels().put("app", praxisName(deploymentName));
+        route.getMetadata().getLabels().put("component", "wanaku-praxis-inference");
+        route.getSpec().getTo().setName("praxis-" + deploymentName);
+        route.getSpec().getPort().setTargetPort(new io.fabric8.kubernetes.api.model.IntOrString("8083-tcp"));
+
+        applyRouteTls(route, resource.getSpec().getExposure());
+        route.addOwnerReference(resource);
+
+        return route;
+    }
+
+    public static Ingress makePraxisInferenceIngress(WanakuRouter resource, String host) {
+        Ingress ingress =
+                ReconcilerUtilsInternal.loadYaml(Ingress.class, WanakuRouterReconciler.class, ROUTER_INGRESS_FILE);
+
+        String deploymentName = resource.getMetadata().getName();
+        String ns = resource.getMetadata().getNamespace();
+
+        String inferenceHost = "inference-" + host;
+
+        ingress.getMetadata().setName(deploymentName + "-inference");
+        ingress.getMetadata().setNamespace(ns);
+        ingress.getMetadata().getLabels().put("app", praxisName(deploymentName));
+        ingress.getMetadata().getLabels().put("component", "wanaku-praxis-inference");
+
+        ingress.getSpec().getRules().getFirst().setHost(inferenceHost);
+        ingress.getSpec()
+                .getRules()
+                .getFirst()
+                .getHttp()
+                .getPaths()
+                .getFirst()
+                .getBackend()
+                .getService()
+                .setName("praxis-" + deploymentName);
+        ingress.getSpec()
+                .getRules()
+                .getFirst()
+                .getHttp()
+                .getPaths()
+                .getFirst()
+                .getBackend()
+                .getService()
+                .getPort()
+                .setNumber(8083);
+
+        applyIngressExtras(ingress, resource.getSpec().getExposure(), inferenceHost);
+        ingress.addOwnerReference(resource);
+
+        return ingress;
     }
 
     private static String routerName(String deploymentName) {

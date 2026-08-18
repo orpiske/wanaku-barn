@@ -157,7 +157,20 @@ public class WanakuRouterReconciler implements Reconciler<WanakuRouter> {
                     .createOr(Replaceable::update);
         }
 
-        String host = reconcileExternalAccess(resource, namespace);
+        WanakuRouterSpec.PraxisSpec praxisSpec = resource.getSpec().getPraxis();
+        boolean praxisEnabled = praxisSpec == null || praxisSpec.isEnabled();
+
+        String host;
+        if (praxisEnabled) {
+            deployPraxis(resource, context, namespace);
+            host = reconcilePraxisExternalAccess(resource, namespace);
+            String inferenceHost = reconcilePraxisInferenceAccess(resource, namespace);
+            if (inferenceHost != null) {
+                wanakuStatus.setInferenceEndpoint("https://" + inferenceHost);
+            }
+        } else {
+            host = reconcileExternalAccess(resource, namespace);
+        }
 
         wanakuStatus.setHost("https://" + host);
         wanakuStatus.setSseEndpoint("https://%s/mcp/sse".formatted(host));
@@ -181,11 +194,6 @@ public class WanakuRouterReconciler implements Reconciler<WanakuRouter> {
                     .inNamespace(namespace)
                     .resource(desiredDeployment)
                     .createOr(Replaceable::update);
-        }
-
-        WanakuRouterSpec.PraxisSpec praxisSpec = resource.getSpec().getPraxis();
-        if (praxisSpec == null || praxisSpec.isEnabled()) {
-            deployPraxis(resource, context, namespace);
         }
     }
 
@@ -240,6 +248,167 @@ public class WanakuRouterReconciler implements Reconciler<WanakuRouter> {
                     .resource(desiredDeployment)
                     .createOr(Replaceable::update);
         }
+    }
+
+    private String reconcilePraxisExternalAccess(WanakuRouter resource, String namespace) {
+        WanakuTypes.ExposureSpec exposureSpec = resource.getSpec().getExposure();
+        if (exposureSpec == null
+                || exposureSpec.getType() == null
+                || exposureSpec.getType() == WanakuTypes.ExposureType.NONE) {
+            return "praxis-" + resource.getMetadata().getName();
+        }
+        if (exposureSpec.getType() == WanakuTypes.ExposureType.ROUTE) {
+            OpenShiftClient openShiftClient = kubernetesClient.adapt(OpenShiftClient.class);
+            return createPraxisRouteAndGetHost(resource, namespace, openShiftClient);
+        }
+        return createPraxisIngressAndGetHost(resource, namespace);
+    }
+
+    private String createPraxisRouteAndGetHost(
+            WanakuRouter resource, String namespace, OpenShiftClient openShiftClient) {
+        final Route desiredRoute = RouterResourceFactory.makePraxisExternalRoute(resource);
+        Route existingRoute;
+        try {
+            existingRoute = openShiftClient
+                    .routes()
+                    .inNamespace(namespace)
+                    .withName(desiredRoute.getMetadata().getName())
+                    .get();
+        } catch (Exception e) {
+            LOG.warnf(e, "There is no existing Praxis route");
+            existingRoute = null;
+        }
+        if (!match(desiredRoute, existingRoute)) {
+            LOG.infof(
+                    "Creating or updating Praxis Route %s in %s",
+                    desiredRoute.getMetadata().getName(), namespace);
+            final Route created = openShiftClient
+                    .routes()
+                    .inNamespace(namespace)
+                    .resource(desiredRoute)
+                    .createOr(Replaceable::update);
+            final List<RouteIngress> routeIngresses = created.getStatus().getIngress();
+            if (routeIngresses != null && !routeIngresses.isEmpty()) {
+                final RouteIngress ingress = routeIngresses.getFirst();
+                if (ingress != null) {
+                    return ingress.getHost();
+                }
+            }
+            final Route refreshedRoute = openShiftClient
+                    .routes()
+                    .inNamespace(namespace)
+                    .withName(desiredRoute.getMetadata().getName())
+                    .get();
+            return refreshedRoute.getStatus().getIngress().getFirst().getHost();
+        } else {
+            return existingRoute.getStatus().getIngress().getFirst().getHost();
+        }
+    }
+
+    private String createPraxisIngressAndGetHost(WanakuRouter resource, String namespace) {
+        String host = resource.getSpec().getExposure().getHost();
+        final Ingress desiredIngress = RouterResourceFactory.makePraxisIngress(resource, host);
+        Ingress existingIngress = kubernetesClient
+                .network()
+                .v1()
+                .ingresses()
+                .inNamespace(namespace)
+                .withName(desiredIngress.getMetadata().getName())
+                .get();
+        if (!match(desiredIngress, existingIngress)) {
+            LOG.infof(
+                    "Creating or updating Praxis Ingress %s in %s",
+                    desiredIngress.getMetadata().getName(), namespace);
+            kubernetesClient
+                    .network()
+                    .v1()
+                    .ingresses()
+                    .inNamespace(namespace)
+                    .resource(desiredIngress)
+                    .createOr(Replaceable::update);
+        }
+        return host;
+    }
+
+    private String reconcilePraxisInferenceAccess(WanakuRouter resource, String namespace) {
+        WanakuTypes.ExposureSpec exposureSpec = resource.getSpec().getExposure();
+        if (exposureSpec == null
+                || exposureSpec.getType() == null
+                || exposureSpec.getType() == WanakuTypes.ExposureType.NONE) {
+            return null;
+        }
+        if (exposureSpec.getType() == WanakuTypes.ExposureType.ROUTE) {
+            OpenShiftClient openShiftClient = kubernetesClient.adapt(OpenShiftClient.class);
+            return createInferenceRoute(resource, namespace, openShiftClient);
+        } else {
+            return createInferenceIngress(resource, namespace);
+        }
+    }
+
+    private String createInferenceRoute(WanakuRouter resource, String namespace, OpenShiftClient openShiftClient) {
+        final Route desiredRoute = RouterResourceFactory.makePraxisInferenceExternalRoute(resource);
+        Route existingRoute;
+        try {
+            existingRoute = openShiftClient
+                    .routes()
+                    .inNamespace(namespace)
+                    .withName(desiredRoute.getMetadata().getName())
+                    .get();
+        } catch (Exception e) {
+            LOG.warnf(e, "There is no existing inference route");
+            existingRoute = null;
+        }
+        if (!match(desiredRoute, existingRoute)) {
+            LOG.infof(
+                    "Creating or updating inference Route %s in %s",
+                    desiredRoute.getMetadata().getName(), namespace);
+            final Route created = openShiftClient
+                    .routes()
+                    .inNamespace(namespace)
+                    .resource(desiredRoute)
+                    .createOr(Replaceable::update);
+            final List<RouteIngress> routeIngresses = created.getStatus().getIngress();
+            if (routeIngresses != null && !routeIngresses.isEmpty()) {
+                final RouteIngress ingress = routeIngresses.getFirst();
+                if (ingress != null) {
+                    return ingress.getHost();
+                }
+            }
+            final Route refreshedRoute = openShiftClient
+                    .routes()
+                    .inNamespace(namespace)
+                    .withName(desiredRoute.getMetadata().getName())
+                    .get();
+            return refreshedRoute.getStatus().getIngress().getFirst().getHost();
+        } else {
+            return existingRoute.getStatus().getIngress().getFirst().getHost();
+        }
+    }
+
+    private String createInferenceIngress(WanakuRouter resource, String namespace) {
+        String host = resource.getSpec().getExposure().getHost();
+        String inferenceHost = "inference-" + host;
+        final Ingress desiredIngress = RouterResourceFactory.makePraxisInferenceIngress(resource, host);
+        Ingress existingIngress = kubernetesClient
+                .network()
+                .v1()
+                .ingresses()
+                .inNamespace(namespace)
+                .withName(desiredIngress.getMetadata().getName())
+                .get();
+        if (!match(desiredIngress, existingIngress)) {
+            LOG.infof(
+                    "Creating or updating inference Ingress %s in %s",
+                    desiredIngress.getMetadata().getName(), namespace);
+            kubernetesClient
+                    .network()
+                    .v1()
+                    .ingresses()
+                    .inNamespace(namespace)
+                    .resource(desiredIngress)
+                    .createOr(Replaceable::update);
+        }
+        return inferenceHost;
     }
 
     private String reconcileExternalAccess(WanakuRouter resource, String namespace) {

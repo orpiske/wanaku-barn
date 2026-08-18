@@ -70,6 +70,24 @@ spec:
                 type: "object"
               imagePullPolicy:
                 type: "string"
+              praxis:
+                properties:
+                  enabled:
+                    type: "boolean"
+                  env:
+                    items:
+                      properties:
+                        name:
+                          type: "string"
+                        value:
+                          type: "string"
+                      type: "object"
+                    type: "array"
+                  image:
+                    type: "string"
+                  imagePullPolicy:
+                    type: "string"
+                type: "object"
               router:
                 properties:
                   env:
@@ -107,6 +125,8 @@ spec:
                   type: "object"
                 type: "array"
               host:
+                type: "string"
+              inferenceEndpoint:
                 type: "string"
               sseEndpoint:
                 type: "string"
