@@ -8,7 +8,6 @@ import io.quarkus.runtime.QuarkusApplication;
 import ai.wanaku.cli.main.commands.BaseCommand;
 import ai.wanaku.cli.main.commands.admin.Admin;
 import ai.wanaku.cli.main.commands.auth.Auth;
-import ai.wanaku.cli.main.commands.capabilities.Capabilities;
 import ai.wanaku.cli.main.commands.completion.Completion;
 import ai.wanaku.cli.main.commands.configure.Configure;
 import ai.wanaku.cli.main.commands.datastores.DataStores;
@@ -21,7 +20,6 @@ import ai.wanaku.cli.main.commands.resources.Resources;
 import ai.wanaku.cli.main.commands.service.Service;
 import ai.wanaku.cli.main.commands.start.Start;
 import ai.wanaku.cli.main.commands.tools.Tools;
-import ai.wanaku.cli.main.commands.toolset.ToolSet;
 import ai.wanaku.cli.main.support.WanakuExceptionHandler;
 import ai.wanaku.core.util.VersionHelper;
 import picocli.CommandLine;
@@ -36,9 +34,7 @@ import picocli.CommandLine;
             Resources.class,
             Prompts.class,
             Start.class,
-            Capabilities.class,
             Tools.class,
-            ToolSet.class,
             Namespaces.class,
             Mcp.class,
             Man.class,

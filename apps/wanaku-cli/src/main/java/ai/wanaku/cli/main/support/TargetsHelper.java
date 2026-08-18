@@ -1,18 +1,19 @@
 package ai.wanaku.cli.main.support;
 
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import ai.wanaku.capabilities.sdk.api.types.discovery.ActivityRecord;
-
-import static ai.wanaku.cli.main.support.CapabilitiesHelper.formatLastSeenTimestamp;
 
 public class TargetsHelper {
 
-    /**
-     * Private constructor to prevent instantiation of this utility class.
-     */
+    private static final DateTimeFormatter VERBOSE_TIMESTAMP_FORMATTER =
+            DateTimeFormatter.ofPattern("EEE, MMM dd, yyyy 'at' HH:mm:ss");
+
     private TargetsHelper() {}
 
     /**
@@ -65,8 +66,22 @@ public class TargetsHelper {
         targetMap.put("id", activityRecord.getId());
         targetMap.put("service", serviceName);
         targetMap.put("status", activityRecord.getHealthStatus().asValue());
-        targetMap.put("last_seen", formatLastSeenTimestamp(activityRecord)); // Note: underscore for consistency
+        targetMap.put("last_seen", formatLastSeenTimestamp(activityRecord));
 
         return targetMap;
+    }
+
+    /**
+     * Formats the last seen timestamp from an activity record.
+     *
+     * @param activityRecord the activity record containing the timestamp (may be null)
+     * @return formatted timestamp string or empty string if record is null or has no timestamp
+     */
+    public static String formatLastSeenTimestamp(ActivityRecord activityRecord) {
+        return Optional.ofNullable(activityRecord)
+                .map(ActivityRecord::getLastSeen)
+                .map(instant -> instant.atZone(ZoneId.systemDefault()))
+                .map(zonedDateTime -> zonedDateTime.format(VERBOSE_TIMESTAMP_FORMATTER))
+                .orElse("");
     }
 }

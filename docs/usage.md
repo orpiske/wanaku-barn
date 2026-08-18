@@ -1169,21 +1169,7 @@ subcomponent of Wanaku that leverages Apache Camel to exchange data with any sys
 > Downstream MCP servers were, at some point, also called "capabilities", "downstream services", or "targets". You may still see
 > that terminology used in some places, especially in older documentation.
 
-You should see a list of registered downstream MCP servers in the UI, in the Capabilities page. Something similar to this:
-
-![Screenshot of Wanaku web UI showing a list of registered downstream MCP servers with their status, type, and health information](imgs/capabilities-list.png)
-
-On the CLI, running `wanaku capabilities list` lists the downstream MCP servers registered with the router:
-
-```shell
-service serviceType  host      port status lastSeen
-exec    tool-invoker 127.0.0.1 9009 active Sat, Oct 18, 2025 at 18:47:22
-http    tool-invoker 127.0.0.1 9000 active Sat, Oct 18, 2025 at 18:47:23
-tavily  tool-invoker 127.0.0.1 9006 active Sat, Oct 18, 2025 at 18:47:23
-```
-
-The registered downstream MCP servers determine what type of tools you may add to the router. As such, in the output from the CLI above, it means that
-this server can add tools of the following types: `exec`, `tavily`, and `http`.
+The registered downstream MCP servers determine what type of tools you may add to the router.
 
 Wanaku classifies downstream MCP servers into the following types:
 
@@ -1688,7 +1674,7 @@ See [Service Catalogs Guide](service-catalogs.md) for details on structure, pack
 > [!TIP]
 > If you need parameterized, reusable service catalogs, see [Service Templates](service-templates.md) for details on creating and instantiating templates.
 
-## Managing Capabilities
+## Configuring Downstream MCP Servers
 
 Configurations in Wanaku have two distinct scopes:
 
@@ -1716,94 +1702,6 @@ These configurations are handled when adding a new tool to Wanaku MCP Router.
 
 > [!NOTE]
 > Check the "Configuring Downstream MCP Servers" section for additional details about this.
-
-### Listing Capabilities
-
-The `wanaku capabilities list` command provides a comprehensive view of all downstream MCP servers registered with the Wanaku Router.
-It discovers and displays both tool services and resource providers, along with their current operational status and
-activity information.
-
-The command combines data from multiple API endpoints to present a unified view of the system's capabilities in an
-easy-to-read table format.
-
-The command displays the results in a table with the following columns:
-
-| Column | Description |
-|--------|-------------|
-| **service** | Name of the service |
-| **serviceType** | Type/category of the service |
-| **host** | Hostname or IP address where the service runs |
-| **port** | Port number the service listens on |
-| **status** | Current operational status (`active`, `inactive`, or `-`) |
-| **lastSeen** | Formatted timestamp of last activity |
-
-For instance, running the command, should present you with an output similar to this:
-
-#### Sample Output
-
-![Terminal output showing the result of running 'wanaku capabilities list' command displaying registered capability services](imgs/cli-capabilities-list.png)
-
-### Displaying Service Details
-
-The `wanaku capabilities show` command lets you view detailed information for a specific downstream MCP server registered with the
-Wanaku MCP Router.
-
-This includes its configuration parameters, current status, and connection information.
-
-```bash
-wanaku capabilities show <service> [--host <url>]
-```
-
-- `<service>`: The service name to show details for (e.g., http, sqs, file)
-- `--host <url>`: The API host URL (default: <http://localhost:8080>)
-
-When you execute the command, Wanaku displays comprehensive details about the chosen service type.
-If multiple instances of the same service exist, an interactive menu will appear, allowing you to select the specific instance
-you wish to view.
-
-For example, to show the details for the HTTP service:
-
-```shell
-wanaku capabilities show http
-```
-
-Or, show details for SQS service linked with to a specific Wanaku MCP router running at `http://api.example.com:8080`:
-
-```shell
-wanaku capabilities show sqs --host http://api.example.com:8080
-```
-
-The command displays two main sections:
-
-1. **Service Summary**: Basic service information in table format:
-
-- Service name and type
-- Host and port
-- Current status
-- Last seen timestamp
-
-1. **Configurations**: Detailed configuration parameters:
-
-- Parameter names
-- Parameter descriptions
-
-![Terminal output showing detailed information for a specific capability service including status, URI, and available operations](imgs/capabilities-show.png)
-
-#### Interactive Selection
-
-When multiple instances of the same service are found, you'll see:
-
-- A warning message indicating multiple matches
-- An interactive selection prompt with service details
-- Choose your desired instance using arrow keys and Enter
-
-![Terminal output showing an interactive prompt for selecting a capability service from a numbered list](imgs/capabilities-show-choose.png)
-
-> [!NOTE]
-> The Wanaku CLI provides clear exit codes to indicate the outcome of a command:
->
-> - `0`: The command executed successfully.
-> - `1`: An error occurred (e.g., no capabilities were found, or there were issues connecting to the API).
 
 ## Accessing Other MCP servers (MCP Forwards)
 
@@ -1968,63 +1866,7 @@ The default namespace acts as a general container for tools that don't require s
 
 You can identify the default namespace in the wanaku namespaces list output by its `<default>` name.
 
-### Managing Labels on Namespaces
-
-Labels provide a flexible way to organize and filter namespaces. You can add metadata to namespaces in the form of key-value pairs, making it easier to manage and query them.
-
-#### Adding Labels to Namespaces
-
-You can add labels to an existing namespace using the `wanaku namespaces label add` command.
-
-To specify which namespace to add labels to, you need the namespace ID from the `wanaku namespaces list` output (the first column):
-
-```shell
-# Add a single label to a namespace
-wanaku namespaces label add --id 28560e66-d94c-44a2-b032-779b5542132a --label env=production
-
-# Add multiple labels at once
-wanaku namespaces label add --id 28560e66-d94c-44a2-b032-779b5542132a -l env=production -l tier=backend -l version=2.0
-```
-
-If a label key already exists, its value will be updated to the new value.
-
-#### Adding Labels to Multiple Namespaces
-
-You can add labels to multiple namespaces at once using label expressions:
-
-```shell
-# Add a label to all namespaces matching a label expression
-wanaku namespaces label add --label-expression 'category=internal' --label migrated=true
-
-# Add multiple labels to namespaces matching complex expressions
-wanaku namespaces label add -e 'env=staging & tier=backend' -l reviewed=true -l compliant=yes
-```
-
-#### Removing Labels from Namespaces
-
-To remove labels from a namespace, use the `wanaku namespaces label remove` command:
-
-```shell
-# Remove a single label from a namespace
-wanaku namespaces label remove --id 28560e66-d94c-44a2-b032-779b5542132a --label env
-
-# Remove multiple labels at once
-wanaku namespaces label remove --id 28560e66-d94c-44a2-b032-779b5542132a -l env -l tier -l version
-```
-
-#### Removing Labels from Multiple Namespaces
-
-Similar to adding labels, you can remove labels from multiple namespaces using label expressions:
-
-```shell
-# Remove labels from all namespaces matching an expression
-wanaku namespaces label remove --label-expression 'category=temp' --label temp
-
-# Remove multiple labels from matching namespaces
-wanaku namespaces label remove -e 'migrated=true' -l temp -l draft
-```
-
-#### Listing Namespaces with Label Filters
+### Filtering Namespaces by Labels
 
 You can filter namespaces by their labels when listing them:
 
@@ -2056,8 +1898,8 @@ wanaku completion generate --output ~/.wanaku_completion
 
 The generated script includes completion support for:
 
-- All parent commands (namespaces, tools, resources, forwards, capabilities, etc.)
-- All subcommands (namespaces label add, tools list, etc.)
+- All parent commands (namespaces, tools, resources, forwards, etc.)
+- All subcommands (namespaces list, tools list, etc.)
 - All command options (--help, --verbose, --plain, command-specific options)
 - Automatic detection of bash vs zsh shell
 
@@ -2184,11 +2026,11 @@ Once installed, you can use tab-completion with the Wanaku CLI:
 ```shell
 # Tab-complete commands
 wanaku <TAB>
-# Shows: capabilities, completion, forwards, man, namespaces, resources, start, tools, toolset
+# Shows: admin, auth, completion, configure, datastores, forwards, man, mcp, namespaces, prompts, resources, service, start, tools
 
 # Tab-complete subcommands
 wanaku namespaces <TAB>
-# Shows: label, list
+# Shows: cleanup, create, delete, list, show
 
 # Tab-complete options
 wanaku tools list --<TAB>
@@ -2432,7 +2274,7 @@ Then, launch it using:
 java -Dwanaku.service.registration.uri=http://localhost:8080 -Dquarkus.http.port=9901 ... -jar target/quarkus-app/quarkus-run.jar
 ```
 
-You can check if the service was registered correctly using `wanaku capabilities list`.
+You can check if the service was registered correctly by viewing the downstream MCP servers in the admin UI.
 
 > [!IMPORTANT]
 > Remember to set the parameters in the `application.properties` file and also adjust the authentication settings.
@@ -2469,7 +2311,7 @@ Then, launch it using:
 java -Dwanaku.service.registration.uri=http://localhost:8080 -Dquarkus.http.port=9900 ... -jar target/quarkus-app/quarkus-run.jar
 ```
 
-You can check if the service was registered correctly using `wanaku capabilities list`.
+You can check if the service was registered correctly by viewing the downstream MCP servers in the admin UI.
 
 > [!IMPORTANT]
 > Remember to set the parameters in the `application.properties` file and also adjust the authentication settings.
@@ -2757,7 +2599,7 @@ This section provides solutions to common issues you may encounter while using W
 
 **Symptoms:**
 
-- Services start successfully but don't show up in `wanaku capabilities list`
+- Services start successfully but don't show up in the admin UI
 - Tools or resources from a service are not available
 
 **Solutions:**
@@ -2794,7 +2636,7 @@ This section provides solutions to common issues you may encounter while using W
 
 **Symptoms:**
 
-- Service appears in `wanaku capabilities list` but marked as offline
+- Service appears in the admin UI but marked as offline
 - Intermittent availability
 
 **Solutions:**
@@ -2874,11 +2716,7 @@ This section provides solutions to common issues you may encounter while using W
 
 3. Refresh the MCP client connection
 
-4. Verify the downstream MCP server providing the tool is online:
-
-   ```shell
-   wanaku capabilities list
-   ```
+4. Verify the downstream MCP server providing the tool is online by checking the admin UI
 
 #### Tool invocation fails
 

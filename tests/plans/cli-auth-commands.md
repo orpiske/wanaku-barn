@@ -1426,19 +1426,19 @@ fi
 echo "PASS: prompts list with --token succeeded"
 ```
 
-### Test 18.5: capabilities list with --token succeeds
+### Test 18.5: tools list with --token succeeds
 
 ```bash
-OUTPUT=$(wanaku capabilities list --host "${WANAKU_ROUTER_URL}" --token "${TOKEN}" --plain 2>&1)
+OUTPUT=$(wanaku tools list --host "${WANAKU_ROUTER_URL}" --token "${TOKEN}" --plain 2>&1)
 EXIT_CODE=$?
 
 if [ "${EXIT_CODE}" -ne 0 ]; then
-  echo "FAIL: capabilities list with --token failed (exit code ${EXIT_CODE})"
+  echo "FAIL: tools list with --token failed (exit code ${EXIT_CODE})"
   echo "${OUTPUT}"
   exit 1
 fi
 
-echo "PASS: capabilities list with --token succeeded"
+echo "PASS: tools list with --token succeeded"
 ```
 
 ### Test 18.6: --no-auth skips authentication
