@@ -486,7 +486,7 @@ apps/wanaku-barn-backend/src/main/java/ai/wanaku/backend/core/persistence/
 │   ├── codeexecution/
 │   │   └── InfinispanCodeTaskRepository.java
 │   ├── discovery/
-│   │   └── InfinispanCapabilitiesRepository.java
+│   │   └── InfinispanCapabilitiesRepository.java  # Class name preserved for compatibility
 │   ├── providers/
 │   │   └── InfinispanConfigurationProvider.java
 │   └── protostream/

@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Wanaku Barn backend provides persistence, service catalog management, capability registration, and administration APIs for the Wanaku ecosystem.
+The Wanaku Barn backend provides persistence, service catalog management, MCP server registration, and administration APIs for the Wanaku ecosystem.
 
 > **Note:** The primary MCP routing engine is now [Wanaku Praxis](https://github.com/wanaku-ai/wanaku) (Rust). This backend serves as the "Classic Wanaku" component, handling persistence and management operations that Praxis proxies to in hybrid deployments.
 
@@ -22,11 +22,11 @@ The backend is responsible for:
 
 - **MCP Protocol Support**: SSE and Streamable HTTP transports
 - **Multi-Namespace**: Support for 10+ isolated namespaces
-- **MCP Communication**: Communication with capability services via MCP protocol
+- **MCP Communication**: Communication with downstream MCP servers via MCP protocol
 - **Management API**: REST API for configuration
 - **Web UI**: React-based administration interface (Praxis plugin)
 - **Authentication**: OIDC integration via Keycloak
-- **Service Discovery**: Automatic registration and health monitoring of capabilities
+- **Service Discovery**: Automatic registration and health monitoring of downstream MCP servers
 - **Data Persistence**: Infinispan-based storage for router state
 
 ## Architecture

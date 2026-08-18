@@ -19,7 +19,7 @@ Last updated: 2026-08-17
 
 > **Note:** The MCP routing engine has moved to the Rust-based [Praxis](https://github.com/wanaku-ai/wanaku) project.
 > This repository (wanaku-barn) provides the "Classic Wanaku" Java backend: persistence, service catalogs, operator, CLI, and admin UI.
-> Capability services are developed using the [Wanaku Capabilities Java SDK](https://github.com/wanaku-ai/wanaku-capabilities-java-sdk).
+> Downstream MCP servers are developed using the [Wanaku Capabilities Java SDK](https://github.com/wanaku-ai/wanaku-capabilities-java-sdk).
 
 ```text
 apps/
@@ -31,7 +31,7 @@ apps/
 core/
   core-util/               # Shared utilities
   core-services-api/       # Service API interfaces
-  core-service-discovery/  # Service discovery (capabilities)
+  core-service-discovery/  # Service discovery (MCP servers)
   core-mcp-client/         # MCP client
 deploy/                    # Deployment scripts and configs
 docs/                      # Documentation

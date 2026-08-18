@@ -18,7 +18,7 @@ features:
     details: A list of all configuration parameters for Wanaku
     link: ./docs/configurations
   - title: Building
-    details: Learn how to build and package this capability
+    details: Learn how to build and package this project
     link: ./docs/building
   - title: Contributing
     details: Learn how to contribute to Wanaku
