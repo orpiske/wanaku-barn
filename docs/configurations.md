@@ -41,7 +41,7 @@ Each Wanaku component ships with a built-in `application.properties` file inside
 For the main components:
 
 - **Router Backend**: `apps/wanaku-barn-backend/src/main/resources/application.properties`
-- **Tool Services**: each capability service has its own `src/main/resources/application.properties` (see the [Wanaku Capabilities Java SDK](https://github.com/wanaku-ai/wanaku-capabilities-java-sdk))
+- **Tool Services**: each downstream MCP server has its own `src/main/resources/application.properties` (see the [Wanaku Capabilities Java SDK](https://github.com/wanaku-ai/wanaku-capabilities-java-sdk))
 - **CLI**: `apps/wanaku-cli/src/main/resources/application.properties`
 
 ### How to override configuration at runtime
@@ -237,11 +237,11 @@ java -Dwanaku.home=/tmp/sysprop-home -jar quarkus-run.jar
 
 ### Health Check
 
-These `wanaku.router.health-check.*` properties control the periodic health probing of registered capabilities.
+These `wanaku.router.health-check.*` properties control the periodic health probing of registered downstream MCP servers.
 
 | Property                                      | Description                                                                |
 |-----------------------------------------------|----------------------------------------------------------------------------|
-| `wanaku.router.health-check.enabled`          | `true` - Enables periodic health checks of registered capability services. |
+| `wanaku.router.health-check.enabled`          | `true` - Enables periodic health checks of registered downstream MCP servers. |
 | `wanaku.router.health-check.interval-seconds` | `60` - The interval in seconds between health check sweeps.                |
 | `wanaku.router.health-check.max-concurrent`   | `10` - The maximum number of concurrent health check probes.               |
 
@@ -258,26 +258,26 @@ These `wanaku.router.health-check.*` properties control the periodic health prob
 |------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `wanaku.router.namespace-age-hard-limit` | `100000000000` - Threshold used to distinguish epoch-seconds from epoch-milliseconds when parsing namespace age timestamps. Values above this limit are interpreted as epoch-milliseconds; values at or below are interpreted as epoch-seconds. |
 
-## 2. Capabilities (Tool Services)
+## 2. Downstream MCP Servers
 
-### Common Capability Settings
+### Common Settings
 
-These settings apply to capability services and are foundational for their operation.
+These settings apply to downstream MCP servers and are foundational for their operation.
 
 #### Common Settings (All Modes)
 
-These settings apply to all capability services:
+These settings apply to all downstream MCP servers:
 
 | Property | Description |
 |------------------------------------------|--------------------------------------------------------------------------------------------------------|
-| `wanaku.http.auth` | `keycloak` - Controls authentication mode for capability services. Set to `none` to disable OIDC client. Also settable via `WANAKU_HTTP_AUTH` environment variable. |
+| `wanaku.http.auth` | `keycloak` - Controls authentication mode for downstream MCP servers. Set to `none` to disable OIDC client. Also settable via `WANAKU_HTTP_AUTH` environment variable. |
 | `wanaku.service.name` | The unique, lowercase name of the service (e.g., `exec`, `http`). |
 | `wanaku.service.base-uri` | The base URI scheme for tools provided by this service (e.g., `exec://`). |
 | `wanaku.service.exec.allowed-executables` | Comma-separated absolute executable paths that the Exec tool may run. |
 | `quarkus.qute.strict-rendering` | `false` - Allows for more lenient Qute template rendering. |
 | `quarkus.oidc-client.auth-server-url` | The URL of the Keycloak realm for authentication. |
-| `quarkus.oidc-client.client-id` | `wanaku-service` - The shared OIDC client ID for all capabilities. |
-| `quarkus.oidc-client.credentials.secret` | The OIDC client secret for the capability. **Must be replaced with a real secret.** |
+| `quarkus.oidc-client.client-id` | `wanaku-service` - The shared OIDC client ID for all downstream MCP servers. |
+| `quarkus.oidc-client.credentials.secret` | The OIDC client secret for the MCP server. **Must be replaced with a real secret.** |
 
 #### Exec Tool Security
 
@@ -316,13 +316,13 @@ wanaku.service.exec.allowed-executables=python3,bash,sh
 
 | Property | Description |
 |------------------------------------------|--------------------------------------------------------------------------------------------------------|
-| `quarkus.http.host-enabled` | `true` - Enables the HTTP server for capabilities. |
-| `quarkus.http.port` | The HTTP port for the capability (e.g., `9000` for `http` service). |
+| `quarkus.http.host-enabled` | `true` - Enables the HTTP server for downstream MCP servers. |
+| `quarkus.http.port` | The HTTP port for the MCP server (e.g., `9000` for `http` service). |
 | `quarkus.http.host` | `0.0.0.0` - Binds the HTTP server to all available network interfaces. |
 
 ### Common Service Registration Settings
 
-These `wanaku.service.registration.*` properties are available for all capabilities to manage their discovery and lifecycle.
+These `wanaku.service.registration.*` properties are available for all downstream MCP servers to manage their discovery and lifecycle.
 
 | Property                                         | Description                                                                          |
 |--------------------------------------------------|--------------------------------------------------------------------------------------|

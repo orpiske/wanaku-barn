@@ -1,12 +1,12 @@
-# Testing Capabilities
+# Testing MCP Servers
 
-This guide covers how to test your Wanaku capabilities locally before deploying, how to mock the Wanaku router for unit tests, integration test patterns, and how to validate service catalog deployments.
+This guide covers how to test your Wanaku MCP servers locally before deploying, how to mock the Wanaku router for unit tests, integration test patterns, and how to validate service catalog deployments.
 
 ## What You Will Learn
 
-- How to test capabilities locally using the Wanaku CLI and local router
+- How to test MCP servers locally using the Wanaku CLI and local router
 - How to mock the Wanaku router for unit testing your tools
-- Integration test patterns for verifying capabilities end-to-end
+- Integration test patterns for verifying MCP servers end-to-end
 - How to validate service catalog deployments
 
 ## What You Will Need
@@ -16,11 +16,11 @@ This guide covers how to test your Wanaku capabilities locally before deploying,
 - **Maven 3.9+** (for running integration tests)
 - **Docker** or **Podman** (for Testcontainers-based tests)
 - Completed [Getting Started with Wanaku](../1.01-your-first-tool/README.md) (demo 1.01)
-- Completed [Introduction to Capabilities](../2.01-introduction-to-capabilities/README.md) (demo 2.01)
+- Completed [Introduction to MCP Servers](../2.01-introduction-to-capabilities/README.md) (demo 2.01)
 
 ## Part 1: Testing Tools Locally Before Deploying
 
-Before deploying a capability to the Wanaku router, you can test it locally using the Wanaku CLI and a local router instance.
+Before deploying an MCP server to the Wanaku router, you can test it locally using the Wanaku CLI and a local router instance.
 
 ### Starting a Local Wanaku Instance
 
@@ -28,7 +28,7 @@ Before deploying a capability to the Wanaku router, you can test it locally usin
 wanaku start local
 ```
 
-This starts the router and built-in capability services with authentication disabled. The router is available at `http://localhost:8080`.
+This starts the router and built-in MCP servers with authentication disabled. The router is available at `http://localhost:8080`.
 
 ### Testing with the MCP Inspector
 
@@ -85,7 +85,7 @@ Projects using the Wanaku Capabilities Java SDK already have the exchange classe
 
 ### Mocking Tool Invocations
 
-Create a test that invokes your tool implementation directly. With Camel 4.22+, capabilities use the native MCP server support, so tests use standard MCP types:
+Create a test that invokes your tool implementation directly. With Camel 4.22+, MCP servers use the native MCP server support, so tests use standard MCP types:
 
 ```java
 package ai.test;
@@ -163,7 +163,7 @@ mvn clean install -Dwanaku.test.cli.path=<wanaku-tests-repo-path>/artifacts/wana
 | `http-capability-tests` | HTTP tool registration, invocation via REST API and CLI |
 | `resources-tests` | File resource management via REST API, MCP, and CLI |
 | `camel-integration-capability-tests` | Camel tools, file resources, PostgreSQL, multi-instance |
-| `cross-capability-tests` | Router restart and mixed-capability scenarios |
+| `cross-capability-tests` | Router restart and mixed-server scenarios |
 
 ### Writing Custom Integration Tests
 
@@ -173,7 +173,7 @@ Extend `BaseIntegrationTest` and use the provided clients:
 public class MyCustomITCase extends BaseIntegrationTest {
 
     @Test
-    void shouldTestMyCapability() {
+    void shouldTestMyMcpServer() {
         // Use routerClient to interact with router REST API
         // Use mcpClient to invoke tools via MCP protocol
         // Use cliExecutor to run wanaku CLI commands
@@ -186,7 +186,7 @@ Key test infrastructure components:
 - **RouterClient** — REST API calls to the Wanaku router
 - **McpTestClient** — MCP protocol communication for tool invocation
 - **CLIExecutor** — Programmatic CLI command execution
-- **CamelCapabilityManager** — Lifecycle management for Camel Integration Capability
+- **CamelCapabilityManager** — Lifecycle management for the [Camel Integration Capability](https://github.com/wanaku-ai/camel-integration-capability)
 - **KeycloakManager** — Authentication setup (when needed)
 
 ### Test Fixtures
@@ -264,13 +264,13 @@ Use the MCP Inspector or an MCP client to invoke each tool:
 
 Verify the response contains expected data.
 
-### Step 5: Check Capability Service Logs
+### Step 5: Check MCP Server Logs
 
-If tools don't work, check the capability service logs:
+If tools don't work, check the MCP server logs:
 
 ```shell
 # If running via wanaku start local, check the terminal output
-# For standalone capability services:
+# For standalone MCP servers:
 java -jar camel-integration-capability-*.jar --help
 ```
 
@@ -367,7 +367,7 @@ void shouldHandleConcurrentInvocations() throws InterruptedException {
 
 - Verify dependencies are correctly listed in `dependencies.txt`
 - Check that Maven coordinates are valid and versions exist
-- Ensure the Camel Integration Capability downloaded dependencies
+- Ensure the [Camel Integration Capability](https://github.com/wanaku-ai/camel-integration-capability) downloaded dependencies
 
 ### Integration Tests Fail to Start
 
