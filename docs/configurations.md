@@ -220,13 +220,13 @@ When using `wanaku start local`, the CLI automatically:
 - Sets `WANAKU_HOME` as an environment variable in all spawned child processes (router, capabilities, standalone
   services).
 - Passes `-Dwanaku.home=<resolved-path>` as a JVM argument to all Quarkus-based child processes (router, re-augmented
-  capabilities).
+  MCP servers).
 
 This ensures all components write to the same resolved home directory without requiring manual configuration.
 
 #### Behavior with direct JVM start
 
-When starting the router or a capability directly with `java -jar`, the system property takes precedence over the
+When starting the router or an MCP server directly with `java -jar`, the system property takes precedence over the
 environment variable. Set both to test precedence:
 
 ```shell
