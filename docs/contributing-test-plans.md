@@ -139,8 +139,3 @@ Use `--ignore-not-found=true` on all delete commands and `2>/dev/null || true` o
 - [ ] Negative tests are included
 - [ ] Cleanup is idempotent
 - [ ] Shell constructs are POSIX-compatible
-
-## Feature Matrix
-
-- OpenShift/Kubernetes
-  - Does not support noauth (i.e.: running the router and capabilities without authentication, due to the need of re-augmentation).

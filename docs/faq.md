@@ -31,7 +31,7 @@ The router architecture provides several advantages:
 
 - **Isolation**: Each MCP service runs independently, improving security and reliability
 - **Scalability**: Services can be scaled independently based on demand
-- **Flexibility**: Easy to add, remove, or update capabilities without affecting the router
+- **Flexibility**: Easy to add, remove, or update MCP servers without affecting the router
 - **Language independence**: MCP services can be written in any supported language
 
 ### What is the role of Keycloak in Wanaku?
@@ -39,7 +39,7 @@ The router architecture provides several advantages:
 Keycloak provides authentication and authorization for:
 
 - Router management API and web UI access
-- Service-to-service authentication between the router and capabilities
+- Service-to-service authentication between the router and downstream MCP servers
 - Future support for fine-grained access control to tools and resources
 
 ## Installation and Setup
@@ -267,7 +267,6 @@ Check the [releases page](https://github.com/wanaku-ai/wanaku/releases) for the 
 See the [Contributing Guide](../CONTRIBUTING.md) for information on:
 
 - Setting up your development environment
-- Creating new capabilities
 - Submitting pull requests
 - Reporting issues
 

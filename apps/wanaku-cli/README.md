@@ -9,8 +9,8 @@ Command-line interface tool for managing the Wanaku MCP Router via its managemen
 The Wanaku CLI provides a user-friendly interface for:
 - Managing tools and resources
 - Configuring namespaces
-- Monitoring capability services
-- Creating new capability projects
+- Monitoring downstream MCP servers
+- Creating new MCP server projects
 - Authenticating with the router
 
 ## Key Features
@@ -18,7 +18,7 @@ The Wanaku CLI provides a user-friendly interface for:
 - **Tool Management**: Add, list, update, and remove MCP tools
 - **Resource Management**: Manage MCP resources and providers
 - **Namespace Support**: Organize tools and resources across namespaces
-- **Capability Monitoring**: View registered capability services and their health
+- **MCP Server Monitoring**: View registered downstream MCP servers and their health
 - **Project Scaffolding**: Generate new tool and provider projects from templates
 - **Authentication**: OAuth 2.0/OIDC authentication with the router
 - **Label Filtering**: Advanced filtering using label expressions

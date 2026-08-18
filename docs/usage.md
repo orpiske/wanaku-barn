@@ -625,19 +625,6 @@ sed -e "s/oidc-url-replace/<your-keycloak-url>/g" \
      deploy/kubernetes/wanaku-capabilities.yaml | kubectl apply -f -
 ```
 
-#### Environment Configuration
-
-When running Wanaku on OpenShift or Kubernetes, capabilities cannot automatically discover the router address.
-You must configure the router location using environment variables in your deployment:
-
-- Set `WANAKU_SERVICE_REGISTRATION_URI` to point to the actual location of the router
-- Configure OIDC authentication URLs to point to your Keycloak instance
-
-The operator handles these configurations automatically when using `WanakuRouter` and `WanakuCapability` custom resources.
-
-> [!IMPORTANT]
-> This configuration is also required when running the router and the services on different hosts.
-
 # Securing the Wanaku MCP Router
 
 Security in Wanaku involves controlling access to the management APIs and web interface while ensuring that only authorized
@@ -655,7 +642,7 @@ Wanaku's security model focuses on:
 
 - **API Protection**: Securing management operations for tools, resources, and configuration
 - **UI Access Control**: Restricting access to the web console
-- **Service Authentication**: Ensuring capability services can authenticate with the router
+- **Service Authentication**: Ensuring downstream MCP servers can authenticate with the router
 - **MCP Authentication**: Ensuring MCP calls are authenticated
 
 ### MCP Authentication
@@ -727,10 +714,10 @@ As a reference for understanding what is going on under the hood, the following 
 - [Secure MCP Server OAuth 2](https://quarkus.io/blog/secure-mcp-server-oauth2/)
 - [Secure MCP SSE Server](https://quarkus.io/blog/secure-mcp-sse-server/)
 
-### Capability Services Security Configurations
+### Downstream MCP Server Security Configurations
 
-Wanaku also requires for the capabilities services to be authenticated in order to register themselves.
-Capability services act as [OIDC clients](https://quarkus.io/guides/security-openid-connect-client-reference) and authenticate
+Wanaku also requires downstream MCP servers to be authenticated in order to register themselves.
+Downstream MCP servers act as [OIDC clients](https://quarkus.io/guides/security-openid-connect-client-reference) and authenticate
 with the router using client credentials.
 Some of the settings you may need to adjust are:
 
@@ -750,7 +737,7 @@ quarkus.oidc-client.credentials.secret=aBqsU3EzUPCHumf9sTK5sanxXkB0yFtv
 
 > [!IMPORTANT]
 >
-> - Capability services use the OIDC *client* component (`quarkus.oidc-client.*`), which differs from the main router configuration
+> - Downstream MCP servers use the OIDC *client* component (`quarkus.oidc-client.*`), which differs from the main router configuration
 > - The client secret values shown here are examples from the default configuration - replace them with your actual Keycloak client secrets
 > - Ensure the auth-server-url points to your actual Keycloak instance
 
@@ -1155,38 +1142,38 @@ wanaku admin realm create --keycloak-url http://keycloak:8080 \
   --admin-username admin --admin-password admin
 ```
 
-## Understanding Capabilities
+## Understanding How Wanaku Connects to Downstream MCP Servers
 
 Wanaku itself does not have any builtin MCP tool, resource or functionality itself. The router itself is just a blank MCP server.
 
-To actually perform its work, Wanaku relies on specialized services that offer the connectivity bridge that enables Wanaku
+To actually perform its work, Wanaku connects to downstream MCP servers that provide the connectivity bridge enabling Wanaku
 to talk to any kind of service. At its core, Wanaku is powered by [Quarkus](https://quarkus.io/) and [Apache Camel](https://camel.apache.org), which provide the ability to connect
 to more than [300 different types of systems and services](https://camel.apache.org/components/latest/).
 
 The power of Wanaku relies on its ability to plug in different types of systems, regardless of them being new
 microservices or legacy enterprise systems.
 For instance, consider the scenario of an enterprise organization, which is running hundreds of systems. With Wanaku,
-it is possible to create a specific capability for each of them (i.e.: a capability for the finance systems, another
+it is possible to create a specific downstream MCP server for each of them (i.e.: one for the finance systems, another
 for human resources, another for billing, and so on).
 
-The granularity on which these capabilities can operate is a decision left to the administrator of the system. For some
-organizations, having a "Kafka" capability to Wanaku capable of talking to any of its systems may be enough. Others, may
-want to have system-specific ones (i.e.: a billing capability, an employee system capability, etc).
+The granularity on which these downstream MCP servers can operate is a decision left to the administrator of the system. For some
+organizations, having a "Kafka" MCP server connected to Wanaku capable of talking to any of its systems may be enough. Others, may
+want to have system-specific ones (i.e.: a billing service, an employee system service, etc).
 
-The recommended way to create those capabilities is to use the [Camel Integration Capability for Wanaku](https://wanaku.ai/docs/camel-integration-capability/). This is a
+The recommended way to create those downstream MCP servers is to use the [Camel Integration Capability for Wanaku](https://wanaku.ai/docs/camel-integration-capability/). This is a
 subcomponent of Wanaku that leverages Apache Camel to exchange data with any system that Camel is capable of talking to.
 
-![Diagram showing available Wanaku capability types including tool services, resource providers, and MCP server bridges](imgs/wanaku-capabilities.jpg)
+![Diagram showing available Wanaku downstream MCP server types including tool services, resource providers, and MCP server bridges](imgs/wanaku-capabilities.jpg)
 
 > [!NOTE]
-> Capabilities were, at some point, also called "Downstream services" or "targets". You may still see that terminology
-> used in some places, especially in older documentation.
+> Downstream MCP servers were, at some point, also called "capabilities", "downstream services", or "targets". You may still see
+> that terminology used in some places, especially in older documentation.
 
-You should see a list of capabilities available in the UI, in the Capabilities page. Something similar to this:
+You should see a list of registered downstream MCP servers in the UI, in the Capabilities page. Something similar to this:
 
-![Screenshot of Wanaku web UI showing a list of registered capability services with their status, type, and health information](imgs/capabilities-list.png)
+![Screenshot of Wanaku web UI showing a list of registered downstream MCP servers with their status, type, and health information](imgs/capabilities-list.png)
 
-On the CLI, running `wanaku capabilities list` lists the capabilities available for MCP tools:
+On the CLI, running `wanaku capabilities list` lists the downstream MCP servers registered with the router:
 
 ```shell
 service serviceType  host      port status lastSeen
@@ -1195,14 +1182,14 @@ http    tool-invoker 127.0.0.1 9000 active Sat, Oct 18, 2025 at 18:47:23
 tavily  tool-invoker 127.0.0.1 9006 active Sat, Oct 18, 2025 at 18:47:23
 ```
 
-Capabilities determine what type of tools you may add to the router. As such, in the output from the CLI above, it means that
+The registered downstream MCP servers determine what type of tools you may add to the router. As such, in the output from the CLI above, it means that
 this server can add tools of the following types: `exec`, `tavily`, and `http`.
 
-Wanaku accepts the following capability service types:
+Wanaku classifies downstream MCP servers into the following types:
 
-- `tool-invoker`: these capabilities can be used to create MCP tools.
-- `resource-provider`: these capabilities can be used to create MCP resources.
-- `multi-capability`: these capabilities can be used to create either MCP tools or MCP resources.
+- `tool-invoker`: these MCP servers provide MCP tools.
+- `resource-provider`: these MCP servers provide MCP resources.
+- `multi-capability`: these MCP servers provide both MCP tools and MCP resources.
 
 ## Managing MCP Tools
 
@@ -1573,13 +1560,13 @@ This displays all prompts with their names, descriptions, and namespaces.
 
 ## Managing Shared Data
 
-Wanaku provides a data store feature that allows you to share static data between Wanaku and its capabilities.
+Wanaku provides a data store feature that allows you to share static data between Wanaku and its downstream MCP servers.
 
-This is particularly useful for storing configuration files, route definitions, and other static resources that capabilities need to access at runtime.
+This is particularly useful for storing configuration files, route definitions, and other static resources that downstream MCP servers need to access at runtime.
 
 A primary use case for the data store is storing Apache Camel routes and associated files for the Camel Integration Capability.
 
-By storing route definitions in the data store, you can dynamically configure integrations without rebuilding or redeploying capabilities.
+By storing route definitions in the data store, you can dynamically configure integrations without rebuilding or redeploying services.
 
 > [!IMPORTANT]
 > Authentication is required to access the data store API.
@@ -1705,35 +1692,35 @@ See [Service Catalogs Guide](service-catalogs.md) for details on structure, pack
 
 Configurations in Wanaku have two distinct scopes:
 
-1. Capability service configurations
+1. Downstream MCP server configurations
 2. Tool definition configurations
 
-### Capability Service Configurations
+### Downstream MCP Server Configurations
 
-These configurations are essential for setting up the capability provider itself.
+These configurations are essential for setting up the downstream MCP server itself.
 
-This includes details required for the transport mechanism used to access the capability, such as usernames and passwords for
-authenticating with the underlying system that provides the capability.
+This includes details required for the transport mechanism used to access the service, such as usernames and passwords for
+authenticating with the underlying system that provides the service.
 
-Each capability service may have its own specific set of configurations. As such, check the capability service documentation
+Each downstream MCP server may have its own specific set of configurations. As such, check the service documentation
 for details.
 
 ### Tool Definition Configurations
 
-These configurations are specific to individual tools that leverage a particular capability. They include:
+These configurations are specific to individual tools that leverage a particular downstream MCP server. They include:
 
-- Names and identifiers that differentiate tools using the same capability, like specific Kafka topics or the names of database tables.
+- Names and identifiers that differentiate tools using the same downstream MCP server, like specific Kafka topics or the names of database tables.
 - Operational properties that dictate how the tool behaves, such as the type of HTTP method (`GET`, `POST`, `PUT`), or operational settings like timeout configurations and idempotence flags.
 
 These configurations are handled when adding a new tool to Wanaku MCP Router.
 
 > [!NOTE]
-> Check the "Configuring the Capabilities" section for additional details about this.
+> Check the "Configuring Downstream MCP Servers" section for additional details about this.
 
 ### Listing Capabilities
 
-The `wanaku capabilities list` command provides a comprehensive view of all service capabilities available in the Wanaku Router.
-It discovers and displays both management tools and resource providers, along with their current operational status and
+The `wanaku capabilities list` command provides a comprehensive view of all downstream MCP servers registered with the Wanaku Router.
+It discovers and displays both tool services and resource providers, along with their current operational status and
 activity information.
 
 The command combines data from multiple API endpoints to present a unified view of the system's capabilities in an
@@ -1756,9 +1743,9 @@ For instance, running the command, should present you with an output similar to 
 
 ![Terminal output showing the result of running 'wanaku capabilities list' command displaying registered capability services](imgs/cli-capabilities-list.png)
 
-### Displaying Service Capability Details
+### Displaying Service Details
 
-The `wanaku capabilities show` command lets you view detailed information for a specific service capability within the
+The `wanaku capabilities show` command lets you view detailed information for a specific downstream MCP server registered with the
 Wanaku MCP Router.
 
 This includes its configuration parameters, current status, and connection information.
@@ -1788,7 +1775,7 @@ wanaku capabilities show sqs --host http://api.example.com:8080
 
 The command displays two main sections:
 
-1. **Capability Summary**: Basic service information in table format:
+1. **Service Summary**: Basic service information in table format:
 
 - Service name and type
 - Host and port
@@ -2312,7 +2299,7 @@ For example, an argument named `wanaku_meta_contextId` with value `ctx-123` beco
 value `ctx-123`.
 
 This is useful for passing context information (such as user IDs, session IDs, or correlation IDs) from the AI service
-through to the downstream capability service.
+through to the downstream MCP server.
 
 #### Example: LangChain4j AI Service
 
@@ -2343,7 +2330,7 @@ String userId = headers.get("userId");
 ### Passing Authentication Tokens as Headers
 
 The `wanaku_auth_` prefix is a special argument prefix that allows MCP clients to propagate access tokens or other
-credentials to downstream capabilities without exposing them to LLMs.
+credentials to downstream MCP servers without exposing them to LLMs.
 
 Arguments with this prefix are:
 
@@ -2355,7 +2342,7 @@ Arguments with this prefix are:
 For example, an argument named `wanaku_auth_Authorization` with value `Bearer token-123` becomes a header with key
 `Authorization` and value `Bearer token-123`.
 
-This is useful for propagating access tokens from MCP clients through to downstream capabilities (HTTP, Camel, etc.)
+This is useful for propagating access tokens from MCP clients through to downstream MCP servers (HTTP, Camel, etc.)
 when calling protected third-party APIs.
 
 #### Security Guarantees
@@ -2367,7 +2354,7 @@ Unlike `wanaku_meta_`, authentication arguments have stricter security handling:
 - **Always redacted in headers** — sensitive header names (e.g., `Authorization`) are redacted in event headers
 - **Highest merge priority** — auth headers override both metadata and tool-defined headers on conflict
 
-#### Example: HTTP Capability with Protected API
+#### Example: HTTP Service with Protected API
 
 To call a protected third-party API (e.g., GitHub), the MCP client passes the access token via `wanaku_auth_`:
 
@@ -2391,7 +2378,7 @@ Arguments from MCP client:
   wanaku_auth_X-Third-Party-Token = "external-token"
 ```
 
-Both are extracted and forwarded as separate headers to the downstream capability.
+Both are extracted and forwarded as separate headers to the downstream MCP server.
 
 ### Reserved Argument Names
 
@@ -2401,21 +2388,21 @@ Currently special arguments:
 - `wanaku_meta_` - Prefix for arguments that are converted to headers (e.g., `wanaku_meta_contextId`)
 - `wanaku_auth_` - Prefix for sensitive authentication arguments that are converted to headers with redaction (e.g., `wanaku_auth_Authorization`)
 
-## Extending Wanaku: Adding Your Own Capabilities
+## Extending Wanaku: Adding Your Own Downstream MCP Servers
 
 Wanaku leverages [Quarkus](https://quarkus.io/) and [Apache Camel](https://camel.apache.org) to provide connectivity to a vast
 range of services and platforms.
 
 Although we aim to provide a few of them out-of-the box, not all of them will fit all the use cases. For most cases, users
-should rely on the [Camel Integration Capability for Wanaku](https://wanaku.ai/docs/camel-integration-capability/). That capability
-service leverages Apache Camel which offers more than 300 components capable of talking to any type of system. Users can design
+should rely on the [Camel Integration Capability for Wanaku](https://wanaku.ai/docs/camel-integration-capability/). That service
+leverages Apache Camel which offers more than 300 components capable of talking to any type of system. Users can design
 their integrations using tools such as [Kaoto](https://kaoto.io/) or Karavan and expose the routes as tools or resources using
-that capability service.
+that service.
 
-### Adding a New Resource Provider Capability
+### Adding a New Resource Provider
 
 For cases where the [Camel Integration Capability for Wanaku](https://wanaku.ai/docs/camel-integration-capability/) is
-not sufficient, users can create their own capability services.
+not sufficient, users can create their own downstream MCP servers.
 
 We try to make it simple for users to create custom services that solve their particular needs.
 
@@ -2436,8 +2423,8 @@ To run the newly created service enter the directory that was created (i.e.,; `c
 then build the project using Maven (`mvn clean package`).
 
 > [!NOTE]
-> Capabilities services are created, by default, using [Apache Camel](http://camel.apache.org). However, it is possible to create
-> purely Quarkus-based capabilities by adding `-Dwanaku-capability-type=quarkus` to the Maven command.
+> Downstream MCP servers are created, by default, using [Apache Camel](http://camel.apache.org). However, it is possible to create
+> purely Quarkus-based services by adding `-Dwanaku-capability-type=quarkus` to the Maven command.
 
 Then, launch it using:
 
@@ -2450,12 +2437,12 @@ You can check if the service was registered correctly using `wanaku capabilities
 > [!IMPORTANT]
 > Remember to set the parameters in the `application.properties` file and also adjust the authentication settings.
 
-#### Adjusting Your Resource Capability
+#### Adjusting Your Resource Provider
 
 After created, then most of the work is to adjust the auto-generated `Delegate` class to provide the Camel-based URI and, if
 necessary, coerce (convert) the response from its specific type to String.
 
-### Adding a New Tool Invoker Capability
+### Adding a New Tool Service
 
 #### Creating a New Tool Service
 
@@ -2471,8 +2458,8 @@ mvn -B archetype:generate \
 ```
 
 > [!NOTE]
-> Capabilities services are created, by default, using [Apache Camel](http://camel.apache.org). However, it is possible to create
-> purely Quarkus-based capabilities by adding `-Dwanaku-capability-type=quarkus` to the Maven command.
+> Downstream MCP servers are created, by default, using [Apache Camel](http://camel.apache.org). However, it is possible to create
+> purely Quarkus-based services by adding `-Dwanaku-capability-type=quarkus` to the Maven command.
 
 To run the newly created service enter the directory that was created (i.e.,; `cd wanaku-tool-service-jms`), then build the project using Maven (`mvn clean package`).
 
@@ -2489,7 +2476,7 @@ You can check if the service was registered correctly using `wanaku capabilities
 
 To customize your service, adjust the delegate and client classes.
 
-#### Adjusting Your Tool Invoker Capability
+#### Adjusting Your Tool Service
 
 After created, then most of the work is to adjust the auto-generated `Delegate` and `Client` classes to invoke the service and
 provide the returned response.
@@ -2497,7 +2484,7 @@ provide the returned response.
 In those cases, then you also need to write a class that leverages [Apache Camel's](http://camel.apache.org) `ProducerTemplate`
 and (or, sometimes, both) `ConsumerTemplate` to interact with the system you are implementing connectivity to.
 
-### Adding a New Mcp server Capability
+### Adding a New MCP Server
 
 #### Creating a New Mcp server
 
@@ -2516,8 +2503,8 @@ To run the newly created service enter the directory that was created (i.e.,; `c
 then build the project using Maven (`mvn clean package`).
 
 > [!NOTE]
-> Capabilities services are created, by default, using [Apache Camel](http://camel.apache.org). However, it is possible to create
-> purely Quarkus-based capabilities by adding `-Dwanaku-capability-type=quarkus` to the Maven command.
+> Downstream MCP servers are created, by default, using [Apache Camel](http://camel.apache.org). However, it is possible to create
+> purely Quarkus-based services by adding `-Dwanaku-capability-type=quarkus` to the Maven command.
 
 Then, launch it using:
 
@@ -2530,14 +2517,14 @@ You can check if the service was registered correctly using `wanaku forwards lis
 > [!IMPORTANT]
 > Remember to set the parameters in the `application.properties` file.
 
-#### Adjusting Your Mcp server Capability
+#### Adjusting Your MCP Server
 
 After created, then most of the work is to adjust the auto-generated `Tool` class to implement the mcp server tool.
 
 ### Implementing Services in Other Languages
 
-Wanaku uses MCP for communication between the router and capability services.
-Therefore, it's possible to implement capabilities in any language that supports MCP.
+Wanaku uses MCP for communication between the router and downstream MCP servers.
+Therefore, it's possible to implement services in any language that supports MCP.
 
 <!-- -->
 
@@ -2547,7 +2534,7 @@ You can adjust the address used to announce to the MCP Router using either (depe
 
 - `wanaku.service.registration.announce-address=my-host`
 
-This is particularly helpful when running a capability service in the cloud, behind a proxy or firewall.
+This is particularly helpful when running a downstream MCP server in the cloud, behind a proxy or firewall.
 
 ### Adjusting the authentication parameters
 
@@ -2766,7 +2753,7 @@ This section provides solutions to common issues you may encounter while using W
 
 ### Service Registration Issues
 
-#### Capability services not appearing in the router
+#### Downstream MCP servers not appearing in the router
 
 **Symptoms:**
 
@@ -2778,7 +2765,7 @@ This section provides solutions to common issues you may encounter while using W
 1. Verify the service registration configuration:
 
    ```shell
-   # In the capability service application.properties
+   # In the downstream MCP server application.properties
    wanaku.service.registration.enabled=true
    wanaku.service.registration.uri=http://localhost:8080
    ```
@@ -2887,7 +2874,7 @@ This section provides solutions to common issues you may encounter while using W
 
 3. Refresh the MCP client connection
 
-4. Verify the capability service providing the tool is online:
+4. Verify the downstream MCP server providing the tool is online:
 
    ```shell
    wanaku capabilities list
@@ -2908,9 +2895,9 @@ This section provides solutions to common issues you may encounter while using W
    wanaku tools list
    ```
 
-2. Verify the capability service is running and healthy
+2. Verify the downstream MCP server is running and healthy
 
-3. Review capability service logs for errors during tool execution
+3. Review service logs for errors during tool execution
 
 4. Ensure required configuration or secrets are properly set:
 
@@ -3085,7 +3072,7 @@ quarkus.log.category."ai.wanaku".level=DEBUG
 quarkus.mcp.server.traffic-logging.enabled=true
 ```
 
-**Capability services:**
+**Downstream MCP servers:**
 
 ```properties
 quarkus.log.level=DEBUG
@@ -3109,7 +3096,7 @@ wanaku tools list --plain
 Check logs in these locations:
 
 - **Router backend:** Look for `wanaku-barn-backend.log` or check container logs
-- **Capability services:** Check individual service log files
+- **Downstream MCP servers:** Check individual service log files
 - **Kubernetes:** `kubectl logs <pod-name>`
 
 ### Getting Help

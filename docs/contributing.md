@@ -22,6 +22,8 @@ Here are some examples:
 > This is a generic explanation and the distinction may be specific to the problem domain.
 > Therefore, there may be cases where this doesn't apply.
 
+Tools and resources should be contributed as service templates.
+
 ### Prompts
 
 A prompt is a reusable template that can leverage multiple tools and provide example interactions for LLMs.
@@ -38,87 +40,6 @@ endpoints (`prompts/list` and `prompts/get`).
 
 Ideally, most of the MCP tools and MCP resource providers should be created using the
 [Camel Integration Capability for Wanaku](https://wanaku.ai/docs/camel-integration-capability/).
-
-> [!IMPORTANT]
-> The vast majority of the custom capabilities should be included in the [Wanaku Examples](https://github.com/wanaku-ai/wanaku-examples)
-> repository and not to the main Wanaku MCP Router project.
-
-## Capabilities and Forwards
-
-Wanaku supports acting as a router/gateway for two types of services:
-
-- Downstream capability services. These services can either be plain Quarkus or Camel Extension for Quarkus.
-- Other HTTP-based MCP servers (SSE). This allows integrating any MCP server with Wanaku.
-
-The type of service you create will depend on the type of problem you want to solve. Downstream services offer
-greater integration with Wanaku (i.e., including better discovery and configuration). On the other hand, plain MCP
-services are simpler to create and develop.
-
-### Capabilities Services Tips
-
-### Adding Routes to Providers and Tools
-
-In some cases, you may need something more complex than can be achieved using the `ProducerTemplate` from Camel.
-In those cases, then you can create a traditional Camel route and invoke it from the delegate.
-
-The example below shows a route that consumes from `direct:start` and sets a body as the reply:
-
-```java
-package ai.wanaku.tool;
-
-import org.apache.camel.builder.RouteBuilder;
-
-public class ExampleRoute extends RouteBuilder {
- @Override
-    public void configure() throws Exception {
-        from("direct:start")
-                .log("Hello World ${body}")
-                .setBody(constant("It worked!"));
-    }
-}
-```
-
-Then, on the delegate code, you should call that route using:
-
-```java
-String s = producer.requestBody("direct:start", parsedRequest.body(), String.class);
-```
-
-That should allow you to run more complex processing and transformation before calling the endpoint.
-
-## Running Keycloak for Development
-
-To run keycloak for development:
-
-```shell
-podman run -d \
-  --name keycloak \
-  -p 127.0.0.1:8543:8080 \
-  -e KC_BOOTSTRAP_ADMIN_USERNAME="admin" \
-  -e KC_BOOTSTRAP_ADMIN_PASSWORD="admin" \
-  -v keycloak-data:/opt/keycloak/data \
-  quay.io/keycloak/keycloak:26.7 \
-  start-dev
-```
-
-If it is the first time you are using it, you will need to configure Wanaku's realm. You can use the CLI:
-
-```shell
-export WANAKU_ADMIN_USERNAME=admin
-export WANAKU_ADMIN_PASSWORD=admin
-wanaku admin realm create
-```
-
-Or alternatively, use the shell script:
-
-```shell
-export WANAKU_KEYCLOAK_PASS=admin
-export WANAKU_KEYCLOAK_HOST=localhost:8543
-cd deploy/auth
-./configure-auth.sh
-```
-
-Then, take note of the newly generated client secret and use that for the capabilities services.
 
 ### Authentication Configuration
 

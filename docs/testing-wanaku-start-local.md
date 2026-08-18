@@ -14,7 +14,7 @@ Run the CLI with local distributions:
 
 Then, access <http://localhost:8080/admin>. Wanaku should be available at that address. No authentication should be required.
 
-## Testing with the Camel Integration Capability
+## Testing with the [Camel Integration Capability](https://github.com/wanaku-ai/camel-integration-capability)
 
 Build the [Camel Integration Capability](https://github.com/wanaku-ai/camel-integration-capability) JAR, then
 use `--local-dist` to supply it alongside the wanaku distributions.
@@ -41,13 +41,13 @@ java -jar apps/wanaku-cli/target/quarkus-app/quarkus-run.jar start local \
   --service-catalog-system ftp
 ```
 
-The `camel-integration` service is automatically added when any CIC option is provided.
+The `camel-integration` MCP server is automatically added when any CIC option is provided.
 
 ## Stopping the router
 
 The router must be stopped gently. Do not kill the process with signal -9 because it leaves dangling processes.
 
-Use the stop script to gracefully shut down the router and all capability services:
+Use the stop script to gracefully shut down the router and all MCP servers:
 
 ```shell
 ./tests/wanaku-start-local-stop.sh

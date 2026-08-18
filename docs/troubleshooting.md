@@ -50,27 +50,27 @@ Either register a new account or create one manually:
 1. **Self-register:** Navigate to the Keycloak login page and click "Register" to create a new account
 2. **Manual creation:** Go to the Keycloak admin console at `http://localhost:8543/admin` (login: `admin`/`admin`), select the `wanaku` realm, navigate to Users, and create a new user with a password
 
-### Capability services fail to authenticate to the router
+### Downstream MCP servers fail to authenticate to the router
 
 **Symptoms:**
 
-- Capability service logs show repeated 401 errors during registration
+- MCP server logs show repeated 401 errors during registration
 - Registration retries exhaust and the service gives up silently
 
 **Why this happens:**
 
-The capabilities SDK ships with a placeholder OIDC client secret: `quarkus.oidc-client.credentials.secret=<insert key here>`. This is a syntactically valid but non-functional value. When authentication is enabled, capability services need a real client secret to obtain bearer tokens for communicating with the router.
+The capabilities SDK ships with a placeholder OIDC client secret: `quarkus.oidc-client.credentials.secret=<insert key here>`. This is a syntactically valid but non-functional value. When authentication is enabled, downstream MCP servers need a real client secret to obtain bearer tokens for communicating with the router.
 
 **Fix:**
 
-Set the OIDC client secret as an environment variable on each capability service:
+Set the OIDC client secret as an environment variable on each downstream MCP server:
 
 ```shell
 # Use the default secret from docker-compose, or your actual Keycloak secret
 export QUARKUS_OIDC_CLIENT_CREDENTIALS_SECRET=mypasswd
 ```
 
-For unauthenticated mode, set `WANAKU_HTTP_AUTH=none` on both the router and all capability services.
+For unauthenticated mode, set `WANAKU_HTTP_AUTH=none` on both the router and all downstream MCP servers.
 
 ### CLI commands return 401 Unauthorized
 
@@ -198,13 +198,13 @@ There is this patch command to change the configuration value. In this example i
 kubectl -n ingress-nginx patch cm/ingress-nginx-controller --type=merge -p '{"data": {"proxy-buffer-size": "16k"}}'
 ```
 
-## Capability Service Registration
+## MCP Server Registration
 
-### Capability services start but don't appear in the router
+### Downstream MCP servers start but don't appear in the router
 
 **Symptoms:**
 
-- Capability service starts successfully and passes health checks
+- MCP server starts successfully and passes health checks
 - `wanaku capabilities list` shows no registered services
 - Service logs show warnings like `Unable to register service because of: Connection refused`
 
@@ -220,9 +220,9 @@ Set the registration URI to the router's actual address:
 export WANAKU_SERVICE_REGISTRATION_URI=http://<router-host>:8080/
 ```
 
-Ensure the router is started and healthy before starting capability services. In Docker Compose, use `depends_on` with `condition: service_healthy`.
+Ensure the router is started and healthy before starting downstream MCP servers. In Docker Compose, use `depends_on` with `condition: service_healthy`.
 
-### Capability registers but router cannot call it back
+### MCP server registers but router cannot call it back
 
 **Symptoms:**
 
@@ -239,7 +239,7 @@ The `announce-address` configuration defaults to `auto`, which picks the first n
 Explicitly set the announce address to an IP the router can reach:
 
 ```properties
-# In the capability's application.properties
+# In the MCP server's application.properties
 wanaku.service.registration.announce-address=<reachable-ip>
 ```
 
@@ -263,7 +263,7 @@ Use Docker Desktop on macOS instead of Podman, or modify the compose file to use
 
 **Symptoms:**
 
-- Capability services start before the router is ready
+- MCP servers start before the router is ready
 - Registration fails due to race conditions
 - Startup succeeds on retry but is unreliable
 
@@ -273,7 +273,7 @@ In `deploy/docker-compose/docker-compose.yml`, the `healthcheck:` block for the 
 
 **Fix:**
 
-If you experience startup race conditions, add a delay before starting capabilities, or fix the indentation in your local copy of the compose file so the healthcheck is nested under the `wanaku-router` service definition.
+If you experience startup race conditions, add a delay before starting MCP servers, or fix the indentation in your local copy of the compose file so the healthcheck is nested under the `wanaku-router` service definition.
 
 ### Insecure default credentials in docker-compose
 
@@ -294,23 +294,23 @@ Before any non-local deployment, rotate these credentials:
 
 1. Change `KEYCLOAK_ADMIN_PASSWORD` in the compose file
 2. Update the `wanaku-service` client secret in Keycloak
-3. Update `QUARKUS_OIDC_CLIENT_CREDENTIALS_SECRET` on all capability services to match
+3. Update `QUARKUS_OIDC_CLIENT_CREDENTIALS_SECRET` on all downstream MCP servers to match
 
-## SDK and Capability Development
+## SDK and MCP Server Development
 
-### Port 8080 conflict between router and new capabilities
+### Port 8080 conflict between router and new MCP servers
 
 **Symptoms:**
 
-- `java.net.BindException: Address already in use` when starting a capability alongside the router
+- `java.net.BindException: Address already in use` when starting an MCP server alongside the router
 
 **Why this happens:**
 
-Capability services often default to port 8080, which is the same as the router.
+MCP servers often default to port 8080, which is the same as the router.
 
 **Fix:**
 
-Set a non-conflicting port in the capability's `application.properties`:
+Set a non-conflicting port in the MCP server's `application.properties`:
 
 ```properties
 # Use a specific port
@@ -422,15 +422,15 @@ Infinispan is configured in `LOCAL` cache mode. Each router instance maintains i
 
 Currently, Wanaku supports single-instance deployments only. Running multiple replicas requires architectural changes to enable distributed Infinispan cache modes. For high availability, use a single replica with persistent storage.
 
-### Crashed capabilities are not detected for up to 60 seconds
+### Crashed MCP servers are not detected for up to 60 seconds
 
 **Symptoms:**
 
-- A capability crashes but tool calls to it continue failing for about a minute before the router marks it as unhealthy
+- An MCP server crashes but tool calls to it continue failing for about a minute before the router marks it as unhealthy
 
 **Why this happens:**
 
-The router's periodic health check runs every 60 seconds (`wanaku.router.health-check.interval-seconds=60`). Between checks, the router assumes previously registered capabilities are still healthy.
+The router's periodic health check runs every 60 seconds (`wanaku.router.health-check.interval-seconds=60`). Between checks, the router assumes previously registered MCP servers are still healthy.
 
 **Fix:**
 

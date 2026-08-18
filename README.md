@@ -18,7 +18,7 @@ South America.
 - **Extensive Connectivity** - Leverage 400+ Apache Camel components for integration
 - **Secure by Default** - Built-in authentication and authorization via Keycloak (optional — can run without auth)
 - **Kubernetes-Native** - First-class support for OpenShift and Kubernetes deployments
-- **Extensible Architecture** - Easy to add custom tools and resource providers
+- **Extensible Architecture** - Easy to add MCP servers
 - **Multi-Namespace Support** - Organize tools and resources across isolated namespaces
 
 ## Quick Start
@@ -53,7 +53,6 @@ the [Java SDK](https://github.com/wanaku-ai/wanaku-capabilities-java-sdk/), etc.
 
 - [GitHub Issues](https://github.com/wanaku-ai/wanaku/issues) - Bug reports and feature requests
 - [Discussions](https://github.com/wanaku-ai/wanaku/discussions) - Ask questions and share ideas
-- [Examples](https://github.com/wanaku-ai/wanaku-examples) - Example capabilities and integrations
 
 Contributors working on the project may want to refer to the [development version of the documentation](/docs) including
 
