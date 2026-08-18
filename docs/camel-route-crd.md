@@ -9,7 +9,7 @@ The `WanakuCamelRoute` custom resource lets you define Apache Camel routes and M
 | Route definition | Inline in CR spec | External ConfigMap (Base64 ZIP) |
 | Packaging | Automatic (operator handles it) | Manual (`wanaku service package`) |
 | Best for | Single-route tools/resources | Multi-service catalogs, complex setups |
-| Dependencies | Not supported (use capability image) | Supported via `.dependencies.txt` |
+| Dependencies | Not supported (use MCP server image) | Supported via `.dependencies.txt` |
 | GitOps friendly | Yes (single YAML file) | Requires ConfigMap + CR |
 
 Use `WanakuCamelRoute` for simple integrations where a single Camel route exposes one or more MCP tools/resources. Use `WanakuServiceCatalog` for complex multi-service catalogs or when you need custom Maven dependencies.
@@ -27,7 +27,7 @@ spec:
 
 ### `image` (optional)
 
-Container image used for the generated Camel Integration Capability deployment. If omitted, the operator uses `quay.io/wanaku/camel-integration-capability:latest`.
+Container image used for the generated [Camel Integration Capability](https://github.com/wanaku-ai/camel-integration-capability) deployment. If omitted, the operator uses `quay.io/wanaku/camel-integration-capability:latest`.
 
 ```yaml
 spec:

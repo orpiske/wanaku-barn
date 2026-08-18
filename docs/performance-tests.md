@@ -48,7 +48,7 @@ tests/mcp-servers/wanaku-performance-test-mock-mcp/   # Mock MCP server for MCP 
 |----------|---------|-------------|
 | `K6_BIN` | `$HOME/bin/k6` | Path to k6 binary |
 | `WANAKU_BIN` | `$HOME/bin/wanaku` | Path to wanaku CLI |
-| `JAVA_OPTS` | `-XX:+UseNUMA -Xmx4G -Xms4G` | JVM options for router and capabilities |
+| `JAVA_OPTS` | `-XX:+UseNUMA -Xmx4G -Xms4G` | JVM options for router and MCP servers |
 | `EVAL_DIR` | `$HOME/perf-evaluation-<timestamp>` | Output directory for evaluation results |
 | `TEST_SCOPE` | `all` | `all`, `tools`, or `resources` |
 | `SKIP_BASELINE` | `false` | Skip the baseline run in evaluations |

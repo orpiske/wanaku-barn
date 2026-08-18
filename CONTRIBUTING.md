@@ -7,7 +7,7 @@ Thank you for your interest in contributing to the Wanaku MCP Router project!
 Please read our comprehensive [Contributing Guide](docs/contributing.md) for detailed information on:
 
 - Understanding tools, providers, and prompts
-- Creating new capabilities
+- Creating new MCP servers
 - Setting up your development environment
 - Building and testing the project
 - Submitting pull requests

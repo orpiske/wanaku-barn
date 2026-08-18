@@ -62,7 +62,7 @@ quarkus.otel.traces.sampler=parentbased_always_on
 quarkus.otel.propagators=tracecontext,baggage
 ```
 
-### Capability Services
+### Downstream MCP Servers
 
 Downstream MCP servers use similar configuration:
 
@@ -124,7 +124,7 @@ These attributes are searchable in Jaeger/Grafana for quick request correlation.
 
 The `docker-compose.yml` and `docker-compose-noauth.yml` include:
 
-- **OTel Collector** (`otel-collector:4317`): Receives OTLP data from router and capability services
+- **OTel Collector** (`otel-collector:4317`): Receives OTLP data from router and downstream MCP servers
 - **Jaeger** (`jaeger:16686`): UI for trace visualization; receives data from OTel Collector via OTLP
 
 Environment variables set on services:
@@ -169,6 +169,6 @@ http://localhost:16686
 
 Search by:
 
-- **Service**: `wanaku-router` or the capability service name
+- **Service**: `wanaku-router` or the downstream MCP server name
 - **Span attribute**: `wanaku.mcp.request_id=<request-id>`
 - **Operation**: tool invocation or resource acquisition

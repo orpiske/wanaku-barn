@@ -77,7 +77,7 @@ wanaku admin realm create --config wanaku-config.json
 
 ### Default Deny Ingress
 
-Apply a default deny policy to capability namespaces:
+Apply a default deny policy to downstream MCP server namespaces:
 
 ```yaml
 apiVersion: networking.k8s.io/v1
@@ -91,9 +91,9 @@ spec:
   - Ingress
 ```
 
-### Allow Router-to-Capability Communication
+### Allow Router-to-MCP-Server Communication
 
-Allow traffic from the router namespace to capabilities:
+Allow traffic from the router namespace to downstream MCP servers:
 
 ```yaml
 apiVersion: networking.k8s.io/v1
@@ -117,9 +117,9 @@ spec:
       port: 9190
 ```
 
-### Allow Capability-to-Router Registration
+### Allow MCP Server-to-Router Registration
 
-Allow capability services to register with the router (port 8080):
+Allow downstream MCP servers to register with the router (port 8080):
 
 ```yaml
 apiVersion: networking.k8s.io/v1
@@ -169,11 +169,11 @@ spec:
       port: 8080
 ```
 
-## Least-Privilege Principles for Capability Services
+## Least-Privilege Principles for Downstream MCP Servers
 
-### Service Account per Capability
+### Service Account per MCP Server
 
-Create dedicated service accounts for each capability:
+Create dedicated service accounts for each downstream MCP server:
 
 ```yaml
 apiVersion: v1
@@ -212,9 +212,9 @@ roleRef:
 
 ### Keycloak Client Roles
 
-Assign minimal roles in Keycloak for each capability:
+Assign minimal roles in Keycloak for each downstream MCP server:
 
-1. Create dedicated client per capability (e.g., `camel-integration-capability-prod`)
+1. Create dedicated client per MCP server (e.g., `camel-integration-capability-prod`)
 2. Enable **Service Accounts** and **Client Authentication**
 3. Assign only required roles:
    - `wanaku-service` role for registration
@@ -223,7 +223,7 @@ Assign minimal roles in Keycloak for each capability:
 
 ### Container Security Context
 
-Run capabilities with non-root user and read-only filesystem:
+Run MCP servers with non-root user and read-only filesystem:
 
 ```yaml
 spec:
@@ -283,15 +283,15 @@ Key events logged:
 
 - Tool/resource registration and deletion
 - Namespace creation/modification
-- Capability service registration/deregistration
+- MCP server registration/deregistration
 - Authentication successes and failures
 
 ### Access Logs
 
-Enable the HTTP access log in capability services to track tool invocations:
+Enable the HTTP access log in downstream MCP servers to track tool invocations:
 
 ```properties
-# In capability service application.properties
+# In MCP server application.properties
 quarkus.http.access-log.enabled=true
 quarkus.http.access-log.pattern=combined
 ```
@@ -322,7 +322,7 @@ rules:
 - Set up alerts for:
   - Failed authentication attempts > 5/minute
   - Unauthorized secret access
-  - New capability service registrations
+  - New MCP server registrations
   - Tool/resource modifications outside change windows
 
 ## TLS/mTLS Configuration
@@ -355,7 +355,7 @@ For enhanced security, plan for mTLS:
 
 - Use cert-manager for certificate issuance
 - Configure mutual TLS for service communication
-- Validate peer certificates in capability services
+- Validate peer certificates in downstream MCP servers
 
 ## Compliance Checklist
 

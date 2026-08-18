@@ -18,7 +18,7 @@ They're packaged as a single ZIP file and deployed to the Wanaku router as a uni
 - Bundling related routes with their configurations
 
 > [!NOTE]
-> Service catalogs are independent of any specific capability or underlying service implementation.
+> Service catalogs are independent of any specific MCP server or underlying service implementation.
 > Apache Camel is natively supported as the integration runtime, but the service catalog format is open —
 > other integration runtimes or custom implementations can be added to support additional technologies.
 
@@ -508,4 +508,4 @@ The Service Catalog page provides:
 
 - [Service Templates Guide](service-templates.md) — Parameterized service catalog blueprints
 - [Usage Guide](usage.md) — General Wanaku CLI and operator usage
-- [Configurations Guide](configurations.md) — Tool and capability configurations
+- [Configurations Guide](configurations.md) — Tool and MCP server configurations

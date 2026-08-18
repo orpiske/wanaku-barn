@@ -69,7 +69,7 @@ free-currency-conversion-tool default http https://economia.awesomeapi.com.br/la
 
 ## Part 2: Mocking the Wanaku Router for Unit Tests
 
-When writing unit tests for your capability code, you don't need a running Wanaku router. Instead, use the exchange stubs directly and test your tool logic in isolation.
+When writing unit tests for your MCP server code, you don't need a running Wanaku router. Instead, use the exchange stubs directly and test your tool logic in isolation.
 
 ### Setting Up Test Dependencies
 
@@ -143,7 +143,7 @@ For end-to-end testing, the [wanaku-tests](https://github.com/wanaku-ai/wanaku-t
 
 ### Running the Integration Test Suite
 
-The integration tests require Wanaku artifacts (router, HTTP capability, CLI). Download them from the [`wanaku-tests`](https://github.com/wanaku-ai/wanaku-tests) repository:
+The integration tests require Wanaku artifacts (router, HTTP MCP server, CLI). Download them from the [`wanaku-tests`](https://github.com/wanaku-ai/wanaku-tests) repository:
 
 ```shell
 cd <WANAKU_TESTS_REPO_PATH>

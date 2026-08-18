@@ -185,7 +185,7 @@ precedence order:
 
 > [!IMPORTANT]
 > `wanaku.home` is a **Wanaku-native** property. It is resolved by the custom `WanakuHome` class, not directly by
-> Quarkus MicroProfile Config. This ensures consistent resolution across all components (CLI, router, capabilities)
+> Quarkus MicroProfile Config. This ensures consistent resolution across all components (CLI, router, MCP servers)
 > regardless of Quarkus' own `${...}` placeholder handling.
 
 ```properties
@@ -199,7 +199,7 @@ export WANAKU_HOME=/path/to/custom/home
 ```
 
 ```shell
-# Or via system property (direct router/capability start)
+# Or via system property (direct router/MCP server start)
 java -Dwanaku.home=/path/to/custom/home -jar quarkus-run.jar
 ```
 
@@ -210,14 +210,14 @@ java -Dwanaku.home=/path/to/custom/home -jar quarkus-run.jar
 | `<home>/router/` | Infinispan data store (SoftIndexFileStore for tools, resources, namespaces) |
 | `<home>/local/` | CLI-extracted service instances (when using `wanaku start local`) |
 | `<home>/cache/` | CLI download cache for component ZIPs/JARs |
-| `<home>/local/logs/` | Log files for router and capability services (`wanaku-router.log`, `<service>.log`) |
+| `<home>/local/logs/` | Log files for router and MCP servers (`wanaku-router.log`, `<service>.log`) |
 | `<home>/credentials` | CLI credential store (0600 permissions) |
 
 #### Behavior with `wanaku start local`
 
 When using `wanaku start local`, the CLI automatically:
 
-- Sets `WANAKU_HOME` as an environment variable in all spawned child processes (router, capabilities, standalone
+- Sets `WANAKU_HOME` as an environment variable in all spawned child processes (router, MCP servers, standalone
   services).
 - Passes `-Dwanaku.home=<resolved-path>` as a JVM argument to all Quarkus-based child processes (router, re-augmented
   MCP servers).
