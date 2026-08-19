@@ -3,18 +3,10 @@ package ai.wanaku.operator.wanaku;
 import java.util.List;
 
 public class WanakuRouterSpec {
-    private WanakuTypes.AuthSpec auth;
     private String imagePullPolicy;
     private WanakuTypes.ExposureSpec exposure;
     private RouterSpec router;
-
-    public WanakuTypes.AuthSpec getAuth() {
-        return auth;
-    }
-
-    public void setAuth(WanakuTypes.AuthSpec auth) {
-        this.auth = auth;
-    }
+    private PraxisSpec praxis;
 
     public String getImagePullPolicy() {
         return imagePullPolicy;
@@ -48,21 +40,10 @@ public class WanakuRouterSpec {
         this.praxis = praxis;
     }
 
-    private PraxisSpec praxis;
-
     public static class PraxisSpec {
-        private boolean enabled = true;
         private String image;
         private List<WanakuTypes.EnvVar> env;
         private String imagePullPolicy;
-
-        public boolean isEnabled() {
-            return enabled;
-        }
-
-        public void setEnabled(boolean enabled) {
-            this.enabled = enabled;
-        }
 
         public String getImage() {
             return image;
@@ -90,9 +71,18 @@ public class WanakuRouterSpec {
     }
 
     public static class RouterSpec {
+        private boolean enabled;
         private String image;
         private List<WanakuTypes.EnvVar> env;
         private String imagePullPolicy;
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
 
         public String getImage() {
             return image;

@@ -96,12 +96,11 @@ public class WanakuServiceCatalogReconciler implements Reconciler<WanakuServiceC
                             routerRef, namespace));
         }
 
-        final WanakuTypes.AuthSpec authSpec = router.getSpec().getAuth();
         final String routerBaseUrl = getRouterBaseUrl(routerRef);
 
         final List<String> deployedCatalogs;
         try {
-            deployedCatalogs = deployCatalogs(resource, namespace, routerBaseUrl, authSpec);
+            deployedCatalogs = deployCatalogs(resource, namespace, routerBaseUrl, null);
         } catch (WanakuException e) {
             return setErrorStatus(resource, "DeploymentError", e.getMessage());
         }
@@ -134,20 +133,10 @@ public class WanakuServiceCatalogReconciler implements Reconciler<WanakuServiceC
             return DeleteControl.defaultDelete();
         }
 
-        WanakuTypes.AuthSpec authSpec = null;
-        WanakuRouter router = kubernetesClient
-                .resources(WanakuRouter.class)
-                .inNamespace(resource.getMetadata().getNamespace())
-                .withName(routerRef)
-                .get();
-        if (router != null) {
-            authSpec = router.getSpec().getAuth();
-        }
-
         final String routerBaseUrl = getRouterBaseUrl(routerRef);
         for (String catalogName : deployedCatalogs) {
             try {
-                removeServiceCatalog(routerBaseUrl, authSpec, catalogName);
+                removeServiceCatalog(routerBaseUrl, null, catalogName);
                 LOG.infof("Removed service catalog '%s' from router", catalogName);
             } catch (Exception e) {
                 LOG.warnf("Failed to remove service catalog '%s' during cleanup: %s", catalogName, e.getMessage());

@@ -2,10 +2,6 @@ package ai.wanaku.operator.util;
 
 import io.fabric8.kubernetes.api.model.Condition;
 import io.fabric8.kubernetes.api.model.ConditionBuilder;
-import io.fabric8.kubernetes.api.model.ObjectMetaBuilder;
-import ai.wanaku.operator.wanaku.WanakuRouter;
-import ai.wanaku.operator.wanaku.WanakuRouterSpec;
-import ai.wanaku.operator.wanaku.WanakuTypes;
 
 import static ai.wanaku.operator.assertions.OperatorAssertions.assertCondition;
 
@@ -74,56 +70,6 @@ class OperatorUtilTest {
     }
 
     @Test
-    void resolveAuthRealmReturnsConfiguredRealmForRouter() {
-        WanakuRouter router = createRouterWithRealm("myrealm");
-        assertEquals("myrealm", OperatorUtil.resolveAuthRealm(router));
-    }
-
-    @Test
-    void resolveAuthRealmDefaultsToWanakuForRouterWhenNull() {
-        WanakuRouter router = createRouterWithRealm(null);
-        assertEquals("wanaku", OperatorUtil.resolveAuthRealm(router));
-    }
-
-    @Test
-    void resolveAuthRealmDefaultsToWanakuForRouterWhenBlank() {
-        WanakuRouter router = createRouterWithRealm(" ");
-        assertEquals("wanaku", OperatorUtil.resolveAuthRealm(router));
-    }
-
-    @Test
-    void resolveAuthRealmDefaultsToWanakuForRouterWhenEmpty() {
-        WanakuRouter router = createRouterWithRealm("");
-        assertEquals("wanaku", OperatorUtil.resolveAuthRealm(router));
-    }
-
-    @Test
-    void resolveAuthRealmReturnsDefaultWhenRouterIsNull() {
-        assertEquals("wanaku", OperatorUtil.resolveAuthRealm((WanakuRouter) null));
-    }
-
-    @Test
-    void resolveAuthRealmReturnsDefaultWhenRouterSpecIsNull() {
-        WanakuRouter router = new WanakuRouter();
-        router.setMetadata(new ObjectMetaBuilder()
-                .withName("test-router")
-                .withNamespace("default")
-                .build());
-        assertEquals("wanaku", OperatorUtil.resolveAuthRealm(router));
-    }
-
-    @Test
-    void resolveAuthRealmReturnsDefaultWhenRouterAuthIsNull() {
-        WanakuRouter router = new WanakuRouter();
-        router.setMetadata(new ObjectMetaBuilder()
-                .withName("test-router")
-                .withNamespace("default")
-                .build());
-        router.setSpec(new WanakuRouterSpec());
-        assertEquals("wanaku", OperatorUtil.resolveAuthRealm(router));
-    }
-
-    @Test
     void validateImageAllowedAllowsAnyImageWhenAllowlistEmpty() {
         assertDoesNotThrow(() -> OperatorUtil.validateImageAllowed("docker.io/library/anything:latest", ""));
         assertDoesNotThrow(() -> OperatorUtil.validateImageAllowed("docker.io/library/anything:latest", "  "));
@@ -148,22 +94,5 @@ class OperatorUtilTest {
     void validateImageAllowedSkipsBlankImage() {
         assertDoesNotThrow(() -> OperatorUtil.validateImageAllowed(null, "quay.io/wanaku/"));
         assertDoesNotThrow(() -> OperatorUtil.validateImageAllowed("", "quay.io/wanaku/"));
-    }
-
-    private static WanakuRouter createRouterWithRealm(String realm) {
-        WanakuRouter router = new WanakuRouter();
-        router.setMetadata(new ObjectMetaBuilder()
-                .withName("test-router")
-                .withNamespace("default")
-                .build());
-
-        WanakuRouterSpec spec = new WanakuRouterSpec();
-        WanakuTypes.AuthSpec auth = new WanakuTypes.AuthSpec();
-        auth.setAuthServer("http://keycloak:8080");
-        auth.setAuthRealm(realm);
-        spec.setAuth(auth);
-        router.setSpec(spec);
-
-        return router;
     }
 }
