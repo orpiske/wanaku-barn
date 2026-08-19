@@ -7,7 +7,6 @@ import org.infinispan.configuration.cache.Configuration;
 import org.infinispan.manager.EmbeddedCacheManager;
 import ai.wanaku.backend.core.persistence.api.DataStoreRepository;
 import ai.wanaku.backend.core.persistence.api.ForwardReferenceRepository;
-import ai.wanaku.backend.core.persistence.api.NamespaceRepository;
 import ai.wanaku.backend.core.persistence.api.PromptReferenceRepository;
 import ai.wanaku.backend.core.persistence.api.ToolCallRecordRepository;
 
@@ -22,11 +21,6 @@ public class InfinispanPersistenceConfiguration {
     @Produces
     ForwardReferenceRepository forwardReferenceRepository() {
         return new InfinispanForwardReferenceRepository(cacheManager, configuration);
-    }
-
-    @Produces
-    NamespaceRepository namespaceRepository() {
-        return new InfinispanNamespaceRepository(cacheManager, configuration);
     }
 
     @Produces
