@@ -32,7 +32,7 @@ public class ServiceExpose extends BaseCommand {
             arity = "0..1")
     private String path;
 
-    @CommandLine.ArgGroup(exclusive = true, multiplicity = "0..1")
+    @CommandLine.ArgGroup(exclusive = false, multiplicity = "0..1")
     NamespaceOptions namespaceOptions;
 
     @CommandLine.Option(

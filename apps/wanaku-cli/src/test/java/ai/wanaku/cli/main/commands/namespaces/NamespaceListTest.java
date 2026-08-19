@@ -41,11 +41,9 @@ class NamespaceListTest {
 
     @SuppressWarnings("unchecked")
     @Test
-    @DisplayName("Should list namespaces from backend without adding synthetic default")
-    void shouldListNamespacesWithoutSyntheticDefault() throws Exception {
+    @DisplayName("Should list namespaces from backend")
+    void shouldListNamespaces() throws Exception {
         Namespace ns = new Namespace();
-        ns.setId("ns-1");
-        ns.setPath("my-ns");
         ns.setName("my-ns");
 
         when(namespacesService.list(isNull())).thenReturn(new WanakuResponse<>(List.of(ns)));
@@ -56,18 +54,16 @@ class NamespaceListTest {
         assertEquals(BaseCommand.EXIT_OK, result);
 
         ArgumentCaptor<List> captor = ArgumentCaptor.forClass(List.class);
-        verify(printer).printTable(captor.capture(), eq("id"), eq("name"), eq("path"), eq("labels"));
+        verify(printer).printTable(captor.capture(), eq("name"), eq("address"), eq("labels"));
         List<?> printed = captor.getValue();
-        assertEquals(1, printed.size(), "Should contain only the namespace from the backend");
+        assertEquals(1, printed.size());
     }
 
     @SuppressWarnings("unchecked")
     @Test
-    @DisplayName("Should exclude default namespace when label expression filter is active")
-    void shouldExcludeDefaultNamespaceWithLabelFilter() throws Exception {
+    @DisplayName("Should filter namespaces by label expression")
+    void shouldFilterByLabelExpression() throws Exception {
         Namespace ns = new Namespace();
-        ns.setId("ns-1");
-        ns.setPath("my-ns");
         ns.setName("my-ns");
         ns.setLabels(Map.of("tier", "frontend"));
 
@@ -82,9 +78,9 @@ class NamespaceListTest {
         assertEquals(BaseCommand.EXIT_OK, result);
 
         ArgumentCaptor<List> captor = ArgumentCaptor.forClass(List.class);
-        verify(printer).printTable(captor.capture(), eq("id"), eq("name"), eq("path"), eq("labels"));
+        verify(printer).printTable(captor.capture(), eq("name"), eq("address"), eq("labels"));
         List<?> printed = captor.getValue();
-        assertEquals(1, printed.size(), "Should contain only the filtered namespace, not the default");
+        assertEquals(1, printed.size());
     }
 
     @SuppressWarnings("unchecked")
@@ -102,18 +98,16 @@ class NamespaceListTest {
         assertEquals(BaseCommand.EXIT_OK, result);
 
         ArgumentCaptor<List> captor = ArgumentCaptor.forClass(List.class);
-        verify(printer).printTable(captor.capture(), eq("id"), eq("name"), eq("path"), eq("labels"));
+        verify(printer).printTable(captor.capture(), eq("name"), eq("address"), eq("labels"));
         List<?> printed = captor.getValue();
-        assertTrue(printed.isEmpty(), "Should not include the default namespace when a label filter is active");
+        assertTrue(printed.isEmpty());
     }
 
     @Test
-    @DisplayName("Should list namespaces from backend when label expression is blank")
+    @DisplayName("Should list namespaces when label expression is blank")
     @SuppressWarnings("unchecked")
     void shouldListNamespacesWhenLabelExpressionBlank() throws Exception {
         Namespace ns = new Namespace();
-        ns.setId("ns-1");
-        ns.setPath("ns-team");
         ns.setName("team");
 
         when(namespacesService.list("   ")).thenReturn(new WanakuResponse<>(List.of(ns)));
@@ -126,9 +120,9 @@ class NamespaceListTest {
         assertEquals(BaseCommand.EXIT_OK, result);
 
         ArgumentCaptor<List> captor = ArgumentCaptor.forClass(List.class);
-        verify(printer).printTable(captor.capture(), eq("id"), eq("name"), eq("path"), eq("labels"));
+        verify(printer).printTable(captor.capture(), eq("name"), eq("address"), eq("labels"));
 
         List<?> printed = captor.getValue();
-        assertEquals(1, printed.size(), "Should contain only the namespace from the backend");
+        assertEquals(1, printed.size());
     }
 }

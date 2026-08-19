@@ -119,19 +119,20 @@ class WanakuPrinterPlainModeTest {
     @Test
     void printAsMapHandlesNullValues() {
         Map<String, Object> data = new HashMap<>();
-        data.put("id", "ns-123");
-        data.put("name", null);
-        data.put("path", "my-path");
+        data.put("name", "my-ns");
+        data.put("description", null);
+        data.put("address", "http://localhost:8080/my-ns/mcp/sse");
 
         assertDoesNotThrow(
-                () -> printer.printAsMap(data, "id", "name", "path"),
+                () -> printer.printAsMap(data, "name", "description", "address"),
                 "printAsMap must not throw when map values are null");
 
         String output = outputStream.toString();
         assertFalse(output.isBlank(), "Map output with null values must not be blank");
-        assertTrue(output.contains("ns-123"), "Output must contain non-null value 'ns-123'");
-        assertTrue(output.contains("my-path"), "Output must contain non-null value 'my-path'");
-        assertFalse(output.contains("name\tnull"), "Null value must not be rendered as literal 'null'");
+        assertTrue(output.contains("my-ns"), "Output must contain non-null value 'my-ns'");
+        assertTrue(
+                output.contains("http://localhost:8080/my-ns/mcp/sse"), "Output must contain non-null address value");
+        assertFalse(output.contains("description\tnull"), "Null value must not be rendered as literal 'null'");
     }
 
     @Test

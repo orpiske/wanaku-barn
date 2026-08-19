@@ -71,7 +71,7 @@ public class NamespacesCleanup extends BaseCommand {
             }
 
             printer.printInfoMessage(buildStaleSummary(staleNamespaces.size()));
-            printer.printTable(staleNamespaces, "id", "name", "path", "labels");
+            printer.printTable(staleNamespaces, "name", "labels");
 
             boolean continueCleanup = true;
             if (!assumeYes) {

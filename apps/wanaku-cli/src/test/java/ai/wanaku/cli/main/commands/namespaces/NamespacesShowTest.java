@@ -34,12 +34,11 @@ public class NamespacesShowTest {
     @DisplayName("Should show namespace when found")
     void shouldShowNamespaceWhenFound() throws Exception {
         Namespace namespace = new Namespace();
-        namespace.setId("ns-1");
-        namespace.setPath("ns-team");
+        namespace.setName("finance");
 
-        when(namespacesService.getById("ns-1")).thenReturn(new WanakuResponse<>(namespace));
+        when(namespacesService.getByName("finance")).thenReturn(new WanakuResponse<>(namespace));
 
-        command.id = "ns-1";
+        command.name = "finance";
         Integer result = command.doCall(null, mock(WanakuPrinter.class));
 
         assertEquals(0, result);
@@ -48,9 +47,9 @@ public class NamespacesShowTest {
     @Test
     @DisplayName("Should return error when namespace not found")
     void shouldReturnErrorWhenNamespaceNotFound() throws Exception {
-        when(namespacesService.getById("missing")).thenReturn(new WanakuResponse<>(null));
+        when(namespacesService.getByName("missing")).thenReturn(new WanakuResponse<>(null));
 
-        command.id = "missing";
+        command.name = "missing";
         Integer result = command.doCall(null, mock(WanakuPrinter.class));
 
         assertEquals(1, result);

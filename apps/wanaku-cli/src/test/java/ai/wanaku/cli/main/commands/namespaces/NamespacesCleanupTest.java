@@ -51,8 +51,7 @@ public class NamespacesCleanupTest {
     @DisplayName("Should cleanup stale namespaces when confirmed")
     void shouldCleanupStaleNamespacesWhenConfirmed() throws Exception {
         Namespace stale = new Namespace();
-        stale.setId("ns-1");
-        stale.setPath("ns-stale");
+        stale.setName("stale-ns");
 
         when(namespacesService.listStale(anyLong(), anyBoolean(), anyBoolean()))
                 .thenReturn(new WanakuResponse<>(List.of(stale)));

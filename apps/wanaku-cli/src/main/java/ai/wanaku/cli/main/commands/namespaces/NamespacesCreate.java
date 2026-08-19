@@ -8,19 +8,14 @@ import org.jline.terminal.Terminal;
 import ai.wanaku.capabilities.sdk.api.types.Namespace;
 import ai.wanaku.capabilities.sdk.api.types.WanakuResponse;
 import ai.wanaku.cli.main.commands.BaseCommand;
+import ai.wanaku.cli.main.support.NamespaceNameValidator;
 import ai.wanaku.cli.main.support.WanakuPrinter;
 import ai.wanaku.core.services.api.NamespacesService;
 import picocli.CommandLine;
 
 import static ai.wanaku.cli.main.support.ResponseHelper.commonResponseErrorHandler;
 
-/**
- * CLI command for creating namespaces.
- * <p>
- * When the name is omitted or blank, the namespace is created as pre-allocated.
- * </p>
- */
-@CommandLine.Command(name = "create", description = "Create a namespace (pre-allocated when name is omitted)")
+@CommandLine.Command(name = "create", description = "Create a namespace")
 public class NamespacesCreate extends BaseCommand {
 
     @CommandLine.Option(
@@ -30,17 +25,9 @@ public class NamespacesCreate extends BaseCommand {
             arity = "0..1")
     protected String host;
 
-    @CommandLine.Option(
-            names = {"--path"},
-            description = "The namespace path",
-            required = true,
-            arity = "0..1")
-    String path;
-
-    @CommandLine.Option(
-            names = {"--name"},
-            description = "The namespace name (optional for pre-allocated namespaces)",
-            arity = "0..1")
+    @CommandLine.Parameters(
+            description = "The namespace name (DNS-label: lowercase alphanumeric and hyphens, 1-63 chars)",
+            arity = "1")
     String name;
 
     @CommandLine.Option(
@@ -55,13 +42,14 @@ public class NamespacesCreate extends BaseCommand {
     public Integer doCall(Terminal terminal, WanakuPrinter printer) throws Exception {
         namespacesService = initAuthenticatedServiceIfNeeded(namespacesService, NamespacesService.class, host);
 
-        Namespace namespace = new Namespace();
-        namespace.setPath(path);
-
-        if (name != null) {
-            String trimmed = name.trim();
-            namespace.setName(trimmed.isEmpty() ? null : trimmed);
+        String validationError = NamespaceNameValidator.validate(name);
+        if (validationError != null) {
+            printer.printErrorMessage(validationError);
+            return EXIT_ERROR;
         }
+
+        Namespace namespace = new Namespace();
+        namespace.setName(name);
 
         if (labels != null && !labels.isEmpty()) {
             namespace.setLabels(labels);
@@ -76,8 +64,8 @@ public class NamespacesCreate extends BaseCommand {
                 return EXIT_ERROR;
             }
 
-            printer.printSuccessMessage("Namespace created: " + created.getId());
-            printer.printAsMap(created, "id", "name", "path", "labels");
+            printer.printSuccessMessage("Namespace created: " + created.getName());
+            printer.printAsMap(created, "name", "labels");
             return EXIT_OK;
         } catch (WebApplicationException ex) {
             Response response = ex.getResponse();
