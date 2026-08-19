@@ -33,11 +33,11 @@ public class NamespacesDeleteTest {
     }
 
     @Test
-    @DisplayName("Should delete namespace by id")
-    void shouldDeleteNamespaceById() throws Exception {
-        when(namespacesService.delete("ns-1")).thenReturn(new WanakuResponse<>());
+    @DisplayName("Should delete namespace by name")
+    void shouldDeleteNamespaceByName() throws Exception {
+        when(namespacesService.delete("finance")).thenReturn(new WanakuResponse<>());
 
-        command.id = "ns-1";
+        command.name = "finance";
         Integer result = command.doCall(null, mock(WanakuPrinter.class));
 
         assertEquals(0, result);
@@ -49,7 +49,7 @@ public class NamespacesDeleteTest {
         Response notFound = Response.status(Response.Status.NOT_FOUND).build();
         when(namespacesService.delete("missing")).thenThrow(new WebApplicationException(notFound));
 
-        command.id = "missing";
+        command.name = "missing";
         Integer result = command.doCall(null, mock(WanakuPrinter.class));
 
         assertEquals(1, result);

@@ -9,7 +9,6 @@ import ai.wanaku.cli.main.commands.BaseCommand;
 import ai.wanaku.cli.main.support.NamespaceOptions;
 import ai.wanaku.cli.main.support.WanakuPrinter;
 import ai.wanaku.core.services.api.ForwardsService;
-import ai.wanaku.core.services.api.NamespacesService;
 import picocli.CommandLine;
 
 import static ai.wanaku.cli.main.support.ResponseHelper.commonResponseErrorHandler;
@@ -40,20 +39,17 @@ public class ForwardsAdd extends BaseCommand {
             arity = "0..1")
     protected String service;
 
-    @CommandLine.ArgGroup(exclusive = true, multiplicity = "1")
+    @CommandLine.ArgGroup(exclusive = false, multiplicity = "1")
     NamespaceOptions namespaceOptions;
 
     @Override
     public Integer doCall(Terminal terminal, WanakuPrinter printer) throws Exception {
         ForwardsService forwardsService = initAuthenticatedService(ForwardsService.class, host);
 
-        NamespacesService namespacesService = initAuthenticatedService(NamespacesService.class, host);
-        String namespaceId = namespaceOptions.resolveNamespaceId(namespacesService);
-
         ForwardReference reference = new ForwardReference();
         reference.setName(name);
         reference.setAddress(service);
-        reference.setNamespace(namespaceId);
+        reference.setNamespace(namespaceOptions.getNamespaceValue());
 
         try {
             forwardsService.addForward(reference);

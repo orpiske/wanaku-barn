@@ -38,9 +38,9 @@ public interface NamespacesService {
     WanakuResponse<List<Namespace>> list(@QueryParam("labelFilter") String labelFilter);
 
     /**
-     * Creates a new namespace (pre-allocated when name is null).
+     * Creates a new namespace.
      *
-     * @param namespace the namespace to create
+     * @param namespace the namespace to create (name is required and must follow DNS-label conventions)
      * @return a {@link WanakuResponse} containing the created namespace
      */
     @POST
@@ -58,39 +58,39 @@ public interface NamespacesService {
     }
 
     /**
-     * Retrieves a specific namespace by its ID.
+     * Retrieves a specific namespace by its name.
      *
-     * @param id the ID of the namespace to retrieve
+     * @param name the name of the namespace to retrieve
      * @return a {@link WanakuResponse} containing the namespace details
      */
-    @Path("/{id}")
+    @Path("/{name}")
     @GET
     @Produces(MediaType.APPLICATION_JSON)
-    WanakuResponse<Namespace> getById(@PathParam("id") String id);
+    WanakuResponse<Namespace> getByName(@PathParam("name") String name);
 
     /**
      * Updates an existing namespace.
      *
-     * @param id the ID of the namespace to update
+     * @param name the name of the namespace to update
      * @param namespace the namespace object with updated information
      * @return a {@link WanakuResponse} indicating the result of the update operation
      */
     @PUT
-    @Path("/{id}")
+    @Path("/{name}")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    WanakuResponse<Void> update(@PathParam("id") String id, Namespace namespace);
+    WanakuResponse<Void> update(@PathParam("name") String name, Namespace namespace);
 
     /**
-     * Deletes a namespace by its ID.
+     * Deletes a namespace by its name.
      *
-     * @param id the ID of the namespace to delete
+     * @param name the name of the namespace to delete
      * @return a {@link WanakuResponse} indicating the result of the delete operation
      */
-    @Path("/{id}")
+    @Path("/{name}")
     @DELETE
     @Produces(MediaType.APPLICATION_JSON)
-    WanakuResponse<Void> delete(@PathParam("id") String id);
+    WanakuResponse<Void> delete(@PathParam("name") String name);
 
     /**
      * Lists stale namespaces based on age and optional label presence.

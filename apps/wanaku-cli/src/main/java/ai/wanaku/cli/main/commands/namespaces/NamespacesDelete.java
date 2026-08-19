@@ -10,7 +10,7 @@ import picocli.CommandLine;
 
 import static ai.wanaku.cli.main.support.ResponseHelper.handleNotFound;
 
-@CommandLine.Command(name = "delete", description = "Delete a namespace by id")
+@CommandLine.Command(name = "delete", description = "Delete a namespace by name")
 public class NamespacesDelete extends BaseCommand {
 
     @CommandLine.Option(
@@ -20,8 +20,8 @@ public class NamespacesDelete extends BaseCommand {
             arity = "0..1")
     protected String host;
 
-    @CommandLine.Parameters(description = "The ID of the namespace to delete", arity = "1")
-    String id;
+    @CommandLine.Parameters(description = "The name of the namespace to delete", arity = "1")
+    String name;
 
     NamespacesService namespacesService;
 
@@ -30,11 +30,11 @@ public class NamespacesDelete extends BaseCommand {
         namespacesService = initAuthenticatedServiceIfNeeded(namespacesService, NamespacesService.class, host);
 
         try {
-            namespacesService.delete(id);
-            printer.printSuccessMessage("Namespace deleted: " + id);
+            namespacesService.delete(name);
+            printer.printSuccessMessage("Namespace deleted: " + name);
             return EXIT_OK;
         } catch (WebApplicationException ex) {
-            return handleNotFound(ex, "Namespace", id, printer);
+            return handleNotFound(ex, "Namespace", name, printer);
         }
     }
 }

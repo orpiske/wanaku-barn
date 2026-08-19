@@ -13,9 +13,6 @@ import picocli.CommandLine;
 
 import static ai.wanaku.cli.main.support.ResponseHelper.commonResponseErrorHandler;
 
-/**
- * CLI command for showing namespace details.
- */
 @CommandLine.Command(name = "show", description = "Show detailed information about a namespace")
 public class NamespacesShow extends BaseCommand {
 
@@ -26,8 +23,8 @@ public class NamespacesShow extends BaseCommand {
             arity = "0..1")
     protected String host;
 
-    @CommandLine.Parameters(description = "The ID of the namespace to show", arity = "1")
-    String id;
+    @CommandLine.Parameters(description = "The name of the namespace to show", arity = "1")
+    String name;
 
     NamespacesService namespacesService;
 
@@ -36,16 +33,16 @@ public class NamespacesShow extends BaseCommand {
         namespacesService = initAuthenticatedServiceIfNeeded(namespacesService, NamespacesService.class, host);
 
         try {
-            WanakuResponse<Namespace> response = namespacesService.getById(id);
+            WanakuResponse<Namespace> response = namespacesService.getByName(name);
             Namespace namespace = response.data();
 
             if (namespace == null) {
-                printer.printWarningMessage("Namespace not found: " + id);
+                printer.printWarningMessage("Namespace not found: " + name);
                 return EXIT_ERROR;
             }
 
             printer.printInfoMessage("Namespace Details:");
-            printer.printAsMap(namespace, "id", "name", "path", "labels");
+            printer.printAsMap(namespace, "name", "labels");
             return EXIT_OK;
         } catch (WebApplicationException ex) {
             Response response = ex.getResponse();

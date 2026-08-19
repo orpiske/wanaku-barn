@@ -10,9 +10,7 @@ public class NamespaceMarshaller implements MessageMarshaller<Namespace> {
     public Namespace readFrom(ProtoStreamReader reader) throws IOException {
         Namespace namespace = new Namespace();
 
-        namespace.setId(reader.readString("id"));
         namespace.setName(reader.readString("name"));
-        namespace.setPath(reader.readString("path"));
         namespace.setLabels(reader.readMap("labels", new HashMap<>(), String.class, String.class));
 
         return namespace;
@@ -20,9 +18,7 @@ public class NamespaceMarshaller implements MessageMarshaller<Namespace> {
 
     @Override
     public void writeTo(ProtoStreamWriter writer, Namespace namespace) throws IOException {
-        writer.writeString("id", namespace.getId());
         writer.writeString("name", namespace.getName());
-        writer.writeString("path", namespace.getPath());
         writer.writeMap("labels", namespace.getLabels(), String.class, String.class);
     }
 

@@ -36,105 +36,50 @@ public class NamespaceRepositoryTest {
         ((AbstractInfinispanRepository<?, ?>) namespaceRepository).deleteALl();
     }
 
-    @DisplayName("Tests that preloading records create correct records")
+    @DisplayName("Tests that inserting namespaces creates correct records")
     @Order(1)
     @Test
     void testInsert() {
-        // Preload data
         for (int i = 0; i < maxNamespaces; i++) {
-            final String namespacePath = String.format("ns-%d", i);
+            final String namespaceName = String.format("ns-%d", i);
             Namespace namespace = new Namespace();
-            namespace.setPath(namespacePath);
-            namespace.setName(null);
-
-            final Namespace persisted = namespaceRepository.persist(namespace);
-            Assertions.assertNotNull(persisted);
-            Assertions.assertNull(persisted.getName());
-            Assertions.assertNotNull(persisted.getPath());
-            Assertions.assertNotNull(persisted.getId());
-
-            LOG.infof("Created new namespace path %s", namespacePath);
-        }
-
-        Assertions.assertEquals(maxNamespaces, namespaceRepository.size());
-    }
-
-    @DisplayName("Tests that creating a new records in an empty cache create correct records")
-    @Order(2)
-    @Test
-    void testFindFirstAvailableAfterEmpty() {
-        final String namespaceName = "testFindFirstAvailableAfterEmpty";
-        final List<Namespace> namespaces = namespaceRepository.findFirstAvailable(namespaceName);
-
-        Assertions.assertEquals(1, namespaces.size());
-        Namespace namespace = namespaces.getFirst();
-        Assertions.assertNotNull(namespace);
-
-        Assertions.assertNull(namespace.getName());
-        namespace.setName(namespaceName);
-        final Namespace persisted = namespaceRepository.persist(namespace);
-        Assertions.assertNotNull(persisted);
-        Assertions.assertEquals(namespaceName, persisted.getName());
-    }
-
-    @DisplayName("Tests that creating a new records in an non-empty cache create correct records")
-    @Order(3)
-    @Test
-    void testFindFirstAvailableAfterInsert() {
-        final String namespaceName = "testFindFirstAvailableAfterInsert";
-        final List<Namespace> namespaces = namespaceRepository.findFirstAvailable(namespaceName);
-
-        Assertions.assertEquals(1, namespaces.size());
-        Namespace namespace = namespaces.getFirst();
-        Assertions.assertNotNull(namespace);
-
-        Assertions.assertNull(namespace.getName(), "Should have returned a namespace without name");
-        namespace.setName(namespaceName);
-        final Namespace persisted = namespaceRepository.persist(namespace);
-        Assertions.assertNotNull(persisted);
-        Assertions.assertEquals(namespaceName, persisted.getName());
-    }
-
-    @DisplayName("Tests that records can be found")
-    @Order(4)
-    @Test
-    void testFind() {
-        final String namespaceName1 = "testFindFirstAvailableAfterEmpty";
-        final List<Namespace> firstAfterInsert = namespaceRepository.findByName(namespaceName1);
-        Assertions.assertNotNull(firstAfterInsert);
-        final Namespace first = firstAfterInsert.getFirst();
-        Assertions.assertEquals(namespaceName1, first.getName());
-        Assertions.assertNotNull(first.getPath());
-        Assertions.assertNotNull(first.getPath());
-
-        final String namespaceName2 = "testFindFirstAvailableAfterInsert";
-        final List<Namespace> secondAfterInsert = namespaceRepository.findByName(namespaceName2);
-        Assertions.assertNotNull(secondAfterInsert);
-        final Namespace second = secondAfterInsert.getFirst();
-        Assertions.assertEquals(namespaceName2, second.getName());
-        Assertions.assertNotNull(second.getPath());
-        Assertions.assertNotNull(second.getPath());
-    }
-
-    @DisplayName("Tests that does not exceed the maximum number of records")
-    @Order(5)
-    @Test
-    void testDoesNotExceedMaxNamespaces() {
-        for (int i = 2; i < maxNamespaces; i++) {
-            final String namespaceName = String.format("name-%d", i);
-            final List<Namespace> firstAvailable = namespaceRepository.findFirstAvailable(namespaceName);
-
-            Namespace namespace = firstAvailable.getFirst();
             namespace.setName(namespaceName);
 
             final Namespace persisted = namespaceRepository.persist(namespace);
             Assertions.assertNotNull(persisted);
             Assertions.assertEquals(namespaceName, persisted.getName());
+
+            LOG.infof("Created namespace %s", namespaceName);
         }
 
-        Assertions.assertEquals(10, namespaceRepository.size());
-        final List<Namespace> firstAvailable = namespaceRepository.findFirstAvailable("name-11");
-        Assertions.assertEquals(10, namespaceRepository.size());
-        Assertions.assertEquals(0, firstAvailable.size());
+        Assertions.assertEquals(maxNamespaces, namespaceRepository.size());
+    }
+
+    @DisplayName("Tests that namespaces can be found by name")
+    @Order(2)
+    @Test
+    void testFindByName() {
+        final String namespaceName = "ns-0";
+        final List<Namespace> namespaces = namespaceRepository.findByName(namespaceName);
+
+        Assertions.assertEquals(1, namespaces.size());
+        Namespace namespace = namespaces.getFirst();
+        Assertions.assertNotNull(namespace);
+        Assertions.assertEquals(namespaceName, namespace.getName());
+    }
+
+    @DisplayName("Tests that findByName returns empty for non-existent namespace")
+    @Order(3)
+    @Test
+    void testFindByNameNotFound() {
+        final List<Namespace> namespaces = namespaceRepository.findByName("non-existent");
+        Assertions.assertTrue(namespaces.isEmpty());
+    }
+
+    @DisplayName("Tests that does not exceed the maximum number of records")
+    @Order(4)
+    @Test
+    void testDoesNotExceedMaxNamespaces() {
+        Assertions.assertEquals(maxNamespaces, namespaceRepository.size());
     }
 }

@@ -14,7 +14,6 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -39,13 +38,10 @@ public class NamespacesCreateTest {
     @DisplayName("Should create namespace with name and labels")
     void shouldCreateNamespaceWithNameAndLabels() throws Exception {
         Namespace created = new Namespace();
-        created.setId("ns-1");
         created.setName("team");
-        created.setPath("ns-team");
 
         when(namespacesService.create(any(Namespace.class))).thenReturn(new WanakuResponse<>(created));
 
-        command.path = "ns-team";
         command.name = "team";
         command.labels = Map.of("env", "dev");
 
@@ -56,49 +52,28 @@ public class NamespacesCreateTest {
         verify(namespacesService).create(captor.capture());
         Namespace submitted = captor.getValue();
         assertEquals("team", submitted.getName());
-        assertEquals("ns-team", submitted.getPath());
         assertEquals("dev", submitted.getLabels().get("env"));
     }
 
     @Test
-    @DisplayName("Should create pre-allocated namespace when name is blank")
-    void shouldCreatePreallocatedNamespaceWhenNameBlank() throws Exception {
-        Namespace created = new Namespace();
-        created.setId("ns-2");
-        created.setPath("ns-prealloc");
+    @DisplayName("Should reject invalid namespace name")
+    void shouldRejectInvalidNamespaceName() throws Exception {
+        command.name = "Bad Name";
 
-        when(namespacesService.create(any(Namespace.class))).thenReturn(new WanakuResponse<>(created));
+        WanakuPrinter printer = mock(WanakuPrinter.class);
+        Integer result = command.doCall(null, printer);
 
-        command.path = "ns-prealloc";
-        command.name = "   ";
-
-        Integer result = command.doCall(null, mock(WanakuPrinter.class));
-
-        assertEquals(0, result);
-        ArgumentCaptor<Namespace> captor = ArgumentCaptor.forClass(Namespace.class);
-        verify(namespacesService).create(captor.capture());
-        Namespace submitted = captor.getValue();
-        assertNull(submitted.getName());
+        assertEquals(1, result);
     }
 
     @Test
-    @DisplayName("Should create pre-allocated namespace when name is omitted")
-    void shouldCreatePreallocatedNamespaceWhenNameOmitted() throws Exception {
-        Namespace created = new Namespace();
-        created.setId("ns-3");
-        created.setPath("ns-no-name");
+    @DisplayName("Should reject namespace name starting with hyphen")
+    void shouldRejectNamespaceNameStartingWithHyphen() throws Exception {
+        command.name = "-bad";
 
-        when(namespacesService.create(any(Namespace.class))).thenReturn(new WanakuResponse<>(created));
+        WanakuPrinter printer = mock(WanakuPrinter.class);
+        Integer result = command.doCall(null, printer);
 
-        command.path = "ns-no-name";
-        command.name = null;
-
-        Integer result = command.doCall(null, mock(WanakuPrinter.class));
-
-        assertEquals(0, result);
-        ArgumentCaptor<Namespace> captor = ArgumentCaptor.forClass(Namespace.class);
-        verify(namespacesService).create(captor.capture());
-        Namespace submitted = captor.getValue();
-        assertNull(submitted.getName());
+        assertEquals(1, result);
     }
 }

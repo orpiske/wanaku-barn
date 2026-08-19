@@ -4,8 +4,10 @@ import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.Response;
 
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 import org.jline.terminal.Terminal;
+import io.quarkus.runtime.annotations.RegisterForReflection;
 import ai.wanaku.capabilities.sdk.api.types.Namespace;
 import ai.wanaku.capabilities.sdk.api.types.WanakuResponse;
 import ai.wanaku.cli.main.commands.BaseCommand;
@@ -38,28 +40,35 @@ Note: If omitted, all namespaces are listed. Label matching is case-sensitive.
 
     NamespacesService namespacesService;
 
-    private AddressableNamespace convertToAddressable(Namespace n) {
-        return AddressableNamespace.fromNamespace(host, n);
+    @RegisterForReflection
+    public static class NamespaceRow {
+        private final String name;
+        private final String address;
+        private final Map<String, String> labels;
+
+        public NamespaceRow(String name, String address, Map<String, String> labels) {
+            this.name = name;
+            this.address = address;
+            this.labels = labels;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public String getAddress() {
+            return address;
+        }
+
+        public Map<String, String> getLabels() {
+            return labels;
+        }
     }
 
-    private static class AddressableNamespace extends Namespace {
-        private String host;
-
-        @Override
-        public String getPath() {
-            return String.format("%s/%s/mcp/sse", host, super.getPath());
-        }
-
-        public static AddressableNamespace fromNamespace(String host, Namespace namespace) {
-            AddressableNamespace ret = new AddressableNamespace();
-            ret.setId(namespace.getId());
-            ret.setPath(namespace.getPath());
-            ret.setLabels(namespace.getLabels());
-            ret.setName(namespace.getName() == null ? "" : namespace.getName());
-            ret.host = host;
-
-            return ret;
-        }
+    private NamespaceRow toRow(Namespace n) {
+        String normalizedHost = host.endsWith("/") ? host.substring(0, host.length() - 1) : host;
+        String address = String.format("%s/%s/mcp/sse", normalizedHost, n.getName());
+        return new NamespaceRow(n.getName(), address, n.getLabels());
     }
 
     @Override
@@ -68,10 +77,9 @@ Note: If omitted, all namespaces are listed. Label matching is case-sensitive.
 
         try {
             WanakuResponse<List<Namespace>> response = namespacesService.list(labelExpression);
-            List<AddressableNamespace> list =
-                    response.data().stream().map(this::convertToAddressable).collect(Collectors.toList());
+            List<NamespaceRow> list = response.data().stream().map(this::toRow).collect(Collectors.toList());
 
-            printer.printTable(list, "id", "name", "path", "labels");
+            printer.printTable(list, "name", "address", "labels");
         } catch (WebApplicationException ex) {
             Response response = ex.getResponse();
             commonResponseErrorHandler(response);

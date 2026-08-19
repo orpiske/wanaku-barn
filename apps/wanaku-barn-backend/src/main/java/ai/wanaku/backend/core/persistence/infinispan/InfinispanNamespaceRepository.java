@@ -1,8 +1,6 @@
 package ai.wanaku.backend.core.persistence.infinispan;
 
 import java.util.List;
-import java.util.UUID;
-import org.infinispan.Cache;
 import org.infinispan.commons.api.query.Query;
 import org.infinispan.configuration.cache.Configuration;
 import org.infinispan.manager.EmbeddedCacheManager;
@@ -28,7 +26,7 @@ public class InfinispanNamespaceRepository extends AbstractLabelAwareInfinispanR
 
     @Override
     protected String newId() {
-        return UUID.randomUUID().toString();
+        return null;
     }
 
     @Override
@@ -38,15 +36,5 @@ public class InfinispanNamespaceRepository extends AbstractLabelAwareInfinispanR
                 .query("from ai.wanaku.capabilities.sdk.api.types.Namespace t where t.name = :name");
         query.setParameter("name", name);
         return query.execute().list();
-    }
-
-    @Override
-    public List<Namespace> findFirstAvailable(String name) {
-        final Cache<Object, Namespace> cache = cacheManager.getCache(entityName());
-        Query<Namespace> query = cache.query(
-                "from ai.wanaku.capabilities.sdk.api.types.Namespace t where t.name = :name OR (t.path != '' AND t.name is NULL)");
-
-        query.setParameter("name", name);
-        return query.maxResults(1).execute().list();
     }
 }
