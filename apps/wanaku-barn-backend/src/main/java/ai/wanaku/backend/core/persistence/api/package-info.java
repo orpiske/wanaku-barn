@@ -13,7 +13,6 @@
  * <ul>
  *   <li>{@link ai.wanaku.backend.core.persistence.api.WanakuRepository} - Base repository interface</li>
  *   <li>{@link ai.wanaku.backend.core.persistence.api.ForwardReferenceRepository} - Forward reference persistence</li>
- *   <li>{@link ai.wanaku.backend.core.persistence.api.NamespaceRepository} - Namespace persistence</li>
  * </ul>
  *
  * @see ai.wanaku.capabilities.sdk.api.types
