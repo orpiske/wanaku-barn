@@ -9,11 +9,10 @@ import org.eclipse.microprofile.config.ConfigProvider;
 import org.jboss.logging.Logger;
 import io.fabric8.kubernetes.api.model.Condition;
 import io.fabric8.kubernetes.api.model.ConditionBuilder;
-import ai.wanaku.operator.wanaku.WanakuRouter;
 
 /**
  * Shared operator utilities for condition management, image pull policy resolution,
- * auth realm resolution, and router URL construction.
+ * and router URL construction.
  */
 public final class OperatorUtil {
     private static final Logger LOG = Logger.getLogger(OperatorUtil.class);
@@ -147,13 +146,5 @@ public final class OperatorUtil {
 
     static String getInternalRegistrationUri(String routerRef) {
         return getRouterBaseUrl(routerRef) + "/";
-    }
-
-    static String resolveAuthRealm(WanakuRouter resource) {
-        if (resource == null || resource.getSpec() == null || resource.getSpec().getAuth() == null) {
-            return EnvironmentVariables.DEFAULT_AUTH_REALM;
-        }
-        String realm = resource.getSpec().getAuth().getAuthRealm();
-        return (realm == null || realm.isBlank()) ? EnvironmentVariables.DEFAULT_AUTH_REALM : realm;
     }
 }

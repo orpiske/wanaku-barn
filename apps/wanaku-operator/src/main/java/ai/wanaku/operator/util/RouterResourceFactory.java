@@ -27,12 +27,6 @@ import ai.wanaku.operator.wanaku.WanakuTypes;
 import ai.wanaku.operator.wanaku.WanakuTypes.InsecureEdgeTerminationPolicy;
 import ai.wanaku.operator.wanaku.WanakuTypes.TlsTermination;
 
-/**
- * Factory for creating Kubernetes resources related to WanakuRouter deployments.
- *
- * <p>Handles the creation of router deployments, internal/external services,
- * ingresses, routes, and persistent volume claims.</p>
- */
 public final class RouterResourceFactory {
     private static final Logger LOG = Logger.getLogger(RouterResourceFactory.class);
 
@@ -48,16 +42,7 @@ public final class RouterResourceFactory {
 
     private RouterResourceFactory() {}
 
-    /**
-     * Creates the desired router backend deployment for the given WanakuRouter resource.
-     *
-     * @param resource the WanakuRouter custom resource
-     * @param context the reconciler context
-     * @param host the external host for the router
-     * @return a fully configured Deployment
-     */
-    public static Deployment makeDesiredRouterBackendDeployment(
-            WanakuRouter resource, Context<WanakuRouter> context, String host) {
+    public static Deployment makeDesiredRouterBackendDeployment(WanakuRouter resource, Context<WanakuRouter> context) {
         Deployment desiredDeployment = ReconcilerUtilsInternal.loadYaml(
                 Deployment.class, WanakuRouterReconciler.class, ROUTER_BACKEND_DEPLOYMENT_FILE);
 
@@ -74,34 +59,12 @@ public final class RouterResourceFactory {
         serviceSpec.getTemplate().getMetadata().getLabels().put("app", routerName(deploymentName));
         serviceSpec.getTemplate().getMetadata().getLabels().put("component", "wanaku-barn-backend");
 
-        setupBackendContainer(resource, serviceSpec, host);
-
-        final Container routerContainer = serviceSpec.getTemplate().getSpec().getContainers().stream()
-                .filter(c -> c.getName().equals("wanaku-mcp-router"))
-                .findFirst()
-                .get();
-
-        // Override image if specified in router spec
-        if (resource.getSpec().getRouter() != null
-                && resource.getSpec().getRouter().getImage() != null
-                && !resource.getSpec().getRouter().getImage().isEmpty()) {
-            OperatorUtil.validateImageAllowed(resource.getSpec().getRouter().getImage());
-            routerContainer.setImage(resource.getSpec().getRouter().getImage());
-            LOG.infof(
-                    "Using custom router image: %s",
-                    resource.getSpec().getRouter().getImage());
-        }
+        setupBackendContainer(resource, serviceSpec);
 
         desiredDeployment.addOwnerReference(resource);
         return desiredDeployment;
     }
 
-    /**
-     * Creates the internal (ClusterIP) service for the router.
-     *
-     * @param resource the WanakuRouter custom resource
-     * @return a fully configured Service
-     */
     public static Service makeRouterInternalService(WanakuRouter resource) {
         Service service = ReconcilerUtilsInternal.loadYaml(
                 Service.class, WanakuRouterReconciler.class, ROUTER_BACKEND_INTERNAL_SERVICE_FILE);
@@ -109,45 +72,76 @@ public final class RouterResourceFactory {
         String deploymentName = resource.getMetadata().getName();
         String ns = resource.getMetadata().getNamespace();
 
-        LOG.infof("Creating new external service for deployment: %s", deploymentName);
+        LOG.infof("Creating internal service for barn-backend: %s", deploymentName);
         service.getMetadata().setName("internal-" + deploymentName);
         service.getMetadata().setNamespace(ns);
         service.getMetadata().getLabels().put("app", routerName(deploymentName));
         service.getMetadata().getLabels().put("component", "wanaku-barn-backend");
-        service.getSpec().getSelector().put("app", routerName(deploymentName));
 
         ServiceSpec serviceSpec = service.getSpec();
         serviceSpec.setSelector(Map.of("app", routerName(deploymentName), "component", "wanaku-barn-backend"));
 
         service.addOwnerReference(resource);
-
         return service;
     }
 
-    /**
-     * Creates an OpenShift Route for external access to the router.
-     *
-     * @param resource the WanakuRouter custom resource
-     * @return a fully configured Route
-     */
-    public static Route makeRouterExternalService(WanakuRouter resource) {
+    public static Route makePraxisExternalRoute(WanakuRouter resource) {
         Route route = ReconcilerUtilsInternal.loadYaml(
                 Route.class, WanakuRouterReconciler.class, ROUTER_BACKEND_EXTERNAL_SERVICE_FILE);
 
         String deploymentName = resource.getMetadata().getName();
         String ns = resource.getMetadata().getNamespace();
 
-        LOG.infof("Creating new external service for deployment: %s", deploymentName);
+        LOG.infof("Creating external route for Praxis: %s", deploymentName);
         route.getMetadata().setName(deploymentName);
         route.getMetadata().setNamespace(ns);
-        route.getMetadata().getLabels().put("app", routerName(deploymentName));
-        route.getMetadata().getLabels().put("component", "wanaku-barn-backend");
-        route.getSpec().getTo().setName("internal-" + deploymentName);
+        route.getMetadata().getLabels().put("app", praxisName(deploymentName));
+        route.getMetadata().getLabels().put("component", "wanaku-praxis");
+        route.getSpec().getTo().setName("praxis-" + deploymentName);
+        route.getSpec().getPort().setTargetPort(new io.fabric8.kubernetes.api.model.IntOrString("8081-tcp"));
 
         applyRouteTls(route, resource.getSpec().getExposure());
         route.addOwnerReference(resource);
-
         return route;
+    }
+
+    public static Ingress makePraxisIngress(WanakuRouter resource, String host) {
+        Ingress ingress =
+                ReconcilerUtilsInternal.loadYaml(Ingress.class, WanakuRouterReconciler.class, ROUTER_INGRESS_FILE);
+
+        String deploymentName = resource.getMetadata().getName();
+        String ns = resource.getMetadata().getNamespace();
+
+        LOG.infof("Creating ingress for Praxis: %s", deploymentName);
+        ingress.getMetadata().setName(deploymentName);
+        ingress.getMetadata().setNamespace(ns);
+        ingress.getMetadata().getLabels().put("app", praxisName(deploymentName));
+        ingress.getMetadata().getLabels().put("component", "wanaku-praxis");
+
+        ingress.getSpec().getRules().getFirst().setHost(host);
+        ingress.getSpec()
+                .getRules()
+                .getFirst()
+                .getHttp()
+                .getPaths()
+                .getFirst()
+                .getBackend()
+                .getService()
+                .setName("praxis-" + deploymentName);
+        ingress.getSpec()
+                .getRules()
+                .getFirst()
+                .getHttp()
+                .getPaths()
+                .getFirst()
+                .getBackend()
+                .getService()
+                .getPort()
+                .setNumber(8081);
+
+        applyIngressExtras(ingress, resource.getSpec().getExposure(), host);
+        ingress.addOwnerReference(resource);
+        return ingress;
     }
 
     private static void applyRouteTls(Route route, WanakuTypes.ExposureSpec ingressSpec) {
@@ -185,43 +179,6 @@ public final class RouterResourceFactory {
         route.getSpec().setTls(tlsConfig);
     }
 
-    /**
-     * Creates a Kubernetes Ingress for external access to the router.
-     *
-     * @param resource the WanakuRouter custom resource
-     * @param host the host for the ingress rule
-     * @return a fully configured Ingress
-     */
-    public static Ingress makeRouterIngress(WanakuRouter resource, String host) {
-        Ingress ingress =
-                ReconcilerUtilsInternal.loadYaml(Ingress.class, WanakuRouterReconciler.class, ROUTER_INGRESS_FILE);
-
-        String deploymentName = resource.getMetadata().getName();
-        String ns = resource.getMetadata().getNamespace();
-
-        LOG.infof("Creating new ingress for deployment: %s", deploymentName);
-        ingress.getMetadata().setName(deploymentName);
-        ingress.getMetadata().setNamespace(ns);
-        ingress.getMetadata().getLabels().put("app", routerName(deploymentName));
-        ingress.getMetadata().getLabels().put("component", "wanaku-barn-backend");
-
-        ingress.getSpec().getRules().getFirst().setHost(host);
-        ingress.getSpec()
-                .getRules()
-                .getFirst()
-                .getHttp()
-                .getPaths()
-                .getFirst()
-                .getBackend()
-                .getService()
-                .setName("internal-" + deploymentName);
-
-        applyIngressExtras(ingress, resource.getSpec().getExposure(), host);
-        ingress.addOwnerReference(resource);
-
-        return ingress;
-    }
-
     private static void applyIngressExtras(Ingress ingress, WanakuTypes.ExposureSpec exposureSpec, String host) {
         if (exposureSpec == null) {
             return;
@@ -247,12 +204,6 @@ public final class RouterResourceFactory {
         ingress.getSpec().setTls(List.of(ingressTls));
     }
 
-    /**
-     * Creates a PersistentVolumeClaim for router storage.
-     *
-     * @param resource the WanakuRouter custom resource
-     * @return a fully configured PersistentVolumeClaim
-     */
     public static PersistentVolumeClaim makeRouterVolumePVC(WanakuRouter resource) {
         PersistentVolumeClaim pvc = ReconcilerUtilsInternal.loadYaml(
                 PersistentVolumeClaim.class, WanakuRouterReconciler.class, SERVICES_VOLUME_PVC_FILE);
@@ -260,18 +211,16 @@ public final class RouterResourceFactory {
         String deploymentName = resource.getMetadata().getName();
         String ns = resource.getMetadata().getNamespace();
 
-        LOG.infof("Creating services-volume PVC for deployment: %s", deploymentName);
         pvc.getMetadata().setName(ROUTER_VOLUME_CLAIM);
         pvc.getMetadata().setNamespace(ns);
         pvc.getMetadata().getLabels().put("app", routerName(deploymentName));
         pvc.getMetadata().getLabels().put("component", "wanaku-router-storage");
 
         pvc.addOwnerReference(resource);
-
         return pvc;
     }
 
-    private static void setupBackendContainer(WanakuRouter resource, DeploymentSpec spec, String host) {
+    private static void setupBackendContainer(WanakuRouter resource, DeploymentSpec spec) {
         final List<Container> containers = spec.getTemplate().getSpec().getContainers();
 
         final Container service = containers.stream()
@@ -281,60 +230,26 @@ public final class RouterResourceFactory {
 
         List<EnvVar> envVars = new java.util.ArrayList<>();
 
-        final WanakuTypes.AuthSpec authSpec = resource.getSpec().getAuth();
-        if (authSpec != null) {
-            final String authServer = authSpec.getAuthServer();
-
-            String authProxy = authSpec.getAuthProxy();
-            if ("auto".equals(authProxy)) {
-                authProxy = "https://" + host;
-            } else {
-                if (authProxy == null) {
-                    authProxy = authServer;
-                }
-            }
-
-            String realm = OperatorUtil.resolveAuthRealm(resource);
-
-            envVars.add(new EnvVarBuilder()
-                    .withName(EnvironmentVariables.AUTH_SERVER)
-                    .withValue(authServer)
-                    .build());
-            envVars.add(new EnvVarBuilder()
-                    .withName(EnvironmentVariables.AUTH_PROXY)
-                    .withValue(authProxy)
-                    .build());
-            envVars.add(new EnvVarBuilder()
-                    .withName(EnvironmentVariables.AUTH_REALM)
-                    .withValue(realm)
-                    .build());
-        }
-
         final WanakuRouterSpec.RouterSpec routerSpec = resource.getSpec().getRouter();
 
-        // Resolve pull policy with fallback chain: component -> global -> default
         String componentPolicy = routerSpec != null ? routerSpec.getImagePullPolicy() : null;
         String globalPolicy = resource.getSpec().getImagePullPolicy();
         String resolvedPolicy = OperatorUtil.resolveImagePullPolicy(componentPolicy, globalPolicy);
         service.setImagePullPolicy(resolvedPolicy);
 
         if (routerSpec != null) {
-            // Set a custom image
             final String image = routerSpec.getImage();
-
             if (image != null) {
                 OperatorUtil.validateImageAllowed(image);
                 service.setImage(image);
             }
 
-            // Add custom environment variables from router spec if provided
             if (routerSpec.getEnv() != null && !routerSpec.getEnv().isEmpty()) {
                 for (WanakuTypes.EnvVar env : routerSpec.getEnv()) {
-                    EnvVar customEnvVar = new EnvVarBuilder()
+                    envVars.add(new EnvVarBuilder()
                             .withName(env.getName())
                             .withValue(env.getValue())
-                            .build();
-                    envVars.add(customEnvVar);
+                            .build());
                 }
             }
         }
@@ -350,7 +265,6 @@ public final class RouterResourceFactory {
             }
         }
 
-        // Annotation-derived vars are applied last so they override everything else
         EnvironmentVariableHelper.applyAnnotationEnvVars(
                 envVars, resource.getMetadata().getAnnotations());
 

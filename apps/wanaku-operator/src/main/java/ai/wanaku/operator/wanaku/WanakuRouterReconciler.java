@@ -138,7 +138,35 @@ public class WanakuRouterReconciler implements Reconciler<WanakuRouter> {
     private void deployRouter(
             WanakuRouter resource, Context<WanakuRouter> context, String namespace, WanakuRouterStatus wanakuStatus) {
 
-        createRouterPVCs(resource, namespace);
+        deployPraxis(resource, context, namespace);
+
+        String host = reconcileExternalAccess(resource, namespace);
+
+        wanakuStatus.setHost("https://" + host);
+        wanakuStatus.setSseEndpoint("https://%s/mcp/sse".formatted(host));
+        wanakuStatus.setStreamableEndpoint("https://%s/mcp/".formatted(host));
+
+        WanakuRouterSpec.RouterSpec routerSpec = resource.getSpec().getRouter();
+        if (routerSpec != null && routerSpec.isEnabled()) {
+            deployBarnBackend(resource, context, namespace);
+        }
+    }
+
+    private void deployBarnBackend(WanakuRouter resource, Context<WanakuRouter> context, String namespace) {
+        final PersistentVolumeClaim routerPVC = RouterResourceFactory.makeRouterVolumePVC(resource);
+        PersistentVolumeClaim existingRouterPVC = kubernetesClient
+                .persistentVolumeClaims()
+                .inNamespace(namespace)
+                .withName(RouterResourceFactory.ROUTER_VOLUME_CLAIM)
+                .get();
+        if (!match(routerPVC, existingRouterPVC)) {
+            LOG.infof("Creating or updating PVC router-volume-claim in %s", namespace);
+            kubernetesClient
+                    .persistentVolumeClaims()
+                    .inNamespace(namespace)
+                    .resource(routerPVC)
+                    .createOr(Replaceable::update);
+        }
 
         final Service desiredInternalService = RouterResourceFactory.makeRouterInternalService(resource);
         Service existingInternalService = kubernetesClient
@@ -157,14 +185,8 @@ public class WanakuRouterReconciler implements Reconciler<WanakuRouter> {
                     .createOr(Replaceable::update);
         }
 
-        String host = reconcileExternalAccess(resource, namespace);
-
-        wanakuStatus.setHost("https://" + host);
-        wanakuStatus.setSseEndpoint("https://%s/mcp/sse".formatted(host));
-        wanakuStatus.setStreamableEndpoint("https://%s/mcp/".formatted(host));
-
         final Deployment desiredDeployment =
-                RouterResourceFactory.makeDesiredRouterBackendDeployment(resource, context, host);
+                RouterResourceFactory.makeDesiredRouterBackendDeployment(resource, context);
         Deployment existingDeployment = kubernetesClient
                 .apps()
                 .deployments()
@@ -181,11 +203,6 @@ public class WanakuRouterReconciler implements Reconciler<WanakuRouter> {
                     .inNamespace(namespace)
                     .resource(desiredDeployment)
                     .createOr(Replaceable::update);
-        }
-
-        WanakuRouterSpec.PraxisSpec praxisSpec = resource.getSpec().getPraxis();
-        if (praxisSpec == null || praxisSpec.isEnabled()) {
-            deployPraxis(resource, context, namespace);
         }
     }
 
@@ -247,7 +264,7 @@ public class WanakuRouterReconciler implements Reconciler<WanakuRouter> {
         if (exposureSpec == null
                 || exposureSpec.getType() == null
                 || exposureSpec.getType() == WanakuTypes.ExposureType.NONE) {
-            return "internal-" + resource.getMetadata().getName();
+            return "praxis-" + resource.getMetadata().getName();
         }
         if (exposureSpec.getType() == WanakuTypes.ExposureType.ROUTE) {
             OpenShiftClient openShiftClient = kubernetesClient.adapt(OpenShiftClient.class);
@@ -258,7 +275,7 @@ public class WanakuRouterReconciler implements Reconciler<WanakuRouter> {
 
     private static String createRouteAndGetHost(
             WanakuRouter resource, String namespace, OpenShiftClient openShiftClient) {
-        final Route desiredRoute = RouterResourceFactory.makeRouterExternalService(resource);
+        final Route desiredRoute = RouterResourceFactory.makePraxisExternalRoute(resource);
         Route existingRoute;
         try {
             existingRoute = openShiftClient
@@ -299,7 +316,7 @@ public class WanakuRouterReconciler implements Reconciler<WanakuRouter> {
 
     private String createIngressAndGetHost(WanakuRouter resource, String namespace) {
         String host = resource.getSpec().getExposure().getHost();
-        final Ingress desiredIngress = RouterResourceFactory.makeRouterIngress(resource, host);
+        final Ingress desiredIngress = RouterResourceFactory.makePraxisIngress(resource, host);
         Ingress existingIngress = kubernetesClient
                 .network()
                 .v1()
@@ -329,23 +346,6 @@ public class WanakuRouterReconciler implements Reconciler<WanakuRouter> {
         } catch (RuntimeException e) {
             LOG.warn("Failed to detect OpenShift cluster.", e);
             return false;
-        }
-    }
-
-    private void createRouterPVCs(WanakuRouter resource, String namespace) {
-        final PersistentVolumeClaim servicesVolumePVC = RouterResourceFactory.makeRouterVolumePVC(resource);
-        PersistentVolumeClaim existingServicesVolume = kubernetesClient
-                .persistentVolumeClaims()
-                .inNamespace(namespace)
-                .withName(RouterResourceFactory.ROUTER_VOLUME_CLAIM)
-                .get();
-        if (!match(servicesVolumePVC, existingServicesVolume)) {
-            LOG.infof("Creating or updating PVC route-volume-claim in %s", namespace);
-            kubernetesClient
-                    .persistentVolumeClaims()
-                    .inNamespace(namespace)
-                    .resource(servicesVolumePVC)
-                    .createOr(Replaceable::update);
         }
     }
 
