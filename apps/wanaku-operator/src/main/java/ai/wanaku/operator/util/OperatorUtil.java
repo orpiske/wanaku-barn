@@ -9,24 +9,11 @@ import org.eclipse.microprofile.config.ConfigProvider;
 import org.jboss.logging.Logger;
 import io.fabric8.kubernetes.api.model.Condition;
 import io.fabric8.kubernetes.api.model.ConditionBuilder;
-import ai.wanaku.capabilities.sdk.api.exceptions.WanakuException;
-import ai.wanaku.operator.wanaku.WanakuCamelCodeExecutionEngine;
-import ai.wanaku.operator.wanaku.WanakuCamelCodeExecutionEngineSpec;
-import ai.wanaku.operator.wanaku.WanakuCapability;
 import ai.wanaku.operator.wanaku.WanakuRouter;
-import ai.wanaku.operator.wanaku.WanakuTypes;
 
 /**
  * Shared operator utilities for condition management, image pull policy resolution,
  * auth realm resolution, and router URL construction.
- *
- * <p>Resource-specific factory methods have been extracted to:
- * <ul>
- * <li>{@link RouterResourceFactory} for router K8s resources</li>
- * <li>{@link CapabilityResourceFactory} for capability K8s resources</li>
- * <li>{@link CodeExecutionEngineResourceFactory} for code execution engine K8s resources</li>
- * <li>{@link EnvironmentVariableHelper} for environment variable computation</li>
- * </ul>
  */
 public final class OperatorUtil {
     private static final Logger LOG = Logger.getLogger(OperatorUtil.class);
@@ -162,70 +149,7 @@ public final class OperatorUtil {
         return getRouterBaseUrl(routerRef) + "/";
     }
 
-    public static boolean isRemoteDeploymentMode(WanakuCamelCodeExecutionEngineSpec spec) {
-        return "remote".equalsIgnoreCase(normalizeDeploymentMode(spec.getDeploymentMode()));
-    }
-
-    public static String normalizeDeploymentMode(String deploymentMode) {
-        if (deploymentMode == null || deploymentMode.isBlank()) {
-            return WanakuTypes.DEPLOYMENT_MODE_IN_CLUSTER;
-        }
-        String normalized = deploymentMode.trim().toLowerCase();
-        if (WanakuTypes.VALID_DEPLOYMENT_MODES.contains(normalized) || "incluster".equals(normalized)) {
-            return WanakuTypes.DEPLOYMENT_MODE_REMOTE.equals(normalized)
-                    ? WanakuTypes.DEPLOYMENT_MODE_REMOTE
-                    : WanakuTypes.DEPLOYMENT_MODE_IN_CLUSTER;
-        }
-        return WanakuTypes.DEPLOYMENT_MODE_IN_CLUSTER;
-    }
-
-    public static void validateDeploymentMode(String deploymentMode) {
-        if (deploymentMode == null || deploymentMode.isBlank()) {
-            return;
-        }
-        String normalized = deploymentMode.trim().toLowerCase();
-        if (!WanakuTypes.VALID_DEPLOYMENT_MODES.contains(normalized) && !"incluster".equals(normalized)) {
-            throw new WanakuException(
-                    "deploymentMode must be one of: " + String.join(", ", WanakuTypes.VALID_DEPLOYMENT_MODES));
-        }
-    }
-
-    public static void validateCacheStrategy(WanakuCamelCodeExecutionEngineSpec.DependencyCacheSpec cacheSpec) {
-        if (cacheSpec == null
-                || cacheSpec.getStrategy() == null
-                || cacheSpec.getStrategy().isBlank()) {
-            return;
-        }
-        String strategy = cacheSpec.getStrategy().trim().toLowerCase();
-        if (!WanakuTypes.VALID_CACHE_STRATEGIES.contains(strategy)) {
-            throw new WanakuException("dependencyCache.strategy must be one of: "
-                    + String.join(", ", WanakuTypes.VALID_CACHE_STRATEGIES));
-        }
-    }
-
-    static String resolveAuthRealm(WanakuCapability resource) {
-        if (resource == null || resource.getSpec() == null || resource.getSpec().getAuth() == null) {
-            return EnvironmentVariables.DEFAULT_AUTH_REALM;
-        }
-        String realm = resource.getSpec().getAuth().getAuthRealm();
-        return (realm == null || realm.isBlank()) ? EnvironmentVariables.DEFAULT_AUTH_REALM : realm;
-    }
-
-    /**
-     * Resolves the auth realm for a WanakuRouter resource.
-     *
-     * @param resource the WanakuRouter custom resource (may be null)
-     * @return the configured realm, or the default "wanaku" realm
-     */
     static String resolveAuthRealm(WanakuRouter resource) {
-        if (resource == null || resource.getSpec() == null || resource.getSpec().getAuth() == null) {
-            return EnvironmentVariables.DEFAULT_AUTH_REALM;
-        }
-        String realm = resource.getSpec().getAuth().getAuthRealm();
-        return (realm == null || realm.isBlank()) ? EnvironmentVariables.DEFAULT_AUTH_REALM : realm;
-    }
-
-    static String resolveAuthRealm(WanakuCamelCodeExecutionEngine resource) {
         if (resource == null || resource.getSpec() == null || resource.getSpec().getAuth() == null) {
             return EnvironmentVariables.DEFAULT_AUTH_REALM;
         }
