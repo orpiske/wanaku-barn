@@ -12,11 +12,11 @@ The CLI is used to manage and interact with the Wanaku MCP Router.
 
 > **Tip:** You can also install via JBang: `jbang app install wanaku@wanaku-ai/wanaku`
 
-### Wanaku Router
+### Wanaku Barn Backend
 
 | Component | File |
 |---|---|
-| Router Backend | [wanaku-barn-backend-{{projectVersion}}.zip](https://github.com/wanaku-ai/wanaku-barn/releases/download/{{tagName}}/wanaku-barn-backend-{{projectVersion}}.zip) |
+| Barn Backend | [wanaku-barn-backend-{{projectVersion}}.zip](https://github.com/wanaku-ai/wanaku-barn/releases/download/{{tagName}}/wanaku-barn-backend-{{projectVersion}}.zip) |
 
 ---
 
