@@ -72,48 +72,6 @@ public final class WanakuTypes {
         }
     }
 
-    public static class AuthSpec {
-        private String authServer;
-        private String authProxy;
-        private String authRealm;
-
-        public String getAuthServer() {
-            return authServer;
-        }
-
-        public void setAuthServer(String authServer) {
-            this.authServer = authServer;
-        }
-
-        public String getAuthProxy() {
-            return authProxy;
-        }
-
-        public void setAuthProxy(String authProxy) {
-            this.authProxy = authProxy;
-        }
-
-        public String getAuthRealm() {
-            return authRealm;
-        }
-
-        public void setAuthRealm(String authRealm) {
-            this.authRealm = authRealm;
-        }
-    }
-
-    public static class SecretsSpec {
-        private String oidcCredentialsSecret;
-
-        public String getOidcCredentialsSecret() {
-            return oidcCredentialsSecret;
-        }
-
-        public void setOidcCredentialsSecret(String oidcCredentialsSecret) {
-            this.oidcCredentialsSecret = oidcCredentialsSecret;
-        }
-    }
-
     public static class EnvVar {
         private String name;
         private String value;
