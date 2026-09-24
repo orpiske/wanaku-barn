@@ -1108,6 +1108,13 @@ wanaku-keycloak-admin credentials remove --admin-username admin --admin-password
 
 > **Note:** The `--show-secret` flag is required to display client secrets. Without it, `credentials show` will print a warning instead. Use with caution as secrets may leak into logs or shell history.
 
+To capture only the secret in a script, add `--plain` with `--show-secret`. This writes the secret alone to standard output. Errors use standard error, and the command returns a non-zero status if it cannot return a secret:
+
+```shell
+CLIENT_SECRET=$(wanaku-keycloak-admin credentials show --admin-username admin --admin-password admin \
+  --client-id my-service --show-secret --plain)
+```
+
 ### Realm Management
 
 ```shell

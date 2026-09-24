@@ -61,7 +61,7 @@ public abstract class BaseCommand implements Callable<Integer> {
     @CommandLine.Option(
             names = {"--plain"},
             description = "Route output through stdout so it can be captured by a parent process")
-    boolean plain = false;
+    protected boolean plain = false;
 
     /**
      * Creates an HttpClient instance, optionally configured for insecure SSL.
