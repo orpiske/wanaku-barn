@@ -1160,7 +1160,7 @@ Wanaku classifies downstream MCP servers into the following types:
 
 ## Managing MCP Tools
 
-For `wanaku mcp` commands, a server origin with no path, such as `--uri http://localhost:4180`, selects `/default/mcp`. To select another namespace, use its full endpoint, such as `--uri http://localhost:4180/team/mcp`. Explicit paths remain unchanged. Use a final slash, such as `--uri http://localhost:4180/`, for an MCP server that serves requests at its root.
+For `wanaku mcp` commands, pass the complete MCP endpoint with `--uri`. The CLI sends this URI to the MCP server without adding or changing a path. For example, use `--uri http://localhost:4180/team/mcp` for the `team` namespace. A bare server origin, such as `--uri http://localhost:4180`, is not expanded to a namespace endpoint; use it only when the server accepts MCP requests at its root.
 
 These commands use MCP protocol version `2025-11-25`. They start with the `initialize` request and skip protocol discovery.
 

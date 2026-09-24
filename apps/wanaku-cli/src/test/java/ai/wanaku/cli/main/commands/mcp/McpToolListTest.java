@@ -16,7 +16,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
@@ -115,12 +115,16 @@ class McpToolListTest {
     }
 
     @ParameterizedTest
-    @CsvSource({
-        "http://localhost:9999/mcp, http://localhost:9999/mcp",
-        "http://localhost:4180, http://localhost:4180/default/mcp"
-    })
-    @DisplayName("Should forward auth token to MCP client")
-    void shouldForwardAuthToken(String address, String endpoint) throws Exception {
+    @ValueSource(
+            strings = {
+                "http://localhost:9999/mcp",
+                "http://localhost:4180",
+                "http://localhost:4180/team/mcp",
+                "http://localhost:4180/team/mcp?x=a%2Fb",
+                "http://localhost:4180/"
+            })
+    @DisplayName("Should forward auth token and endpoint unchanged to MCP client")
+    void shouldForwardAuthTokenAndEndpointUnchanged(String address) throws Exception {
         McpClient tokenClient = mock(McpClient.class);
         when(tokenClient.listTools()).thenReturn(Collections.emptyList());
 
@@ -129,13 +133,13 @@ class McpToolListTest {
 
         try (MockedStatic<ClientUtil> clientUtil = mockStatic(ClientUtil.class)) {
             clientUtil
-                    .when(() -> ClientUtil.createClient(endpoint, "my-secret-token", "2025-11-25"))
+                    .when(() -> ClientUtil.createClient(address, "my-secret-token", "2025-11-25"))
                     .thenReturn(tokenClient);
 
             Integer result = cmd.doCall(null, mock(WanakuPrinter.class));
             assertEquals(BaseCommand.EXIT_OK, result);
 
-            clientUtil.verify(() -> ClientUtil.createClient(endpoint, "my-secret-token", "2025-11-25"));
+            clientUtil.verify(() -> ClientUtil.createClient(address, "my-secret-token", "2025-11-25"));
         }
     }
 }
