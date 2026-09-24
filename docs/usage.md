@@ -884,6 +884,8 @@ To extract the token programmatically (for example, in a script or test helper),
 TOKEN=$(wanaku auth token --get --unmask --plain)
 ```
 
+On success, stdout contains only the token and a final newline. If no valid token is available, the command returns exit code 1 and leaves stdout empty. Error messages and application logs go to stderr. Check the exit code before you use the token.
+
 You can also set or clear the stored token directly:
 
 ```shell
@@ -1157,6 +1159,10 @@ Wanaku classifies downstream MCP servers into the following types:
 - `multi-capability`: these MCP servers provide both MCP tools and MCP resources.
 
 ## Managing MCP Tools
+
+For `wanaku mcp` commands, a server origin with no path, such as `--uri http://localhost:4180`, selects `/default/mcp`. To select another namespace, use its full endpoint, such as `--uri http://localhost:4180/team/mcp`. Explicit paths remain unchanged. Use a final slash, such as `--uri http://localhost:4180/`, for an MCP server that serves requests at its root.
+
+These commands use MCP protocol version `2025-11-25`. They start with the `initialize` request and skip protocol discovery.
 
 An MCP (Model Context Protocol) tool enables Large Language Models (LLMs) to execute tasks beyond their inherent capabilities by
 using external functions.
