@@ -57,10 +57,10 @@ class AuthTokenTest {
             credentialStore.storeRefreshToken("refresh-token");
             credentialStore.storeAuthServerUrl("http://localhost:8080");
             if (scenario.equals("refresh-failure")) {
-                when(refresher.refresh("refresh-token", "http://localhost:8080", "admin-cli", null))
+                when(refresher.refresh("refresh-token", "http://localhost:8080", "admin-cli", null, null))
                         .thenThrow(new TokenRefresher.TokenRefreshException("Refresh failed"));
             } else {
-                when(refresher.refresh("refresh-token", "http://localhost:8080", "admin-cli", null))
+                when(refresher.refresh("refresh-token", "http://localhost:8080", "admin-cli", null, null))
                         .thenReturn(new RefreshResult(
                                 "test-token", "refresh-token", Instant.now().getEpochSecond() + 300));
             }
