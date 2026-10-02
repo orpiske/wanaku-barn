@@ -1,1 +1,2 @@
 org.apache.camel:camel-ftp
+org.apache.camel:camel-ai-tool

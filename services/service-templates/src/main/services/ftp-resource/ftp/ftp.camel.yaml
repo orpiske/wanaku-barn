@@ -1,15 +1,19 @@
 - route:
     id: ftp-read
-    description: Read files from FTP servers
-    autoStartup: false
     from:
-      uri: direct:wanaku
+      uri: ai-tool:ftp-read
+      parameters:
+        tags: wanaku
+        description: "{{tool.description}}"
+        parameter.fileName: string
+        parameter.fileName.description: "The name of the file on the FTP server"
+        parameter.fileName.required: true
       steps:
       - setHeader:
           name: CamelFileName
           expression:
             simple:
-              expression: "${header.wanaku_resource_uri}"
+              expression: "${header.fileName}"
       - to:
           uri: ftp://{{ftp.username}}@{{ftp.host}}:{{ftp.port}}/{{ftp.directory}}
           parameters:
