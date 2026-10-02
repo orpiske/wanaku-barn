@@ -1,6 +1,7 @@
 export const SERVICE_ID = "wanaku-barn-api";
 
 interface PluginHostHttp {
+  // HTTP methods return the backend payload, which may omit the WanakuResponse envelope.
   get<T>(service: string, path: string): Promise<T>;
   post<T>(service: string, path: string, body?: unknown): Promise<T>;
   put<T>(service: string, path: string, body?: unknown): Promise<T>;

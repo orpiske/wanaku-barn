@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "test": "node --test tests/*.test.mjs",
     "dev": "orval --config ./orval.config.ts && vite",
     "build": "orval --config ./orval.config.ts && tsc -b && vite build",
     "build:plugin": "orval --config ./orval.config.ts && tsc -b && vite build --config vite.plugin.config.ts && cp plugin.json plugin-dist/ && cp -r public/* plugin-dist/",

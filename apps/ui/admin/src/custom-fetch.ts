@@ -70,7 +70,9 @@ import {getPluginHost, getBackendUrl, isPluginMode, SERVICE_ID} from "./plugin-h
       throw new Error(String(errorData.error));
     }
 
-    return { status: 200, data, headers: new Headers() } as T;
+    // Hosts can return an unwrapped payload; callers expect the Barn response envelope.
+    const responseData = errorData && typeof errorData === 'object' && 'data' in errorData ? data : { data };
+    return { status: 200, data: responseData, headers: new Headers() } as T;
   }
 
   export const customFetch = async <T>(
