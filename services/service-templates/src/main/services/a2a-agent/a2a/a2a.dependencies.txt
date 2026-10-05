@@ -1,0 +1,2 @@
+org.apache.camel:camel-a2a
+org.apache.camel:camel-platform-http-vertx

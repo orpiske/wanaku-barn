@@ -1,0 +1,17 @@
+- route:
+    id: echo-tool
+    from:
+      uri: a2a:echo-agent
+      parameters:
+        name: "Echo Agent"
+        description: "Echoing capabilities via A2A"
+        version: "1.0.0"
+        protocolBinding: JSONRPC
+        validateAuth: false
+      steps:
+        - log:
+            message: "Running the echo agent with body ${body}"
+        - setBody:
+            expression:
+              simple:
+                expression: ${body}--a2a--${body}
