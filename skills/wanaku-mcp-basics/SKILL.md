@@ -13,13 +13,13 @@ other MCP servers. Agents talk to the router, and the router routes and governs 
 
 Key facts:
 
-- The router exposes MCP over Streamable HTTP at `/mcp/` (for example,
-  `http://localhost:8080/mcp/`). The legacy SSE path `/mcp/sse` is still served for MCP
-  clients, but the `wanaku mcp` CLI commands only support Streamable HTTP.
+- Praxis exposes MCP on port 8081 in the local Compose stack, separately from the
+  barn-backend management API on port 8080. Use Streamable HTTP at
+  `http://localhost:8081/default/mcp` for the `wanaku mcp` CLI commands.
 - The CLI talks to the management API, which defaults to `http://localhost:8080` and can be
   overridden per command with `--host`.
 - Namespaces group tools and resources under separate MCP endpoints, such as
-  `http://localhost:8080/<namespace>/mcp/`.
+  `http://localhost:8081/<namespace>/mcp/`.
 
 ## When to use this skill
 
@@ -41,16 +41,17 @@ with `wanaku --version`.
 
 ## Connect a coding agent
 
-Use the built-in configure commands:
+Point clients at the Praxis Streamable HTTP endpoint (`http://localhost:8081/default/mcp`)
+for the local Compose stack. For Claude Code:
 
-- `wanaku configure claude` — registers Wanaku in the Claude Desktop configuration.
-- `wanaku configure claude-code` — prints a ready-to-run registration command, such as
-  `claude mcp add wanaku --transport sse http://localhost:8080/mcp/sse/`.
-- `wanaku configure cursor` — registers Wanaku in Cursor.
-- `wanaku configure ibm-bob` — registers Wanaku in IBM Bob.
+```shell
+claude mcp add wanaku --transport http http://localhost:8081/default/mcp
+```
 
-Alternatively, point any MCP client at the Streamable HTTP endpoint
-(`http://localhost:8080/mcp/`) or the legacy SSE endpoint (`http://localhost:8080/mcp/sse`).
+For other clients, configure the same URL with Streamable HTTP. The built-in
+`wanaku configure` commands currently generate `/mcp` or legacy SSE paths, which do not
+include the namespace required by Praxis; use explicit client configuration instead.
+For a cluster deployment, use the exposed Praxis URL instead of localhost.
 
 ## Authenticate the CLI
 
@@ -85,18 +86,19 @@ To query an MCP endpoint directly (bypassing the management API), use the `wanak
 commands and pass the complete Streamable HTTP endpoint with `--uri`:
 
 ```shell
-wanaku mcp tool list --uri http://localhost:8080/mcp/
-wanaku mcp tool list --uri http://localhost:8080/team/mcp/   # namespaced endpoint
+wanaku mcp tool list --uri http://localhost:8081/default/mcp
+wanaku mcp tool list --uri http://localhost:8081/team/mcp/   # namespaced endpoint
 ```
 
-A bare server origin is not expanded to a namespace endpoint; always include the `/mcp/` path.
+Praxis requires `/<namespace>/mcp`, including `/default/mcp` for the default namespace.
+A bare origin or `/mcp` is not expanded to a namespace endpoint.
 
 ## Forward external MCP servers
 
 Bring an existing MCP server under the router's governance:
 
 ```shell
-wanaku forwards add --service="http://your-mcp-server.com:8080/mcp/sse" --name my-mcp-server
+wanaku forwards add --service="http://your-mcp-server.com:8080/mcp/" --name my-mcp-server
 wanaku forwards list
 wanaku forwards remove --name my-mcp-server
 ```
@@ -118,8 +120,8 @@ wanaku data-store remove --name employee-routes
 
 ```shell
 wanaku namespaces list                                # the default namespace shows as <default>
-wanaku namespaces create                              # create a namespace
-wanaku namespaces list --label-filter 'env=production & tier=backend'
+wanaku namespaces create production                   # create a namespace
+wanaku namespaces list --label-expression 'env=production & tier=backend'
 ```
 
 ## Checklist for agents

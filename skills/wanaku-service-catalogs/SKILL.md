@@ -17,7 +17,7 @@ description: Create, package, deploy, and manage Wanaku service catalogs and ins
 
 ## When to use this skill
 
-Use it when an agent needs to scaffold a new capability from a template, author a service
+Use it when an agent needs to deploy a capability from a template, author a service
 catalog from scratch, package it for deployment, or manage catalogs deployed to a router.
 
 ## Template workflow
@@ -28,11 +28,15 @@ List available templates (requires a reachable router):
 wanaku service template list
 ```
 
-Instantiate a template into a service catalog, passing the properties the template needs:
+Instantiate and deploy a template on the router, passing the properties the template needs:
 
 ```shell
 wanaku service template instantiate --name kafka-tool \
-  --property kafka.brokers=localhost:9092 --property kafka.topic=ai.requests
+  --property kafka.brokers=localhost:9092 \
+  --property kafka.request.topic=ai.requests \
+  --property kafka.response.topic=ai.responses \
+  --property kafka.reply.timeout-ms=30000 \
+  --property kafka.response.group-id=wanaku-replies
 ```
 
 Notes:
@@ -42,7 +46,9 @@ Notes:
 - `--service-name` and `--service-system` override the service name and system identifier
   from the template.
 
-After instantiating, edit the generated Camel routes, then follow the catalog lifecycle below.
+Instantiation sends a REST request to the router, which packages and deploys the catalog.
+It does not create local files. Verify it with `wanaku service catalog list`. To author and
+edit a catalog locally, start with `wanaku service init` and follow the lifecycle below.
 
 ## Catalog lifecycle (CLI)
 
