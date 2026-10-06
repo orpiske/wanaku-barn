@@ -13,7 +13,7 @@ other MCP servers. Agents talk to the router, and the router routes and governs 
 
 Key facts:
 
-- Praxis exposes MCP on port 8081 in the local Compose stack, separately from the
+- Wanaku exposes MCP on port 8081 in the local Compose stack, separately from the
   barn-backend management API on port 8080. Use Streamable HTTP at
   `http://localhost:8081/default/mcp` for the `wanaku mcp` CLI commands.
 - The CLI talks to the management API, which defaults to `http://localhost:8080` and can be
@@ -41,7 +41,7 @@ with `wanaku --version`.
 
 ## Connect a coding agent
 
-Point clients at the Praxis Streamable HTTP endpoint (`http://localhost:8081/default/mcp`)
+Point clients at the Wanaku Streamable HTTP endpoint (`http://localhost:8081/default/mcp`)
 for the local Compose stack. For Claude Code:
 
 ```shell
@@ -50,8 +50,8 @@ claude mcp add wanaku --transport http http://localhost:8081/default/mcp
 
 For other clients, configure the same URL with Streamable HTTP. The built-in
 `wanaku configure` commands currently generate `/mcp` or legacy SSE paths, which do not
-include the namespace required by Praxis; use explicit client configuration instead.
-For a cluster deployment, use the exposed Praxis URL instead of localhost.
+include the namespace required by Wanaku; use explicit client configuration instead.
+For a cluster deployment, use the exposed Wanaku URL instead of localhost.
 
 ## Authenticate the CLI
 
@@ -90,7 +90,7 @@ wanaku mcp tool list --uri http://localhost:8081/default/mcp
 wanaku mcp tool list --uri http://localhost:8081/team/mcp/   # namespaced endpoint
 ```
 
-Praxis requires `/<namespace>/mcp`, including `/default/mcp` for the default namespace.
+Wanaku requires `/<namespace>/mcp`, including `/default/mcp` for the default namespace.
 A bare origin or `/mcp` is not expanded to a namespace endpoint.
 
 ## Forward external MCP servers

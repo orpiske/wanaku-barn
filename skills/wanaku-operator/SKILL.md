@@ -9,7 +9,7 @@ description: Deploy and operate Wanaku on Kubernetes or OpenShift with the Wanak
 
 The Wanaku Operator manages these custom resource definitions (CRDs):
 
-- **WanakuRouter** — deploys the Praxis MCP engine, an optional barn-backend for
+- **WanakuRouter** — deploys the Wanaku MCP engine, an optional barn-backend for
   service catalog persistence, and an optional oauth2-proxy for authentication.
 - **WanakuServiceCatalog** — deploys packaged service catalogs (Camel routes + Wanaku rules)
   to a router with barn-backend enabled.
