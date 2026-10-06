@@ -28,7 +28,7 @@ cp -r skills/wanaku-mcp-basics ~/.claude/skills/
 or into `.claude/skills/` of a specific project. Claude Code discovers the `SKILL.md` files
 automatically and loads them when their description matches the task.
 
-To connect Claude Code to the local Praxis MCP endpoint:
+To connect Claude Code to the local Wanaku MCP endpoint:
 
 ```shell
 claude mcp add wanaku --transport http http://localhost:8081/default/mcp
