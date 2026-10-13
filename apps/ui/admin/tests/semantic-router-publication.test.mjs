@@ -32,6 +32,7 @@ const server = await createServer({
   server: { middlewareMode: true, hmr: false, ws: false, watch: null },
 });
 const { SemanticRouterWizard } = await server.ssrLoadModule('/src/Pages/SemanticRouters/SemanticRouterWizard.tsx');
+const { SemanticRoutersPage } = await server.ssrLoadModule('/src/Pages/SemanticRouters/SemanticRoutersPage.tsx');
 const { semanticRouterApi } = await server.ssrLoadModule('/src/Pages/SemanticRouters/api.ts');
 
 const definition = {
@@ -56,6 +57,7 @@ let root;
 let container;
 let onSaved;
 let onClose;
+let onPublished;
 let scrollIntoView;
 
 beforeEach(() => {
@@ -64,11 +66,15 @@ beforeEach(() => {
   root = createRoot(container);
   onSaved = mock.fn();
   onClose = mock.fn();
+  onPublished = mock.fn();
   scrollIntoView = mock.method(dom.window.HTMLElement.prototype, 'scrollIntoView');
   mock.method(semanticRouterApi, 'revisions', async () => []);
   mock.method(semanticRouterApi, 'validate', async () => ({ valid: true, errors: [] }));
   mock.method(semanticRouterApi, 'save', async (draft) => draft);
   mock.method(semanticRouterApi, 'publish', async () => publication);
+  mock.method(semanticRouterApi, 'list', async () => [definition]);
+  mock.method(semanticRouterApi, 'actions', async () => []);
+  mock.method(semanticRouterApi, 'experts', async () => []);
 });
 
 afterEach(async () => {
@@ -102,7 +108,14 @@ async function openReview() {
     experts: [],
     onSaved,
     onClose,
+    onPublished,
   })));
+  for (let step = 0; step < 4; step++) await click('Next');
+}
+
+async function openPageReview() {
+  await act(async () => root.render(createElement(SemanticRoutersPage)));
+  await click('Edit');
   for (let step = 0; step < 4; step++) await click('Next');
 }
 
@@ -118,22 +131,19 @@ function assertFeedbackVisible() {
     call.this === heading && call.arguments[0]?.block === 'start'));
 }
 
-test('successful publication announces completion, returns focus, and keeps deployment details available', async () => {
+test('successful publication notifies its owner only after the publication response succeeds', async () => {
   const pending = Promise.withResolvers();
   semanticRouterApi.publish.mock.mockImplementation(() => pending.promise);
   await openReview();
-  scrollIntoView.mock.resetCalls();
   await click('Publish catalog');
 
   assert.equal(button('Publishing…').disabled, true);
-  assert.equal(successConfirmation(), undefined);
+  assert.equal(onPublished.mock.callCount(), 0);
+  assert.equal(onSaved.mock.callCount(), 1);
   await act(async () => pending.resolve(publication));
 
-  assert.ok(successConfirmation());
-  assertFeedbackVisible();
-  assert.ok(document.querySelector('[role="dialog"]'));
-  assert.match(document.body.textContent, /Deployment instructions/);
-  assert.match(document.body.textContent, /support-catalog/);
+  assert.equal(onPublished.mock.callCount(), 1);
+  assert.deepEqual(onPublished.mock.calls[0].arguments, [definition.name]);
   assert.equal(onClose.mock.callCount(), 0);
   assert.equal(onSaved.mock.callCount(), 2);
 });
@@ -152,36 +162,30 @@ test('publication failure keeps the wizard open with an error and allows a succe
   assert.equal(button('Publish catalog').disabled, false);
   assertFeedbackVisible();
   assert.equal(onClose.mock.callCount(), 0);
+  assert.equal(onPublished.mock.callCount(), 0);
 
   await click('Publish catalog');
-  assert.ok(successConfirmation());
+  assert.equal(onPublished.mock.callCount(), 1);
   assert.doesNotMatch(document.body.textContent, /Request failed/);
 });
 
-test('publication scrolls feedback into view when the review heading is already focused', async () => {
+test('saving a draft and failed validation do not signal publication completion', async () => {
   await openReview();
-  assert.equal(document.activeElement.textContent, 'Review and publication');
-  scrollIntoView.mock.resetCalls();
-  // Safari mouse clicks can leave focus on the heading while the user has scrolled down.
-  await act(async () => button('Publish catalog').click());
+  await click('Save draft');
+  assert.match(document.body.textContent, /Draft saved/);
+  assert.equal(onSaved.mock.callCount(), 1);
+  assert.equal(onPublished.mock.callCount(), 0);
 
-  assert.ok(successConfirmation());
-  assertFeedbackVisible();
-});
-
-test('a failed republish clears the previous success confirmation', async () => {
-  await openReview();
-  await click('Publish catalog');
-  assert.ok(successConfirmation());
-
-  semanticRouterApi.publish.mock.mockImplementation(async () => {
-    throw new Error('Publication service unavailable');
-  });
+  semanticRouterApi.validate.mock.mockImplementation(async () => ({
+    valid: false,
+    errors: [{ field: 'name', message: 'Name is required' }],
+  }));
   await click('Publish catalog');
 
-  assert.equal(successConfirmation(), undefined);
-  assert.match(document.body.textContent, /Publication service unavailable/);
-  assert.ok(document.querySelector('[role="dialog"]'));
+  assert.equal(onPublished.mock.callCount(), 0);
+  assert.equal(semanticRouterApi.publish.mock.callCount(), 0);
+  assert.match(document.body.textContent, /Name is required/);
+  assert.ok(document.querySelector('.semantic-router-step-title'));
 });
 
 test('loading a previously published revision does not announce a new publication', async () => {
@@ -192,4 +196,39 @@ test('loading a previously published revision does not announce a new publicatio
   assert.match(document.body.textContent, /support-catalog/);
   assert.equal(successConfirmation(), undefined);
   assert.equal(semanticRouterApi.publish.mock.callCount(), 0);
+  assert.equal(onPublished.mock.callCount(), 0);
+  assert.ok(document.querySelector('.semantic-router-step-title'));
+});
+
+test('the page closes the wizard after publication and keeps a success confirmation on the list', async () => {
+  const pending = Promise.withResolvers();
+  semanticRouterApi.publish.mock.mockImplementation(() => pending.promise);
+  await openPageReview();
+  // Mouse clicks can leave focus on the heading while the user has scrolled down.
+  await act(async () => button('Publish catalog').click());
+
+  assert.ok(document.querySelector('.semantic-router-step-title'));
+  assert.equal(successConfirmation(), undefined);
+  await act(async () => pending.resolve(publication));
+
+  assert.equal(document.querySelector('.semantic-router-step-title'), null);
+  assert.ok(successConfirmation());
+  assert.match(successConfirmation().textContent, /Support router was published/);
+  assert.match(successConfirmation().textContent, /deployment instructions/);
+  assert.ok(button('Edit'));
+});
+
+test('the page keeps the wizard open on draft save and publication failure', async () => {
+  semanticRouterApi.publish.mock.mockImplementation(async () => {
+    throw new Error('Publication service unavailable');
+  });
+  await openPageReview();
+  await click('Save draft');
+  assert.ok(document.querySelector('.semantic-router-step-title'));
+  assert.equal(successConfirmation(), undefined);
+
+  await click('Publish catalog');
+  assert.ok(document.querySelector('.semantic-router-step-title'));
+  assert.equal(successConfirmation(), undefined);
+  assert.match(document.body.textContent, /Publication service unavailable/);
 });

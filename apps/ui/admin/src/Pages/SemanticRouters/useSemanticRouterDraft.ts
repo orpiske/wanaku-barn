@@ -42,6 +42,7 @@ export function belongsToStep(field: string, step: number): boolean {
 export function useSemanticRouterDraft(
   initial: SemanticRouterDefinition | null,
   onSaved: () => void,
+  onPublished: (name: string) => void,
 ) {
   const [definition, setDefinition] = useState<SemanticRouterDefinition>(
     () => initial ?? blank,
@@ -184,8 +185,8 @@ export function useSemanticRouterDraft(
       if (!saved.id) throw new Error("The saved draft has no identifier.");
       setPublication(await semanticRouterApi.publish(saved.id));
       setPublicationNotice(null);
-      setNotice("Catalog published successfully");
       onSaved();
+      onPublished(saved.name || "Semantic router");
     });
   const saveDraft = () =>
     perform(async () => {

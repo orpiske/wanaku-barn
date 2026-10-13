@@ -102,6 +102,12 @@ jobs:
         cache: 'yarn'
         cache-dependency-path: tests/e2e/ui/yarn.lock
 
+    - name: Test admin UI
+      working-directory: apps/ui/admin
+      run: |
+        yarn install --frozen-lockfile
+        yarn test
+
     - name: Install Playwright dependencies
       working-directory: tests/e2e/ui
       run: |
