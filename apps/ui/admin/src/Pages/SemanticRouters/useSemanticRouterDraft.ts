@@ -184,6 +184,7 @@ export function useSemanticRouterDraft(
       if (!saved.id) throw new Error("The saved draft has no identifier.");
       setPublication(await semanticRouterApi.publish(saved.id));
       setPublicationNotice(null);
+      setNotice("Catalog published successfully");
       onSaved();
     });
   const saveDraft = () =>

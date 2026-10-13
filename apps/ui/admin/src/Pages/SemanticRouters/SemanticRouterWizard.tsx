@@ -70,7 +70,8 @@ export function SemanticRouterWizard({
   );
   useEffect(() => {
     heading.current?.focus();
-  }, [step]);
+    heading.current?.scrollIntoView({ block: "start" });
+  }, [step, notice, error]);
   return (
     <ComposedModal
       open
