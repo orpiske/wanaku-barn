@@ -13,15 +13,15 @@ spec:
 #  exposure:
 #    type: Ingress
 #    host: wanaku.example.com
-# Praxis settings (Rust MCP engine) - always deployed
-  praxis: {}
-#    image: quay.io/wanaku/wanaku-praxis:latest
+# Wanaku Server settings (Rust MCP engine) - always deployed
+  server: {}
+#    image: quay.io/wanaku/wanaku-server:latest
 #    imagePullPolicy: IfNotPresent
 #    env:
 #      - name: WANAKU_INFERENCE_UPSTREAM
 #        value: "http://ollama:11434"
 # Barn-backend settings (optional, for service catalog persistence)
-# Set router.enabled: true to deploy barn-backend alongside Praxis
+# Set router.enabled: true to deploy barn-backend alongside Wanaku Server
 #  router:
 #    enabled: true
 #    image: quay.io/wanaku/wanaku-barn-backend:latest

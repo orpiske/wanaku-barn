@@ -41,12 +41,71 @@ class RouterResourceFactoryTest {
         assertEquals("my_value", getEnvValue(deployment, "MY_VAR"));
     }
 
-    // ── Praxis Ingress factory tests ─────────────────────────────────────────
+    @Test
+    void serverDeploymentUsesServerImageAndMatchingResources() {
+        WanakuRouter router = createRouter(null);
+        Deployment deployment = RouterResourceFactory.makeDesiredServerDeployment(router, null);
+        var service = RouterResourceFactory.makeServerInternalService(router);
+        var pvc = RouterResourceFactory.makeServerVolumePVC(router);
+        var pod = deployment.getSpec().getTemplate();
+
+        assertEquals("test-router-server", deployment.getMetadata().getName());
+        assertEquals("wanaku-server", pod.getSpec().getContainers().getFirst().getName());
+        assertEquals(
+                "quay.io/wanaku/wanaku-server:latest",
+                pod.getSpec().getContainers().getFirst().getImage());
+        assertEquals("server-test-router", service.getMetadata().getName());
+        assertEquals(
+                deployment.getSpec().getSelector().getMatchLabels(),
+                service.getSpec().getSelector());
+        assertEquals(service.getSpec().getSelector(), pod.getMetadata().getLabels());
+        assertEquals("server-volume-claim", pvc.getMetadata().getName());
+        assertEquals(
+                pvc.getMetadata().getName(),
+                pod.getSpec().getVolumes().getFirst().getPersistentVolumeClaim().getClaimName());
+    }
 
     @Test
-    void praxisIngressTargetsPort8081() {
+    void serverDeploymentUsesCustomServerConfiguration() {
         WanakuRouter router = createRouter(null);
-        Ingress ingress = RouterResourceFactory.makePraxisIngress(router, "wanaku.example.com");
+        WanakuRouterSpec.ServerSpec serverSpec = new WanakuRouterSpec.ServerSpec();
+        serverSpec.setImage("quay.io/wanaku/wanaku-server:custom");
+        serverSpec.setImagePullPolicy("Always");
+        WanakuTypes.EnvVar customVar = new WanakuTypes.EnvVar();
+        customVar.setName("WANAKU_MGMT_LISTEN");
+        customVar.setValue("0.0.0.0:9190");
+        serverSpec.setEnv(List.of(customVar));
+        router.getSpec().setServer(serverSpec);
+
+        Deployment deployment = RouterResourceFactory.makeDesiredServerDeployment(router, null);
+
+        assertEquals(
+                serverSpec.getImage(),
+                deployment
+                        .getSpec()
+                        .getTemplate()
+                        .getSpec()
+                        .getContainers()
+                        .getFirst()
+                        .getImage());
+        assertEquals(
+                "Always",
+                deployment
+                        .getSpec()
+                        .getTemplate()
+                        .getSpec()
+                        .getContainers()
+                        .getFirst()
+                        .getImagePullPolicy());
+        assertEquals("0.0.0.0:9190", getContainerEnvValue(deployment, "wanaku-server", "WANAKU_MGMT_LISTEN"));
+    }
+
+    // ── Server Ingress factory tests ─────────────────────────────────────────
+
+    @Test
+    void serverIngressTargetsPort8081() {
+        WanakuRouter router = createRouter(null);
+        Ingress ingress = RouterResourceFactory.makeServerIngress(router, "wanaku.example.com");
         assertEquals(
                 8081,
                 ingress.getSpec()
@@ -62,11 +121,11 @@ class RouterResourceFactoryTest {
     }
 
     @Test
-    void praxisIngressTargetsPraxisService() {
+    void serverIngressTargetsServerService() {
         WanakuRouter router = createRouter(null);
-        Ingress ingress = RouterResourceFactory.makePraxisIngress(router, "wanaku.example.com");
+        Ingress ingress = RouterResourceFactory.makeServerIngress(router, "wanaku.example.com");
         assertEquals(
-                "praxis-test-router",
+                "server-test-router",
                 ingress.getSpec()
                         .getRules()
                         .getFirst()
@@ -79,25 +138,25 @@ class RouterResourceFactoryTest {
     }
 
     @Test
-    void praxisIngressWithTlsSecretName() {
+    void serverIngressWithTlsSecretName() {
         WanakuRouter router = createRouterWithExposure("nginx", null);
-        Ingress ingress = RouterResourceFactory.makePraxisIngress(router, "wanaku.example.com");
+        Ingress ingress = RouterResourceFactory.makeServerIngress(router, "wanaku.example.com");
         assertNotNull(ingress.getSpec().getTls());
         assertEquals(1, ingress.getSpec().getTls().size());
     }
 
     @Test
-    void praxisIngressWithIngressClassName() {
+    void serverIngressWithIngressClassName() {
         WanakuRouter router = createRouterWithExposure("nginx", null);
-        Ingress ingress = RouterResourceFactory.makePraxisIngress(router, "wanaku.example.com");
+        Ingress ingress = RouterResourceFactory.makeServerIngress(router, "wanaku.example.com");
         assertEquals("nginx", ingress.getSpec().getIngressClassName());
     }
 
     @Test
-    void praxisIngressWithAnnotationsMergesThem() {
+    void serverIngressWithAnnotationsMergesThem() {
         Map<String, String> annotations = Map.of("cert-manager.io/cluster-issuer", "letsencrypt-prod");
         WanakuRouter router = createRouterWithExposure(null, annotations);
-        Ingress ingress = RouterResourceFactory.makePraxisIngress(router, "wanaku.example.com");
+        Ingress ingress = RouterResourceFactory.makeServerIngress(router, "wanaku.example.com");
         assertNotNull(ingress.getMetadata().getAnnotations());
         assertEquals("letsencrypt-prod", ingress.getMetadata().getAnnotations().get("cert-manager.io/cluster-issuer"));
     }
@@ -116,23 +175,23 @@ class RouterResourceFactoryTest {
     }
 
     @Test
-    void oauth2ProxyMcpContainerTargetsPraxisMcpPort() {
+    void oauth2ProxyMcpContainerTargetsServerMcpPort() {
         WanakuRouter router = createRouterWithAuth();
         Deployment deployment = RouterResourceFactory.makeOauth2ProxyDeployment(router, "wanaku.example.com");
 
         assertEquals(
-                "http://praxis-test-router:8081",
+                "http://server-test-router:8081",
                 getContainerEnvValue(deployment, "oauth2-proxy-mcp", "OAUTH2_PROXY_UPSTREAMS"));
         assertEquals("0.0.0.0:4180", getContainerEnvValue(deployment, "oauth2-proxy-mcp", "OAUTH2_PROXY_HTTP_ADDRESS"));
     }
 
     @Test
-    void oauth2ProxyMgmtContainerTargetsPraxisMgmtPort() {
+    void oauth2ProxyMgmtContainerTargetsServerMgmtPort() {
         WanakuRouter router = createRouterWithAuth();
         Deployment deployment = RouterResourceFactory.makeOauth2ProxyDeployment(router, "wanaku.example.com");
 
         assertEquals(
-                "http://praxis-test-router:9090",
+                "http://server-test-router:9090",
                 getContainerEnvValue(deployment, "oauth2-proxy-mgmt", "OAUTH2_PROXY_UPSTREAMS"));
         assertEquals(
                 "0.0.0.0:4181", getContainerEnvValue(deployment, "oauth2-proxy-mgmt", "OAUTH2_PROXY_HTTP_ADDRESS"));
@@ -212,9 +271,9 @@ class RouterResourceFactoryTest {
     }
 
     @Test
-    void praxisIngressTargetsOauth2ProxyWhenAuthEnabled() {
+    void serverIngressTargetsOauth2ProxyWhenAuthEnabled() {
         WanakuRouter router = createRouterWithAuth();
-        Ingress ingress = RouterResourceFactory.makePraxisIngress(router, "wanaku.example.com");
+        Ingress ingress = RouterResourceFactory.makeServerIngress(router, "wanaku.example.com");
 
         var backendService = ingress.getSpec()
                 .getRules()

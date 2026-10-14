@@ -6,7 +6,7 @@ public class WanakuRouterSpec {
     private String imagePullPolicy;
     private WanakuTypes.ExposureSpec exposure;
     private RouterSpec router;
-    private PraxisSpec praxis;
+    private ServerSpec server;
     private AuthSpec auth;
 
     public String getImagePullPolicy() {
@@ -33,12 +33,12 @@ public class WanakuRouterSpec {
         this.router = router;
     }
 
-    public PraxisSpec getPraxis() {
-        return praxis;
+    public ServerSpec getServer() {
+        return server;
     }
 
-    public void setPraxis(PraxisSpec praxis) {
-        this.praxis = praxis;
+    public void setServer(ServerSpec server) {
+        this.server = server;
     }
 
     public AuthSpec getAuth() {
@@ -50,7 +50,7 @@ public class WanakuRouterSpec {
     }
 
     /**
-     * Authentication via oauth2-proxy instances placed in front of Praxis.
+     * Authentication via oauth2-proxy instances placed in front of Wanaku Server.
      * Two proxies are deployed: one protecting the MCP port (4180) and one
      * protecting the management port (4181), sharing the same cookie secret for SSO.
      */
@@ -120,7 +120,7 @@ public class WanakuRouterSpec {
         }
     }
 
-    public static class PraxisSpec {
+    public static class ServerSpec {
         private String image;
         private List<WanakuTypes.EnvVar> env;
         private String imagePullPolicy;

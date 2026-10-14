@@ -30,8 +30,8 @@ services:
       timeout: 10s
       retries: 5
 
-  wanaku-praxis:
-    image: quay.io/wanaku/wanaku-praxis:latest
+  wanaku-server:
+    image: quay.io/wanaku/wanaku-server:latest
     environment:
       WANAKU_CLASSIC_URL: http://localhost:8080
       WANAKU_MGMT_LISTEN: 0.0.0.0:9090
@@ -39,7 +39,7 @@ services:
       WANAKU_PERSIST_PATH: /data/registry
     network_mode: host
     volumes:
-      - wanaku-praxis:/data/registry
+      - wanaku-server:/data/registry
     depends_on:
       wanaku-router:
         condition: service_healthy
@@ -52,4 +52,4 @@ services:
 
 volumes:
   wanaku-router:
-  wanaku-praxis:
+  wanaku-server:

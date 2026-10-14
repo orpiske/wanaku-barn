@@ -25,11 +25,25 @@ When you create these custom resources, the operator automatically provisions:
 - ServiceAccounts and RBAC policies
 
 For a `WanakuRouter` named `wanaku-dev`, the operator creates (among others) the
-`wanaku-dev-praxis` Deployment, the `praxis-wanaku-dev` external service, the
+`wanaku-dev-server` Deployment, the `server-wanaku-dev` external service, the
 `internal-wanaku-dev` internal service and — when `spec.auth.enabled` is `true` — an
 `oauth2-proxy` Deployment and service. `WanakuServiceCatalog` resources require the referenced
 router to have `spec.router.enabled: true`, so that the MCP router is deployed for the catalogs
 to register against.
+
+## Upgrading from the PoC naming
+
+Rename `spec.praxis` to `spec.server` in existing `WanakuRouter` manifests and install
+the updated CRD before applying them. The default engine image is
+`quay.io/wanaku/wanaku-server:latest`.
+
+The engine Deployment changes from `<router>-praxis` to `<router>-server`, its Service
+from `praxis-<router>` to `server-<router>`, and its PVC from `praxis-volume-claim` to
+`server-volume-claim`. Stop the old engine before starting the new one, migrate the
+registry data to the new PVC, and remove the old Deployment and Service after verifying
+the new engine. The operator does not migrate existing storage or remove the old resources
+automatically. Docker Compose users must also migrate the old `wanaku-praxis` volume to
+the new `wanaku-server` volume.
 
 ## Prerequisites
 
@@ -93,7 +107,7 @@ kubectl logs -n wanaku -l app.kubernetes.io/name=wanaku-operator
 | `spec.router.enabled` | bool | Whether the MCP router is deployed (required for `WanakuServiceCatalog`) |
 | `spec.router.image` | string | Container image for the MCP router |
 | `spec.router.env` | list | Extra environment variables (`name`/`value`) for the router |
-| `spec.praxis` | object | The Wanaku router engine: `image`, `env`, `imagePullPolicy` |
+| `spec.server` | object | The Wanaku router engine: `image`, `env`, `imagePullPolicy` |
 | `spec.auth` | object | Authentication via oauth2-proxy instances placed in front of Wanaku |
 | `spec.auth.enabled` | bool | Whether the oauth2-proxies are deployed |
 | `spec.auth.issuerUrl` | string | OIDC issuer URL (for example, the Keycloak realm URL) |
@@ -261,7 +275,7 @@ kubectl logs -n wanaku -l app.kubernetes.io/name=wanaku-operator
 **Check the managed workloads:**
 
 ```shell
-kubectl logs -n wanaku deployment/wanaku-dev-praxis
+kubectl logs -n wanaku deployment/wanaku-dev-server
 kubectl logs -n wanaku deployment/wanaku-dev-mcp-router
 ```
 

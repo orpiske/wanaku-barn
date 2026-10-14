@@ -114,7 +114,7 @@ public final class OperatorUtil {
 
     /**
      * Resolves image pull policy with priority:
-     * 1. Component-specific policy (router.imagePullPolicy or praxis.imagePullPolicy)
+     * 1. Component-specific policy (router.imagePullPolicy or server.imagePullPolicy)
      * 2. Global policy (spec.imagePullPolicy)
      * 3. Default (IfNotPresent)
      *

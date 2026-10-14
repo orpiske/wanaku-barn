@@ -31,13 +31,13 @@ public final class RouterResourceFactory {
     public static final String ROUTER_BACKEND_INTERNAL_SERVICE_FILE = "wanaku-router-service-internal.yaml";
     public static final String ROUTER_BACKEND_EXTERNAL_SERVICE_FILE = "wanaku-router-service-external.yaml";
     public static final String ROUTER_INGRESS_FILE = "wanaku-router-ingress.yaml";
-    public static final String PRAXIS_DEPLOYMENT_FILE = "wanaku-praxis-deployment.yaml";
-    public static final String PRAXIS_INTERNAL_SERVICE_FILE = "wanaku-praxis-service-internal.yaml";
+    public static final String SERVER_DEPLOYMENT_FILE = "wanaku-server-deployment.yaml";
+    public static final String SERVER_INTERNAL_SERVICE_FILE = "wanaku-server-service-internal.yaml";
     public static final String OAUTH2_PROXY_DEPLOYMENT_FILE = "wanaku-oauth2-proxy-deployment.yaml";
     public static final String OAUTH2_PROXY_SERVICE_FILE = "wanaku-oauth2-proxy-service.yaml";
     public static final String SERVICES_VOLUME_PVC_FILE = "services-volume-pvc.yaml";
     public static final String ROUTER_VOLUME_CLAIM = "router-volume-claim";
-    public static final String PRAXIS_VOLUME_CLAIM = "praxis-volume-claim";
+    public static final String SERVER_VOLUME_CLAIM = "server-volume-claim";
 
     public static final String DEFAULT_OAUTH2_PROXY_CLIENT_ID = "wanaku-mcp-router";
     public static final String OAUTH2_PROXY_CLIENT_SECRET_KEY = "client-secret";
@@ -88,21 +88,21 @@ public final class RouterResourceFactory {
         return service;
     }
 
-    public static Ingress makePraxisIngress(WanakuRouter resource, String host) {
+    public static Ingress makeServerIngress(WanakuRouter resource, String host) {
         Ingress ingress =
                 ReconcilerUtilsInternal.loadYaml(Ingress.class, WanakuRouterReconciler.class, ROUTER_INGRESS_FILE);
 
         String deploymentName = resource.getMetadata().getName();
         String ns = resource.getMetadata().getNamespace();
 
-        LOG.infof("Creating ingress for Praxis: %s", deploymentName);
+        LOG.infof("Creating ingress for Wanaku Server: %s", deploymentName);
         ingress.getMetadata().setName(deploymentName);
         ingress.getMetadata().setNamespace(ns);
-        ingress.getMetadata().getLabels().put("app", praxisName(deploymentName));
-        ingress.getMetadata().getLabels().put("component", "wanaku-praxis");
+        ingress.getMetadata().getLabels().put("app", serverName(deploymentName));
+        ingress.getMetadata().getLabels().put("component", "wanaku-server");
 
         String backendServiceName =
-                isAuthEnabled(resource) ? oauth2ProxyServiceName(deploymentName) : "praxis-" + deploymentName;
+                isAuthEnabled(resource) ? oauth2ProxyServiceName(deploymentName) : "server-" + deploymentName;
         int backendMcpServicePort = isAuthEnabled(resource) ? 4180 : 8081;
         int backendMgmtServicePort = isAuthEnabled(resource) ? 4181 : 9090;
 
@@ -217,40 +217,40 @@ public final class RouterResourceFactory {
         service.setEnv(envVars);
     }
 
-    public static PersistentVolumeClaim makePraxisVolumePVC(WanakuRouter resource) {
+    public static PersistentVolumeClaim makeServerVolumePVC(WanakuRouter resource) {
         PersistentVolumeClaim pvc = ReconcilerUtilsInternal.loadYaml(
                 PersistentVolumeClaim.class, WanakuRouterReconciler.class, SERVICES_VOLUME_PVC_FILE);
 
         String deploymentName = resource.getMetadata().getName();
         String ns = resource.getMetadata().getNamespace();
 
-        pvc.getMetadata().setName(PRAXIS_VOLUME_CLAIM);
+        pvc.getMetadata().setName(SERVER_VOLUME_CLAIM);
         pvc.getMetadata().setNamespace(ns);
-        pvc.getMetadata().getLabels().put("app", praxisName(deploymentName));
-        pvc.getMetadata().getLabels().put("component", "wanaku-praxis-storage");
+        pvc.getMetadata().getLabels().put("app", serverName(deploymentName));
+        pvc.getMetadata().getLabels().put("component", "wanaku-server-storage");
 
         pvc.addOwnerReference(resource);
         return pvc;
     }
 
-    public static Deployment makeDesiredPraxisDeployment(WanakuRouter resource, Context<WanakuRouter> context) {
+    public static Deployment makeDesiredServerDeployment(WanakuRouter resource, Context<WanakuRouter> context) {
         Deployment desiredDeployment = ReconcilerUtilsInternal.loadYaml(
-                Deployment.class, WanakuRouterReconciler.class, PRAXIS_DEPLOYMENT_FILE);
+                Deployment.class, WanakuRouterReconciler.class, SERVER_DEPLOYMENT_FILE);
 
         String deploymentName = resource.getMetadata().getName();
         String ns = resource.getMetadata().getNamespace();
 
-        desiredDeployment.getMetadata().setName(praxisName(deploymentName));
+        desiredDeployment.getMetadata().setName(serverName(deploymentName));
         desiredDeployment.getMetadata().setNamespace(ns);
 
         final DeploymentSpec serviceSpec = desiredDeployment.getSpec();
-        serviceSpec.getSelector().getMatchLabels().put("app", praxisName(deploymentName));
-        serviceSpec.getSelector().getMatchLabels().put("component", "wanaku-praxis");
-        serviceSpec.getTemplate().getMetadata().getLabels().put("app", praxisName(deploymentName));
-        serviceSpec.getTemplate().getMetadata().getLabels().put("component", "wanaku-praxis");
+        serviceSpec.getSelector().getMatchLabels().put("app", serverName(deploymentName));
+        serviceSpec.getSelector().getMatchLabels().put("component", "wanaku-server");
+        serviceSpec.getTemplate().getMetadata().getLabels().put("app", serverName(deploymentName));
+        serviceSpec.getTemplate().getMetadata().getLabels().put("component", "wanaku-server");
 
-        final Container praxisContainer = serviceSpec.getTemplate().getSpec().getContainers().stream()
-                .filter(c -> c.getName().equals("wanaku-praxis"))
+        final Container serverContainer = serviceSpec.getTemplate().getSpec().getContainers().stream()
+                .filter(c -> c.getName().equals("wanaku-server"))
                 .findFirst()
                 .get();
 
@@ -261,19 +261,19 @@ public final class RouterResourceFactory {
                 .withValue(classicUrl)
                 .build());
 
-        final WanakuRouterSpec.PraxisSpec praxisSpec = resource.getSpec().getPraxis();
-        if (praxisSpec != null) {
-            if (praxisSpec.getImage() != null && !praxisSpec.getImage().isEmpty()) {
-                OperatorUtil.validateImageAllowed(praxisSpec.getImage());
-                praxisContainer.setImage(praxisSpec.getImage());
+        final WanakuRouterSpec.ServerSpec serverSpec = resource.getSpec().getServer();
+        if (serverSpec != null) {
+            if (serverSpec.getImage() != null && !serverSpec.getImage().isEmpty()) {
+                OperatorUtil.validateImageAllowed(serverSpec.getImage());
+                serverContainer.setImage(serverSpec.getImage());
             }
 
-            String componentPolicy = praxisSpec.getImagePullPolicy();
+            String componentPolicy = serverSpec.getImagePullPolicy();
             String globalPolicy = resource.getSpec().getImagePullPolicy();
-            praxisContainer.setImagePullPolicy(OperatorUtil.resolveImagePullPolicy(componentPolicy, globalPolicy));
+            serverContainer.setImagePullPolicy(OperatorUtil.resolveImagePullPolicy(componentPolicy, globalPolicy));
 
-            if (praxisSpec.getEnv() != null) {
-                for (WanakuTypes.EnvVar env : praxisSpec.getEnv()) {
+            if (serverSpec.getEnv() != null) {
+                for (WanakuTypes.EnvVar env : serverSpec.getEnv()) {
                     envVars.add(new EnvVarBuilder()
                             .withName(env.getName())
                             .withValue(env.getValue())
@@ -282,7 +282,7 @@ public final class RouterResourceFactory {
             }
         }
 
-        final List<EnvVar> templateEnvs = praxisContainer.getEnv();
+        final List<EnvVar> templateEnvs = serverContainer.getEnv();
         for (EnvVar templateVar : templateEnvs) {
             final Optional<EnvVar> override = envVars.stream()
                     .filter(envVar -> envVar.getName().equals(templateVar.getName()))
@@ -291,26 +291,26 @@ public final class RouterResourceFactory {
                 envVars.add(templateVar);
             }
         }
-        praxisContainer.setEnv(envVars);
+        serverContainer.setEnv(envVars);
 
         desiredDeployment.addOwnerReference(resource);
         return desiredDeployment;
     }
 
-    public static Service makePraxisInternalService(WanakuRouter resource) {
+    public static Service makeServerInternalService(WanakuRouter resource) {
         Service service = ReconcilerUtilsInternal.loadYaml(
-                Service.class, WanakuRouterReconciler.class, PRAXIS_INTERNAL_SERVICE_FILE);
+                Service.class, WanakuRouterReconciler.class, SERVER_INTERNAL_SERVICE_FILE);
 
         String deploymentName = resource.getMetadata().getName();
         String ns = resource.getMetadata().getNamespace();
 
-        service.getMetadata().setName("praxis-" + deploymentName);
+        service.getMetadata().setName("server-" + deploymentName);
         service.getMetadata().setNamespace(ns);
-        service.getMetadata().getLabels().put("app", praxisName(deploymentName));
-        service.getMetadata().getLabels().put("component", "wanaku-praxis");
+        service.getMetadata().getLabels().put("app", serverName(deploymentName));
+        service.getMetadata().getLabels().put("component", "wanaku-server");
 
         ServiceSpec serviceSpec = service.getSpec();
-        serviceSpec.setSelector(Map.of("app", praxisName(deploymentName), "component", "wanaku-praxis"));
+        serviceSpec.setSelector(Map.of("app", serverName(deploymentName), "component", "wanaku-server"));
 
         service.addOwnerReference(resource);
         return service;
@@ -399,7 +399,7 @@ public final class RouterResourceFactory {
             WanakuRouterSpec.AuthSpec authSpec, String deploymentName, String redirectUrl) {
         List<EnvVar> env = oauth2ProxySharedEnv(authSpec, redirectUrl);
         env.add(envVar("OAUTH2_PROXY_HTTP_ADDRESS", "0.0.0.0:4180"));
-        env.add(envVar("OAUTH2_PROXY_UPSTREAMS", "http://praxis-%s:8081".formatted(deploymentName)));
+        env.add(envVar("OAUTH2_PROXY_UPSTREAMS", "http://server-%s:8081".formatted(deploymentName)));
         env.add(envVar(
                 "OAUTH2_PROXY_SKIP_AUTH_ROUTES",
                 "^/.well-known/.*,^/public/.*,^/authorize$,^/token$,^/register$,OPTIONS=^/.*"));
@@ -412,7 +412,7 @@ public final class RouterResourceFactory {
             WanakuRouterSpec.AuthSpec authSpec, String deploymentName, String redirectUrl) {
         List<EnvVar> env = oauth2ProxySharedEnv(authSpec, redirectUrl);
         env.add(envVar("OAUTH2_PROXY_HTTP_ADDRESS", "0.0.0.0:4181"));
-        env.add(envVar("OAUTH2_PROXY_UPSTREAMS", "http://praxis-%s:9090".formatted(deploymentName)));
+        env.add(envVar("OAUTH2_PROXY_UPSTREAMS", "http://server-%s:9090".formatted(deploymentName)));
         env.add(envVar("OAUTH2_PROXY_SKIP_AUTH_ROUTES", "^/healthz$,^/health$"));
         return env;
     }
@@ -471,8 +471,8 @@ public final class RouterResourceFactory {
         return deploymentName + "-mcp-router";
     }
 
-    private static String praxisName(String deploymentName) {
-        return deploymentName + "-praxis";
+    private static String serverName(String deploymentName) {
+        return deploymentName + "-server";
     }
 
     private static String oauth2ProxyName(String deploymentName) {

@@ -65,7 +65,7 @@ kind: WanakuRouter
 metadata:
   name: wanaku-dev
 spec:
-  praxis: {}
+  server: {}
 ```
 
 Apply and wait for readiness:
@@ -90,7 +90,7 @@ kind: WanakuRouter
 metadata:
   name: wanaku-dev
 spec:
-  praxis: {}
+  server: {}
   router:
     enabled: true
 ```

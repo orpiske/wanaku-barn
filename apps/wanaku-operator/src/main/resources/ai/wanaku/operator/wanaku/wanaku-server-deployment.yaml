@@ -20,8 +20,8 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       containers:
-        - name: "wanaku-praxis"
-          image: quay.io/wanaku/wanaku-praxis:latest
+        - name: "wanaku-server"
+          image: quay.io/wanaku/wanaku-server:latest
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -66,8 +66,8 @@ spec:
             failureThreshold: 30
           volumeMounts:
             - mountPath: /data/registry
-              name: praxis-volume
+              name: server-volume
       volumes:
-        - name: praxis-volume
+        - name: server-volume
           persistentVolumeClaim:
-            claimName: praxis-volume-claim
+            claimName: server-volume-claim

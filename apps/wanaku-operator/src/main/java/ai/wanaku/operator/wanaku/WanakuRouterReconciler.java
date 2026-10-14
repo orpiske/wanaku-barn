@@ -124,7 +124,7 @@ public class WanakuRouterReconciler implements Reconciler<WanakuRouter> {
     private void deployRouter(
             WanakuRouter resource, Context<WanakuRouter> context, String namespace, WanakuRouterStatus wanakuStatus) {
 
-        deployPraxis(resource, context, namespace);
+        deployServer(resource, context, namespace);
 
         final boolean authEnabled = RouterResourceFactory.isAuthEnabled(resource);
         if (authEnabled) {
@@ -242,23 +242,23 @@ public class WanakuRouterReconciler implements Reconciler<WanakuRouter> {
         }
     }
 
-    private void deployPraxis(WanakuRouter resource, Context<WanakuRouter> context, String namespace) {
-        final PersistentVolumeClaim praxisPVC = RouterResourceFactory.makePraxisVolumePVC(resource);
-        PersistentVolumeClaim existingPraxisPVC = kubernetesClient
+    private void deployServer(WanakuRouter resource, Context<WanakuRouter> context, String namespace) {
+        final PersistentVolumeClaim serverPVC = RouterResourceFactory.makeServerVolumePVC(resource);
+        PersistentVolumeClaim existingServerPVC = kubernetesClient
                 .persistentVolumeClaims()
                 .inNamespace(namespace)
-                .withName(RouterResourceFactory.PRAXIS_VOLUME_CLAIM)
+                .withName(RouterResourceFactory.SERVER_VOLUME_CLAIM)
                 .get();
-        if (!match(praxisPVC, existingPraxisPVC)) {
-            LOG.infof("Creating or updating PVC praxis-volume-claim in %s", namespace);
+        if (!match(serverPVC, existingServerPVC)) {
+            LOG.infof("Creating or updating PVC server-volume-claim in %s", namespace);
             kubernetesClient
                     .persistentVolumeClaims()
                     .inNamespace(namespace)
-                    .resource(praxisPVC)
+                    .resource(serverPVC)
                     .createOr(Replaceable::update);
         }
 
-        final Service desiredService = RouterResourceFactory.makePraxisInternalService(resource);
+        final Service desiredService = RouterResourceFactory.makeServerInternalService(resource);
         Service existingService = kubernetesClient
                 .services()
                 .inNamespace(namespace)
@@ -266,7 +266,7 @@ public class WanakuRouterReconciler implements Reconciler<WanakuRouter> {
                 .get();
         if (!match(desiredService, existingService)) {
             LOG.infof(
-                    "Creating or updating Praxis Service %s in %s",
+                    "Creating or updating Wanaku Server Service %s in %s",
                     desiredService.getMetadata().getName(), namespace);
             kubernetesClient
                     .services()
@@ -275,7 +275,7 @@ public class WanakuRouterReconciler implements Reconciler<WanakuRouter> {
                     .createOr(Replaceable::update);
         }
 
-        final Deployment desiredDeployment = RouterResourceFactory.makeDesiredPraxisDeployment(resource, context);
+        final Deployment desiredDeployment = RouterResourceFactory.makeDesiredServerDeployment(resource, context);
         Deployment existingDeployment = kubernetesClient
                 .apps()
                 .deployments()
@@ -284,7 +284,7 @@ public class WanakuRouterReconciler implements Reconciler<WanakuRouter> {
                 .get();
         if (!match(desiredDeployment, existingDeployment)) {
             LOG.infof(
-                    "Creating or updating Praxis Deployment %s in %s",
+                    "Creating or updating Wanaku Server Deployment %s in %s",
                     desiredDeployment.getMetadata().getName(), namespace);
             kubernetesClient
                     .apps()
@@ -302,14 +302,14 @@ public class WanakuRouterReconciler implements Reconciler<WanakuRouter> {
                 return RouterResourceFactory.oauth2ProxyServiceName(
                         resource.getMetadata().getName());
             }
-            return "praxis-" + resource.getMetadata().getName();
+            return "server-" + resource.getMetadata().getName();
         }
         return createIngressAndGetHost(resource, namespace);
     }
 
     private String createIngressAndGetHost(WanakuRouter resource, String namespace) {
         String host = resource.getSpec().getExposure().getHost();
-        final Ingress desiredIngress = RouterResourceFactory.makePraxisIngress(resource, host);
+        final Ingress desiredIngress = RouterResourceFactory.makeServerIngress(resource, host);
         Ingress existingIngress = kubernetesClient
                 .network()
                 .v1()
