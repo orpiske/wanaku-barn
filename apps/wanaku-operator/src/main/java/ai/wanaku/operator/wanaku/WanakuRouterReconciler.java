@@ -189,22 +189,22 @@ public class WanakuRouterReconciler implements Reconciler<WanakuRouter> {
     }
 
     private void deployBarnBackend(WanakuRouter resource, Context<WanakuRouter> context, String namespace) {
-        final PersistentVolumeClaim routerPVC = RouterResourceFactory.makeRouterVolumePVC(resource);
-        PersistentVolumeClaim existingRouterPVC = kubernetesClient
+        final PersistentVolumeClaim barnPVC = RouterResourceFactory.makeBarnVolumePVC(resource);
+        PersistentVolumeClaim existingBarnPVC = kubernetesClient
                 .persistentVolumeClaims()
                 .inNamespace(namespace)
-                .withName(RouterResourceFactory.ROUTER_VOLUME_CLAIM)
+                .withName(RouterResourceFactory.BARN_VOLUME_CLAIM)
                 .get();
-        if (!match(routerPVC, existingRouterPVC)) {
-            LOG.infof("Creating or updating PVC router-volume-claim in %s", namespace);
+        if (!match(barnPVC, existingBarnPVC)) {
+            LOG.infof("Creating or updating PVC barn-volume-claim in %s", namespace);
             kubernetesClient
                     .persistentVolumeClaims()
                     .inNamespace(namespace)
-                    .resource(routerPVC)
+                    .resource(barnPVC)
                     .createOr(Replaceable::update);
         }
 
-        final Service desiredInternalService = RouterResourceFactory.makeRouterInternalService(resource);
+        final Service desiredInternalService = RouterResourceFactory.makeBarnInternalService(resource);
         Service existingInternalService = kubernetesClient
                 .services()
                 .inNamespace(namespace)
@@ -221,8 +221,7 @@ public class WanakuRouterReconciler implements Reconciler<WanakuRouter> {
                     .createOr(Replaceable::update);
         }
 
-        final Deployment desiredDeployment =
-                RouterResourceFactory.makeDesiredRouterBackendDeployment(resource, context);
+        final Deployment desiredDeployment = RouterResourceFactory.makeDesiredBarnDeployment(resource, context);
         Deployment existingDeployment = kubernetesClient
                 .apps()
                 .deployments()

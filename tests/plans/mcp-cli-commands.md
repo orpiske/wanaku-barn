@@ -784,7 +784,7 @@ fi
 ```bash
 
 oc delete wanakurouter wanaku-mcp-test-router -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
-wait_for_deletion deployment wanaku-mcp-test-router-mcp-router "${WANAKU_NAMESPACE}" 60
+wait_for_deletion deployment wanaku-mcp-test-router-barn "${WANAKU_NAMESPACE}" 60
 ```
 
 ### Step 14.3: Full cleanup

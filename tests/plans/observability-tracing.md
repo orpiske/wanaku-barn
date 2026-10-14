@@ -413,7 +413,7 @@ oc wait wanakurouter/wanaku-tracing-router \
 ### Step 3.2: Verify router deployment has OTEL env vars
 
 ```bash
-DEPLOYMENT="wanaku-tracing-router-mcp-router"
+DEPLOYMENT="wanaku-tracing-router-barn"
 
 OTEL_DISABLED=$(oc get deployment "${DEPLOYMENT}" -n "${WANAKU_NAMESPACE}" \
   -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="QUARKUS_OTEL_SDK_DISABLED")].value}')
@@ -641,7 +641,7 @@ After the tool invocation in Phase 5, the router logs should contain structured 
 ```bash
 ROUTER_POD=$(oc get pods -l component=wanaku-barn-backend -n "${WANAKU_NAMESPACE}" \
   -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || \
-  oc get pods -l app=wanaku-tracing-router-mcp-router -n "${WANAKU_NAMESPACE}" \
+  oc get pods -l app=wanaku-tracing-router-barn -n "${WANAKU_NAMESPACE}" \
   -o jsonpath='{.items[0].metadata.name}')
 
 ROUTER_LOGS=$(oc logs "${ROUTER_POD}" -n "${WANAKU_NAMESPACE}" --tail=100)
@@ -792,7 +792,7 @@ fi
 
 ```bash
 oc delete wanakurouter wanaku-no-otel-router -n "${WANAKU_NAMESPACE}"
-wait_for_deletion deployment wanaku-no-otel-router-mcp-router "${WANAKU_NAMESPACE}" 60
+wait_for_deletion deployment wanaku-no-otel-router-barn "${WANAKU_NAMESPACE}" 60
 ```
 
 ---

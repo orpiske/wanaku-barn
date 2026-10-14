@@ -464,7 +464,7 @@ kubectl delete wanakuservicecatalog my-service-catalogs -n wanaku
 ```
 
 > [!IMPORTANT]
-> The `routerRef` field must match the name of an existing `WanakuRouter` CR in the same namespace. The operator connects to the router's internal service URL pattern: `http://internal-{routerRef}:8080`
+> The `routerRef` field must match the name of an existing `WanakuRouter` CR in the same namespace. The operator connects to the router's internal service URL pattern: `http://barn-{routerRef}:8080`
 
 ## REST API Reference
 

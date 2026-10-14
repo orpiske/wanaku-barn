@@ -20,7 +20,7 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       containers:
-        - name: "wanaku-mcp-router"
+        - name: "wanaku-barn"
           image: quay.io/wanaku/wanaku-barn-backend:latest
           imagePullPolicy: IfNotPresent
           securityContext:
@@ -55,8 +55,8 @@ spec:
             failureThreshold: 30
           volumeMounts:
             - mountPath: /home/default/.wanaku/barn
-              name: router-volume
+              name: barn-volume
       volumes:
-        - name: router-volume
+        - name: barn-volume
           persistentVolumeClaim:
-            claimName: router-volume-claim
+            claimName: barn-volume-claim

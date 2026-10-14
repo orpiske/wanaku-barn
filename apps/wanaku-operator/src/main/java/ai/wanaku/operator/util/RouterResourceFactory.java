@@ -27,16 +27,16 @@ import ai.wanaku.operator.wanaku.WanakuTypes;
 public final class RouterResourceFactory {
     private static final Logger LOG = Logger.getLogger(RouterResourceFactory.class);
 
-    public static final String ROUTER_BACKEND_DEPLOYMENT_FILE = "wanaku-router-deployment.yaml";
-    public static final String ROUTER_BACKEND_INTERNAL_SERVICE_FILE = "wanaku-router-service-internal.yaml";
-    public static final String ROUTER_BACKEND_EXTERNAL_SERVICE_FILE = "wanaku-router-service-external.yaml";
-    public static final String ROUTER_INGRESS_FILE = "wanaku-router-ingress.yaml";
+    public static final String BARN_DEPLOYMENT_FILE = "wanaku-barn-deployment.yaml";
+    public static final String BARN_INTERNAL_SERVICE_FILE = "wanaku-barn-service-internal.yaml";
+    public static final String BARN_EXTERNAL_SERVICE_FILE = "wanaku-barn-service-external.yaml";
+    public static final String SERVER_INGRESS_FILE = "wanaku-server-ingress.yaml";
     public static final String SERVER_DEPLOYMENT_FILE = "wanaku-server-deployment.yaml";
     public static final String SERVER_INTERNAL_SERVICE_FILE = "wanaku-server-service-internal.yaml";
     public static final String OAUTH2_PROXY_DEPLOYMENT_FILE = "wanaku-oauth2-proxy-deployment.yaml";
     public static final String OAUTH2_PROXY_SERVICE_FILE = "wanaku-oauth2-proxy-service.yaml";
     public static final String SERVICES_VOLUME_PVC_FILE = "services-volume-pvc.yaml";
-    public static final String ROUTER_VOLUME_CLAIM = "router-volume-claim";
+    public static final String BARN_VOLUME_CLAIM = "barn-volume-claim";
     public static final String SERVER_VOLUME_CLAIM = "server-volume-claim";
 
     public static final String DEFAULT_OAUTH2_PROXY_CLIENT_ID = "wanaku-mcp-router";
@@ -45,21 +45,21 @@ public final class RouterResourceFactory {
 
     private RouterResourceFactory() {}
 
-    public static Deployment makeDesiredRouterBackendDeployment(WanakuRouter resource, Context<WanakuRouter> context) {
-        Deployment desiredDeployment = ReconcilerUtilsInternal.loadYaml(
-                Deployment.class, WanakuRouterReconciler.class, ROUTER_BACKEND_DEPLOYMENT_FILE);
+    public static Deployment makeDesiredBarnDeployment(WanakuRouter resource, Context<WanakuRouter> context) {
+        Deployment desiredDeployment =
+                ReconcilerUtilsInternal.loadYaml(Deployment.class, WanakuRouterReconciler.class, BARN_DEPLOYMENT_FILE);
 
         String deploymentName = resource.getMetadata().getName();
         String ns = resource.getMetadata().getNamespace();
 
-        desiredDeployment.getMetadata().setName(routerName(deploymentName));
+        desiredDeployment.getMetadata().setName(barnName(deploymentName));
         desiredDeployment.getMetadata().setNamespace(ns);
 
         final DeploymentSpec serviceSpec = desiredDeployment.getSpec();
 
-        serviceSpec.getSelector().getMatchLabels().put("app", routerName(deploymentName));
+        serviceSpec.getSelector().getMatchLabels().put("app", barnName(deploymentName));
         serviceSpec.getSelector().getMatchLabels().put("component", "wanaku-barn-backend");
-        serviceSpec.getTemplate().getMetadata().getLabels().put("app", routerName(deploymentName));
+        serviceSpec.getTemplate().getMetadata().getLabels().put("app", barnName(deploymentName));
         serviceSpec.getTemplate().getMetadata().getLabels().put("component", "wanaku-barn-backend");
 
         setupBackendContainer(resource, serviceSpec);
@@ -68,21 +68,21 @@ public final class RouterResourceFactory {
         return desiredDeployment;
     }
 
-    public static Service makeRouterInternalService(WanakuRouter resource) {
+    public static Service makeBarnInternalService(WanakuRouter resource) {
         Service service = ReconcilerUtilsInternal.loadYaml(
-                Service.class, WanakuRouterReconciler.class, ROUTER_BACKEND_INTERNAL_SERVICE_FILE);
+                Service.class, WanakuRouterReconciler.class, BARN_INTERNAL_SERVICE_FILE);
 
         String deploymentName = resource.getMetadata().getName();
         String ns = resource.getMetadata().getNamespace();
 
         LOG.infof("Creating internal service for barn-backend: %s", deploymentName);
-        service.getMetadata().setName("internal-" + deploymentName);
+        service.getMetadata().setName("barn-" + deploymentName);
         service.getMetadata().setNamespace(ns);
-        service.getMetadata().getLabels().put("app", routerName(deploymentName));
+        service.getMetadata().getLabels().put("app", barnName(deploymentName));
         service.getMetadata().getLabels().put("component", "wanaku-barn-backend");
 
         ServiceSpec serviceSpec = service.getSpec();
-        serviceSpec.setSelector(Map.of("app", routerName(deploymentName), "component", "wanaku-barn-backend"));
+        serviceSpec.setSelector(Map.of("app", barnName(deploymentName), "component", "wanaku-barn-backend"));
 
         service.addOwnerReference(resource);
         return service;
@@ -90,7 +90,7 @@ public final class RouterResourceFactory {
 
     public static Ingress makeServerIngress(WanakuRouter resource, String host) {
         Ingress ingress =
-                ReconcilerUtilsInternal.loadYaml(Ingress.class, WanakuRouterReconciler.class, ROUTER_INGRESS_FILE);
+                ReconcilerUtilsInternal.loadYaml(Ingress.class, WanakuRouterReconciler.class, SERVER_INGRESS_FILE);
 
         String deploymentName = resource.getMetadata().getName();
         String ns = resource.getMetadata().getNamespace();
@@ -150,17 +150,17 @@ public final class RouterResourceFactory {
         ingress.getSpec().setTls(List.of(ingressTls));
     }
 
-    public static PersistentVolumeClaim makeRouterVolumePVC(WanakuRouter resource) {
+    public static PersistentVolumeClaim makeBarnVolumePVC(WanakuRouter resource) {
         PersistentVolumeClaim pvc = ReconcilerUtilsInternal.loadYaml(
                 PersistentVolumeClaim.class, WanakuRouterReconciler.class, SERVICES_VOLUME_PVC_FILE);
 
         String deploymentName = resource.getMetadata().getName();
         String ns = resource.getMetadata().getNamespace();
 
-        pvc.getMetadata().setName(ROUTER_VOLUME_CLAIM);
+        pvc.getMetadata().setName(BARN_VOLUME_CLAIM);
         pvc.getMetadata().setNamespace(ns);
-        pvc.getMetadata().getLabels().put("app", routerName(deploymentName));
-        pvc.getMetadata().getLabels().put("component", "wanaku-router-storage");
+        pvc.getMetadata().getLabels().put("app", barnName(deploymentName));
+        pvc.getMetadata().getLabels().put("component", "wanaku-barn-storage");
 
         pvc.addOwnerReference(resource);
         return pvc;
@@ -170,7 +170,7 @@ public final class RouterResourceFactory {
         final List<Container> containers = spec.getTemplate().getSpec().getContainers();
 
         final Container service = containers.stream()
-                .filter(c -> c.getName().equals("wanaku-mcp-router"))
+                .filter(c -> c.getName().equals("wanaku-barn"))
                 .findFirst()
                 .get();
 
@@ -254,7 +254,7 @@ public final class RouterResourceFactory {
                 .findFirst()
                 .get();
 
-        String classicUrl = "http://internal-" + deploymentName + ":8080";
+        String classicUrl = OperatorUtil.getRouterBaseUrl(deploymentName);
         List<EnvVar> envVars = new java.util.ArrayList<>();
         envVars.add(new EnvVarBuilder()
                 .withName("WANAKU_CLASSIC_URL")
@@ -467,8 +467,8 @@ public final class RouterResourceFactory {
                 .build();
     }
 
-    private static String routerName(String deploymentName) {
-        return deploymentName + "-mcp-router";
+    private static String barnName(String deploymentName) {
+        return deploymentName + "-barn";
     }
 
     private static String serverName(String deploymentName) {

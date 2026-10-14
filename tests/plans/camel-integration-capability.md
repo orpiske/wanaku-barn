@@ -129,7 +129,7 @@ Uses `oc exec` into the router pod with a Bearer token obtained from Keycloak.
 query_router_api() {
   local ENDPOINT="$1"
   local ROUTER_POD
-  ROUTER_POD=$(oc get pods -l app=wanaku-test-router-mcp-router \
+  ROUTER_POD=$(oc get pods -l app=wanaku-test-router-barn \
     -n "${WANAKU_NAMESPACE}" -o jsonpath='{.items[0].metadata.name}')
 
   local TOKEN
@@ -151,7 +151,7 @@ All `wanaku` CLI commands (`tools list`, `resources list`, `mcp tool`, etc.) req
 ```bash
 start_port_forward() {
   local ROUTER_POD
-  ROUTER_POD=$(oc get pods -l app=wanaku-test-router-mcp-router \
+  ROUTER_POD=$(oc get pods -l app=wanaku-test-router-barn \
     -n "${WANAKU_NAMESPACE}" -o jsonpath='{.items[0].metadata.name}')
 
   oc port-forward "${ROUTER_POD}" 18080:8080 -n "${WANAKU_NAMESPACE}" > /dev/null 2>&1 &
@@ -239,7 +239,7 @@ EOF
 ```bash
 # Wait for the pod to exist
 sleep 5
-ROUTER_POD=$(oc get pods -l app=wanaku-test-router-mcp-router \
+ROUTER_POD=$(oc get pods -l app=wanaku-test-router-barn \
   -n "${WANAKU_NAMESPACE}" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
 
 if [ -z "${ROUTER_POD}" ]; then
@@ -273,7 +273,7 @@ oc wait wanakurouter/wanaku-test-router \
 ### Test 3.2: Verify router deployment is available
 
 ```bash
-oc wait deployment/wanaku-test-router-mcp-router \
+oc wait deployment/wanaku-test-router-barn \
   --for=condition=Available \
   --timeout=60s \
   -n "${WANAKU_NAMESPACE}"
@@ -284,7 +284,7 @@ echo "router-deployment-available=$?"
 ### Test 3.3: Verify router REST API is reachable
 
 ```bash
-ROUTER_POD=$(oc get pods -l app=wanaku-test-router-mcp-router \
+ROUTER_POD=$(oc get pods -l app=wanaku-test-router-barn \
   -n "${WANAKU_NAMESPACE}" -o jsonpath='{.items[0].metadata.name}')
 
 MAX_RETRIES=12
@@ -1083,7 +1083,7 @@ echo "PASS: SERVICE_CATALOG_SYSTEM is correct"
 REG_URL=$(oc get deployment cic-catalog-test -n "${WANAKU_NAMESPACE}" \
   -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="REGISTRATION_URL")].value}')
 echo "REGISTRATION_URL=${REG_URL}"
-if ! echo "${REG_URL}" | grep -q "internal-wanaku-test-router"; then
+if ! echo "${REG_URL}" | grep -q "barn-wanaku-test-router"; then
   echo "FAIL: REGISTRATION_URL does not reference the internal router service"
   exit 1
 fi
@@ -1568,8 +1568,8 @@ echo "PASS: CIC CRDs deleted"
 ```bash
 oc delete wanakurouter wanaku-test-router -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
 
-wait_for_deletion deployment wanaku-test-router-mcp-router "${WANAKU_NAMESPACE}" 60
-wait_for_deletion service internal-wanaku-test-router "${WANAKU_NAMESPACE}" 30
+wait_for_deletion deployment wanaku-test-router-barn "${WANAKU_NAMESPACE}" 60
+wait_for_deletion service barn-wanaku-test-router "${WANAKU_NAMESPACE}" 30
 wait_for_deletion route wanaku-test-router "${WANAKU_NAMESPACE}" 30
 ```
 

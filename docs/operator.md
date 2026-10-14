@@ -5,7 +5,7 @@
 The Wanaku Operator manages the following custom resource definitions (CRDs):
 
 - **WanakuRouter** — deploys and configures the Wanaku execution proxy: the Wanaku router engine and,
-  optionally, the MCP router
+  optionally, Wanaku Barn
 - **WanakuServiceCatalog** — deploys packaged service catalogs (Camel routes + Wanaku rules) to
   a router
 
@@ -26,9 +26,10 @@ When you create these custom resources, the operator automatically provisions:
 
 For a `WanakuRouter` named `wanaku-dev`, the operator creates (among others) the
 `wanaku-dev-server` Deployment, the `server-wanaku-dev` external service, the
-`internal-wanaku-dev` internal service and — when `spec.auth.enabled` is `true` — an
+`wanaku-dev-barn` Deployment and `barn-wanaku-dev` internal service when `spec.router.enabled`
+is `true`, and — when `spec.auth.enabled` is `true` — an
 `oauth2-proxy` Deployment and service. `WanakuServiceCatalog` resources require the referenced
-router to have `spec.router.enabled: true`, so that the MCP router is deployed for the catalogs
+router to have `spec.router.enabled: true`, so that Wanaku Barn is deployed for the catalogs
 to register against.
 
 ## Upgrading from the PoC naming
@@ -44,6 +45,16 @@ registry data to the new PVC, and remove the old Deployment and Service after ve
 the new engine. The operator does not migrate existing storage or remove the old resources
 automatically. Docker Compose users must also migrate the old `wanaku-praxis` volume to
 the new `wanaku-server` volume.
+
+## Upgrading Barn resource names
+
+The optional Barn Deployment is now named `<router>-barn` instead of `<router>-mcp-router`,
+its Service is `barn-<router>` instead of `internal-<router>`, and its PVC is
+`barn-volume-claim` instead of `router-volume-claim`. Stop the old Barn workload, migrate
+its data to the new PVC, and remove the old Deployment and Service after verification.
+Update any explicit Barn URLs to `http://barn-<router>:8080`. The operator updates the
+Wanaku Server and service catalog URLs automatically, but does not migrate storage or
+remove the old workloads. Barn is still configured through `spec.router`.
 
 ## Prerequisites
 
@@ -103,10 +114,10 @@ kubectl logs -n wanaku -l app.kubernetes.io/name=wanaku-operator
 |-------|------|-------------|
 | `spec.imagePullPolicy` | string | Image pull policy applied to the managed workloads |
 | `spec.exposure` | object | How the proxy is exposed (service type / ingress settings) |
-| `spec.router` | object | The MCP router deployment. Set `enabled: true` to deploy the router alongside Wanaku |
-| `spec.router.enabled` | bool | Whether the MCP router is deployed (required for `WanakuServiceCatalog`) |
-| `spec.router.image` | string | Container image for the MCP router |
-| `spec.router.env` | list | Extra environment variables (`name`/`value`) for the router |
+| `spec.router` | object | The Wanaku Barn deployment. Set `enabled: true` to deploy Barn alongside Wanaku Server |
+| `spec.router.enabled` | bool | Whether Wanaku Barn is deployed (required for `WanakuServiceCatalog`) |
+| `spec.router.image` | string | Container image for Wanaku Barn |
+| `spec.router.env` | list | Extra environment variables (`name`/`value`) for Wanaku Barn |
 | `spec.server` | object | The Wanaku router engine: `image`, `env`, `imagePullPolicy` |
 | `spec.auth` | object | Authentication via oauth2-proxy instances placed in front of Wanaku |
 | `spec.auth.enabled` | bool | Whether the oauth2-proxies are deployed |
@@ -230,7 +241,7 @@ spec:
           image: quay.io/wanaku/camel-integration-capability:latest
           env:
             - name: WANAKU_SERVICE_REGISTRATION_URL
-              value: http://internal-wanaku-dev:8080
+              value: http://barn-wanaku-dev:8080
 ```
 
 Then register the running service with the router as a forward:
@@ -276,7 +287,7 @@ kubectl logs -n wanaku -l app.kubernetes.io/name=wanaku-operator
 
 ```shell
 kubectl logs -n wanaku deployment/wanaku-dev-server
-kubectl logs -n wanaku deployment/wanaku-dev-mcp-router
+kubectl logs -n wanaku deployment/wanaku-dev-barn
 ```
 
 ### Updating Resources

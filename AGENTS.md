@@ -82,7 +82,7 @@ make install
 - Helm chart: `apps/wanaku-operator/deploy/helm/wanaku-operator/`
 - When adding new CRDs, RBAC rules must be added to the Helm chart (see `docs/contributing.md`)
 - CRD manifests are auto-generated during build in `target/kubernetes/`, must be copied to `crds/`
-- Router internal URL pattern: `http://internal-{routerRef}:8080`
+- Router internal URL pattern: `http://barn-{routerRef}:8080`
 
 ## Service Catalogs
 

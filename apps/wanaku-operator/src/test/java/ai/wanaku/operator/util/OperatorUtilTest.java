@@ -86,6 +86,11 @@ class OperatorUtilTest {
     }
 
     @Test
+    void routerBaseUrlTargetsBarnService() {
+        assertEquals("http://barn-test-router:8080", OperatorUtil.getRouterBaseUrl("test-router"));
+    }
+
+    @Test
     void validateImageAllowedSkipsBlankImage() {
         assertDoesNotThrow(() -> OperatorUtil.validateImageAllowed(null, "quay.io/wanaku/"));
         assertDoesNotThrow(() -> OperatorUtil.validateImageAllowed("", "quay.io/wanaku/"));

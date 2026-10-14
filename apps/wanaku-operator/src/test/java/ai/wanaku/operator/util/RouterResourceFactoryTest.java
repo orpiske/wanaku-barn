@@ -20,11 +20,32 @@ class RouterResourceFactoryTest {
     @Test
     void backendDeploymentHasNoAuthEnvVars() {
         WanakuRouter router = createRouter(null);
-        Deployment deployment = RouterResourceFactory.makeDesiredRouterBackendDeployment(router, null);
+        Deployment deployment = RouterResourceFactory.makeDesiredBarnDeployment(router, null);
 
         assertNull(getEnvValue(deployment, "AUTH_SERVER"));
         assertNull(getEnvValue(deployment, "AUTH_PROXY"));
         assertNull(getEnvValue(deployment, "AUTH_REALM"));
+    }
+
+    @Test
+    void barnDeploymentUsesMatchingServiceAndStorage() {
+        WanakuRouter router = createRouter(null);
+        Deployment deployment = RouterResourceFactory.makeDesiredBarnDeployment(router, null);
+        var service = RouterResourceFactory.makeBarnInternalService(router);
+        var pvc = RouterResourceFactory.makeBarnVolumePVC(router);
+        var pod = deployment.getSpec().getTemplate();
+
+        assertEquals("test-router-barn", deployment.getMetadata().getName());
+        assertEquals("wanaku-barn", pod.getSpec().getContainers().getFirst().getName());
+        assertEquals("barn-test-router", service.getMetadata().getName());
+        assertEquals(service.getSpec().getSelector(), pod.getMetadata().getLabels());
+        assertEquals(
+                service.getSpec().getSelector(),
+                deployment.getSpec().getSelector().getMatchLabels());
+        assertEquals("barn-volume-claim", pvc.getMetadata().getName());
+        assertEquals(
+                pvc.getMetadata().getName(),
+                pod.getSpec().getVolumes().getFirst().getPersistentVolumeClaim().getClaimName());
     }
 
     @Test
@@ -36,7 +57,7 @@ class RouterResourceFactoryTest {
         routerSpec.setEnv(List.of(customVar));
 
         WanakuRouter router = createRouter(routerSpec);
-        Deployment deployment = RouterResourceFactory.makeDesiredRouterBackendDeployment(router, null);
+        Deployment deployment = RouterResourceFactory.makeDesiredBarnDeployment(router, null);
 
         assertEquals("my_value", getEnvValue(deployment, "MY_VAR"));
     }
@@ -55,6 +76,9 @@ class RouterResourceFactoryTest {
                 "quay.io/wanaku/wanaku-server:latest",
                 pod.getSpec().getContainers().getFirst().getImage());
         assertEquals("server-test-router", service.getMetadata().getName());
+        assertEquals(
+                OperatorUtil.getRouterBaseUrl("test-router"),
+                getContainerEnvValue(deployment, "wanaku-server", "WANAKU_CLASSIC_URL"));
         assertEquals(
                 deployment.getSpec().getSelector().getMatchLabels(),
                 service.getSpec().getSelector());
@@ -292,7 +316,7 @@ class RouterResourceFactoryTest {
     @Test
     void annotationEnvVarAddsNewVar() {
         WanakuRouter router = createRouter(null, Map.of("env.wanaku.ai/MY_ANNOTATION_VAR", "injected"));
-        Deployment deployment = RouterResourceFactory.makeDesiredRouterBackendDeployment(router, null);
+        Deployment deployment = RouterResourceFactory.makeDesiredBarnDeployment(router, null);
 
         assertEquals("injected", getEnvValue(deployment, "MY_ANNOTATION_VAR"));
     }
@@ -355,7 +379,7 @@ class RouterResourceFactoryTest {
 
     private static String getEnvValue(Deployment deployment, String name) {
         return deployment.getSpec().getTemplate().getSpec().getContainers().stream()
-                .filter(c -> c.getName().equals("wanaku-mcp-router"))
+                .filter(c -> c.getName().equals("wanaku-barn"))
                 .findFirst()
                 .flatMap(c -> c.getEnv().stream()
                         .filter(e -> e.getName().equals(name))

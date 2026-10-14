@@ -172,16 +172,16 @@ echo "streamableEndpoint=${STREAMABLE_ENDPOINT}"
 
 ### Test 3.2: Verify reconciled resources - Deployment
 
-**Description:** The operator should create a deployment named `wanaku-test-router-mcp-router`.
+**Description:** The operator should create a deployment named `wanaku-test-router-barn`.
 
 ```bash
-oc wait deployment/wanaku-test-router-mcp-router \
+oc wait deployment/wanaku-test-router-barn \
   --for=condition=Available \
   --timeout=120s \
   -n "${WANAKU_NAMESPACE}"
 
 # Verify container image
-ROUTER_IMAGE=$(oc get deployment wanaku-test-router-mcp-router -n "${WANAKU_NAMESPACE}" \
+ROUTER_IMAGE=$(oc get deployment wanaku-test-router-barn -n "${WANAKU_NAMESPACE}" \
   -o jsonpath='{.spec.template.spec.containers[0].image}')
 echo "router-image=${ROUTER_IMAGE}"
 if [ "${ROUTER_IMAGE}" != "${WANAKU_ROUTER_IMAGE}" ]; then
@@ -191,7 +191,7 @@ fi
 echo "PASS: router image matches"
 
 # Verify imagePullPolicy
-ROUTER_PULL_POLICY=$(oc get deployment wanaku-test-router-mcp-router -n "${WANAKU_NAMESPACE}" \
+ROUTER_PULL_POLICY=$(oc get deployment wanaku-test-router-barn -n "${WANAKU_NAMESPACE}" \
   -o jsonpath='{.spec.template.spec.containers[0].imagePullPolicy}')
 if [ "${ROUTER_PULL_POLICY}" != "Always" ]; then
   echo "FAIL: unexpected pull policy '${ROUTER_PULL_POLICY}', expected 'Always'"
@@ -202,14 +202,14 @@ echo "PASS: imagePullPolicy is Always"
 
 ### Test 3.3: Verify reconciled resources - Internal Service
 
-**Description:** The operator should create a ClusterIP service named `internal-wanaku-test-router`.
+**Description:** The operator should create a ClusterIP service named `barn-wanaku-test-router`.
 
 ```bash
-oc get service internal-wanaku-test-router -n "${WANAKU_NAMESPACE}" > /dev/null 2>&1
+oc get service barn-wanaku-test-router -n "${WANAKU_NAMESPACE}" > /dev/null 2>&1
 echo "internal-service-exists=$?"
 # Expected: internal-service-exists=0
 
-SVC_TYPE=$(oc get service internal-wanaku-test-router -n "${WANAKU_NAMESPACE}" \
+SVC_TYPE=$(oc get service barn-wanaku-test-router -n "${WANAKU_NAMESPACE}" \
   -o jsonpath='{.spec.type}')
 if [ "${SVC_TYPE}" != "ClusterIP" ]; then
   echo "FAIL: service type is '${SVC_TYPE}', expected 'ClusterIP'"
@@ -217,7 +217,7 @@ if [ "${SVC_TYPE}" != "ClusterIP" ]; then
 fi
 echo "PASS: internal service is ClusterIP"
 
-SVC_PORT=$(oc get service internal-wanaku-test-router -n "${WANAKU_NAMESPACE}" \
+SVC_PORT=$(oc get service barn-wanaku-test-router -n "${WANAKU_NAMESPACE}" \
   -o jsonpath='{.spec.ports[0].port}')
 echo "internal-service-port=${SVC_PORT}"
 # Expected: 8080
@@ -245,8 +245,8 @@ echo "PASS: route host is set"
 # Verify the route targets the internal service
 ROUTE_SVC=$(oc get route wanaku-test-router -n "${WANAKU_NAMESPACE}" \
   -o jsonpath='{.spec.to.name}')
-if [ "${ROUTE_SVC}" != "internal-wanaku-test-router" ]; then
-  echo "FAIL: route targets '${ROUTE_SVC}', expected 'internal-wanaku-test-router'"
+if [ "${ROUTE_SVC}" != "barn-wanaku-test-router" ]; then
+  echo "FAIL: route targets '${ROUTE_SVC}', expected 'barn-wanaku-test-router'"
   exit 1
 fi
 echo "PASS: route targets internal service"
@@ -254,14 +254,14 @@ echo "PASS: route targets internal service"
 
 ### Test 3.5: Verify reconciled resources - PVC
 
-**Description:** The operator creates a PersistentVolumeClaim named `router-volume-claim`.
+**Description:** The operator creates a PersistentVolumeClaim named `barn-volume-claim`.
 
 ```bash
-oc get pvc router-volume-claim -n "${WANAKU_NAMESPACE}" > /dev/null 2>&1
+oc get pvc barn-volume-claim -n "${WANAKU_NAMESPACE}" > /dev/null 2>&1
 echo "pvc-exists=$?"
 # Expected: pvc-exists=0
 
-PVC_STATUS=$(oc get pvc router-volume-claim -n "${WANAKU_NAMESPACE}" \
+PVC_STATUS=$(oc get pvc barn-volume-claim -n "${WANAKU_NAMESPACE}" \
   -o jsonpath='{.status.phase}')
 echo "pvc-status=${PVC_STATUS}"
 # Expected: Bound
@@ -272,7 +272,7 @@ echo "pvc-status=${PVC_STATUS}"
 **Description:** The router deployment should have AUTH_SERVER, AUTH_PROXY, and AUTH_REALM set.
 
 ```bash
-DEPLOYMENT="wanaku-test-router-mcp-router"
+DEPLOYMENT="wanaku-test-router-barn"
 
 AUTH_SERVER_VAL=$(oc get deployment "${DEPLOYMENT}" -n "${WANAKU_NAMESPACE}" \
   -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="AUTH_SERVER")].value}')
@@ -311,7 +311,7 @@ echo "PASS: AUTH_REALM is correct"
 ROUTER_UID=$(oc get wanakurouter wanaku-test-router -n "${WANAKU_NAMESPACE}" \
   -o jsonpath='{.metadata.uid}')
 
-for RESOURCE in "deployment/wanaku-test-router-mcp-router" "service/internal-wanaku-test-router" "route.route.openshift.io/wanaku-test-router" "pvc/router-volume-claim"; do
+for RESOURCE in "deployment/wanaku-test-router-barn" "service/barn-wanaku-test-router" "route.route.openshift.io/wanaku-test-router" "pvc/barn-volume-claim"; do
   OWNER_UID=$(oc get "${RESOURCE}" -n "${WANAKU_NAMESPACE}" \
     -o jsonpath='{.metadata.ownerReferences[0].uid}' 2>/dev/null || echo "")
   if [ "${OWNER_UID}" != "${ROUTER_UID}" ]; then
@@ -631,11 +631,11 @@ oc patch wanakurouter wanaku-test-router -n "${WANAKU_NAMESPACE}" \
   -p "{\"spec\":{\"router\":{\"image\":\"${WANAKU_ROUTER_IMAGE}\"}}}"
 
 # Wait for the deployment rollout to complete
-oc rollout status deployment/wanaku-test-router-mcp-router \
+oc rollout status deployment/wanaku-test-router-barn \
   -n "${WANAKU_NAMESPACE}" \
   --timeout=120s
 
-UPDATED_IMAGE=$(oc get deployment wanaku-test-router-mcp-router -n "${WANAKU_NAMESPACE}" \
+UPDATED_IMAGE=$(oc get deployment wanaku-test-router-barn -n "${WANAKU_NAMESPACE}" \
   -o jsonpath='{.spec.template.spec.containers[0].image}')
 echo "updated-image=${UPDATED_IMAGE}"
 if [ "${UPDATED_IMAGE}" = "${WANAKU_ROUTER_IMAGE}" ]; then
@@ -653,11 +653,11 @@ oc patch wanakurouter wanaku-test-router -n "${WANAKU_NAMESPACE}" \
   -p '{"spec":{"router":{"env":[{"name":"TEST_VAR","value":"test_value"}]}}}'
 
 # Wait for the deployment rollout to complete
-oc rollout status deployment/wanaku-test-router-mcp-router \
+oc rollout status deployment/wanaku-test-router-barn \
   -n "${WANAKU_NAMESPACE}" \
   --timeout=120s
 
-TEST_VAR_VAL=$(oc get deployment wanaku-test-router-mcp-router -n "${WANAKU_NAMESPACE}" \
+TEST_VAR_VAL=$(oc get deployment wanaku-test-router-barn -n "${WANAKU_NAMESPACE}" \
   -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="TEST_VAR")].value}')
 if [ "${TEST_VAR_VAL}" = "test_value" ]; then
   echo "PASS: TEST_VAR environment variable added"
@@ -693,8 +693,8 @@ wait_for_deletion service wanaku-http-test "${WANAKU_NAMESPACE}" 30
 oc delete wanakurouter wanaku-test-router -n "${WANAKU_NAMESPACE}"
 
 # Wait for Kubernetes garbage collection via polling
-wait_for_deletion deployment wanaku-test-router-mcp-router "${WANAKU_NAMESPACE}" 60
-wait_for_deletion service internal-wanaku-test-router "${WANAKU_NAMESPACE}" 30
+wait_for_deletion deployment wanaku-test-router-barn "${WANAKU_NAMESPACE}" 60
+wait_for_deletion service barn-wanaku-test-router "${WANAKU_NAMESPACE}" 30
 wait_for_deletion route wanaku-test-router "${WANAKU_NAMESPACE}" 30
 ```
 

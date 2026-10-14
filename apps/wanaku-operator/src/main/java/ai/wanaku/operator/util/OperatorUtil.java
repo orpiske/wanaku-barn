@@ -138,9 +138,9 @@ public final class OperatorUtil {
      * Constructs the internal base URL for a router.
      *
      * @param routerRef the router reference name
-     * @return the base URL in the format "http://internal-{routerRef}:8080"
+     * @return the base URL in the format "http://barn-{routerRef}:8080"
      */
     public static String getRouterBaseUrl(String routerRef) {
-        return "http://internal-" + routerRef + ":8080";
+        return "http://barn-" + routerRef + ":8080";
     }
 }
