@@ -14,6 +14,8 @@ import io.fabric8.kubernetes.api.model.apps.Deployment;
 import io.fabric8.kubernetes.api.model.networking.v1.Ingress;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.dsl.Replaceable;
+import io.fabric8.openshift.api.model.Route;
+import io.fabric8.openshift.client.OpenShiftClient;
 import io.javaoperatorsdk.operator.api.config.informer.Informer;
 import io.javaoperatorsdk.operator.api.reconciler.Constants;
 import io.javaoperatorsdk.operator.api.reconciler.Context;
@@ -294,8 +296,11 @@ public class WanakuRouterReconciler implements Reconciler<WanakuRouter> {
         }
     }
 
-    private String reconcileExternalAccess(WanakuRouter resource, String namespace) {
+    String reconcileExternalAccess(WanakuRouter resource, String namespace) {
         WanakuTypes.ExposureSpec exposureSpec = resource.getSpec().getExposure();
+        if (kubernetesClient.supports(Route.class)) {
+            return createRoutesAndGetHost(resource);
+        }
         if (exposureSpec == null) {
             if (RouterResourceFactory.isAuthEnabled(resource)) {
                 return RouterResourceFactory.oauth2ProxyServiceName(
@@ -304,6 +309,34 @@ public class WanakuRouterReconciler implements Reconciler<WanakuRouter> {
             return "server-" + resource.getMetadata().getName();
         }
         return createIngressAndGetHost(resource, namespace);
+    }
+
+    private String createRoutesAndGetHost(WanakuRouter resource) {
+        OpenShiftClient client = kubernetesClient.adapt(OpenShiftClient.class);
+        var exposure = resource.getSpec().getExposure();
+        String host = exposure != null ? exposure.getHost() : null;
+        Route management = reconcileRoute(client, RouterResourceFactory.makeServerRoute(resource, host, false));
+        host = management.getSpec().getHost();
+        if (StringHelper.isBlank(host)) {
+            throw new IllegalStateException("OpenShift did not assign a hostname to the Wanaku management Route");
+        }
+        reconcileRoute(client, RouterResourceFactory.makeServerRoute(resource, host, true));
+        return host;
+    }
+
+    private Route reconcileRoute(OpenShiftClient client, Route desired) {
+        var routes = client.routes().inNamespace(desired.getMetadata().getNamespace());
+        Route existing = routes.withName(desired.getMetadata().getName()).get();
+        if (existing != null && StringHelper.isBlank(desired.getSpec().getHost())) {
+            desired.getSpec().setHost(existing.getSpec().getHost());
+        }
+        if (match(desired, existing)) {
+            return existing;
+        }
+        LOG.infof(
+                "Creating or updating Route %s in %s",
+                desired.getMetadata().getName(), desired.getMetadata().getNamespace());
+        return routes.resource(desired).createOr(Replaceable::update);
     }
 
     private String createIngressAndGetHost(WanakuRouter resource, String namespace) {
@@ -367,7 +400,9 @@ public class WanakuRouterReconciler implements Reconciler<WanakuRouter> {
         WanakuTypes.ExposureSpec exposureSpec =
                 resource.getSpec() != null ? resource.getSpec().getExposure() : null;
 
-        if (exposureSpec != null && StringHelper.isBlank(exposureSpec.getHost())) {
+        if (exposureSpec != null
+                && StringHelper.isBlank(exposureSpec.getHost())
+                && !kubernetesClient.supports(Route.class)) {
             return ValidateSpecResult.invalid("spec.exposure.host is required when spec.exposure.type is Ingress");
         }
 

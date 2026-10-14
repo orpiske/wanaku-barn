@@ -16,6 +16,8 @@ import io.fabric8.kubernetes.api.model.apps.DeploymentSpec;
 import io.fabric8.kubernetes.api.model.networking.v1.HTTPIngressPath;
 import io.fabric8.kubernetes.api.model.networking.v1.Ingress;
 import io.fabric8.kubernetes.api.model.networking.v1.IngressTLS;
+import io.fabric8.openshift.api.model.Route;
+import io.fabric8.openshift.api.model.RouteBuilder;
 import io.javaoperatorsdk.operator.ReconcilerUtilsInternal;
 import io.javaoperatorsdk.operator.api.reconciler.Context;
 import ai.wanaku.core.util.StringHelper;
@@ -86,6 +88,43 @@ public final class RouterResourceFactory {
 
         service.addOwnerReference(resource);
         return service;
+    }
+
+    public static Route makeServerRoute(WanakuRouter resource, String host, boolean mcp) {
+        String name = resource.getMetadata().getName();
+        boolean authEnabled = isAuthEnabled(resource);
+        String service = authEnabled ? oauth2ProxyServiceName(name) : "server-" + name;
+        int port = mcp ? (authEnabled ? 4180 : 8081) : authEnabled ? 4181 : 8080;
+        Route route = new RouteBuilder()
+                .withNewMetadata()
+                .withName(mcp ? name + "-mcp" : name)
+                .withNamespace(resource.getMetadata().getNamespace())
+                .addToLabels("app", serverName(name))
+                .addToLabels("component", "wanaku-server")
+                .endMetadata()
+                .withNewSpec()
+                .withHost(host)
+                .withPath(mcp ? "/mcp" : "/")
+                .withNewTo()
+                .withKind("Service")
+                .withName(service)
+                .withWeight(100)
+                .endTo()
+                .withNewPort()
+                .withNewTargetPort(port)
+                .endPort()
+                .withNewTls()
+                .withTermination("edge")
+                .withInsecureEdgeTerminationPolicy("Redirect")
+                .endTls()
+                .withWildcardPolicy("None")
+                .endSpec()
+                .build();
+        if (resource.getSpec().getExposure() != null) {
+            route.getMetadata().setAnnotations(resource.getSpec().getExposure().getAnnotations());
+        }
+        route.addOwnerReference(resource);
+        return route;
     }
 
     public static Ingress makeServerIngress(WanakuRouter resource, String host) {

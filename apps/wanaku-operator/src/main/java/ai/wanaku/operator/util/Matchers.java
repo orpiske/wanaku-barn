@@ -116,16 +116,19 @@ public final class Matchers {
             return false;
         }
 
-        // Compare TLS termination
-        String desiredTermination =
-                desiredRoute.getSpec() != null && desiredRoute.getSpec().getTls() != null
-                        ? desiredRoute.getSpec().getTls().getTermination()
-                        : null;
-        String existingTermination =
-                existingRoute.getSpec() != null && existingRoute.getSpec().getTls() != null
-                        ? existingRoute.getSpec().getTls().getTermination()
-                        : null;
-        return Objects.equals(desiredTermination, existingTermination);
+        var desiredSpec = desiredRoute.getSpec();
+        var existingSpec = existingRoute.getSpec();
+        if (desiredSpec == null || existingSpec == null) {
+            return Objects.equals(desiredSpec, existingSpec);
+        }
+        if (!Objects.equals(desiredSpec.getHost(), existingSpec.getHost())
+                || !Objects.equals(desiredSpec.getPath(), existingSpec.getPath())
+                || !Objects.equals(desiredSpec.getTo(), existingSpec.getTo())
+                || !Objects.equals(desiredSpec.getPort(), existingSpec.getPort())) {
+            return false;
+        }
+
+        return Objects.equals(desiredSpec.getTls(), existingSpec.getTls());
     }
 
     public static boolean match(Ingress desired, Ingress existing) {
