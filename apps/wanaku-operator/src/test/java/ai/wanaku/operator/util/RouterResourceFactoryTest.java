@@ -38,6 +38,8 @@ class RouterResourceFactoryTest {
         assertEquals("test-router-barn", deployment.getMetadata().getName());
         assertEquals("wanaku-barn", pod.getSpec().getContainers().getFirst().getName());
         assertEquals("barn-test-router", service.getMetadata().getName());
+        assertEquals(
+                8180, service.getSpec().getPorts().getFirst().getTargetPort().getIntVal());
         assertEquals(service.getSpec().getSelector(), pod.getMetadata().getLabels());
         assertEquals(
                 service.getSpec().getSelector(),
@@ -87,6 +89,39 @@ class RouterResourceFactoryTest {
         assertEquals(
                 pvc.getMetadata().getName(),
                 pod.getSpec().getVolumes().getFirst().getPersistentVolumeClaim().getClaimName());
+    }
+
+    @Test
+    void serverListenerPortsMatchServiceAndHealthProbes() {
+        WanakuRouter router = createRouter(null);
+        Deployment deployment = RouterResourceFactory.makeDesiredServerDeployment(router, null);
+        var container =
+                deployment.getSpec().getTemplate().getSpec().getContainers().getFirst();
+        var service = RouterResourceFactory.makeServerInternalService(router);
+        Map<String, Integer> expected = Map.of("management", 8080, "mcp", 8081, "inference", 8083, "a2a", 8084);
+
+        assertEquals(
+                expected,
+                container.getPorts().stream()
+                        .collect(java.util.stream.Collectors.toMap(p -> p.getName(), p -> p.getContainerPort())));
+        assertEquals(
+                expected,
+                service.getSpec().getPorts().stream()
+                        .collect(java.util.stream.Collectors.toMap(p -> p.getName(), p -> p.getPort())));
+        for (var port : service.getSpec().getPorts()) {
+            assertEquals(port.getName(), port.getTargetPort().getStrVal());
+        }
+        assertEquals("0.0.0.0:8080", getContainerEnvValue(deployment, "wanaku-server", "WANAKU_MGMT_LISTEN"));
+        assertEquals("0.0.0.0:8084", getContainerEnvValue(deployment, "wanaku-server", "WANAKU_A2A_LISTEN"));
+        assertNull(getContainerEnvValue(deployment, "wanaku-server", "WANAKU_MCP_LISTEN"));
+        assertEquals(
+                "management",
+                container.getLivenessProbe().getHttpGet().getPort().getStrVal());
+        assertEquals(
+                "management",
+                container.getReadinessProbe().getHttpGet().getPort().getStrVal());
+        assertEquals(
+                "management", container.getStartupProbe().getHttpGet().getPort().getStrVal());
     }
 
     @Test
@@ -142,6 +177,10 @@ class RouterResourceFactoryTest {
                         .getService()
                         .getPort()
                         .getNumber());
+        var management =
+                ingress.getSpec().getRules().getFirst().getHttp().getPaths().getLast();
+        assertEquals("/", management.getPath());
+        assertEquals(8080, management.getBackend().getService().getPort().getNumber());
     }
 
     @Test
@@ -215,7 +254,7 @@ class RouterResourceFactoryTest {
         Deployment deployment = RouterResourceFactory.makeOauth2ProxyDeployment(router, "wanaku.example.com");
 
         assertEquals(
-                "http://server-test-router:9090",
+                "http://server-test-router:8080",
                 getContainerEnvValue(deployment, "oauth2-proxy-mgmt", "OAUTH2_PROXY_UPSTREAMS"));
         assertEquals(
                 "0.0.0.0:4181", getContainerEnvValue(deployment, "oauth2-proxy-mgmt", "OAUTH2_PROXY_HTTP_ADDRESS"));

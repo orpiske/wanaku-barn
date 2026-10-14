@@ -104,7 +104,7 @@ public final class RouterResourceFactory {
         String backendServiceName =
                 isAuthEnabled(resource) ? oauth2ProxyServiceName(deploymentName) : "server-" + deploymentName;
         int backendMcpServicePort = isAuthEnabled(resource) ? 4180 : 8081;
-        int backendMgmtServicePort = isAuthEnabled(resource) ? 4181 : 9090;
+        int backendMgmtServicePort = isAuthEnabled(resource) ? 4181 : 8080;
 
         ingress.getSpec().getRules().getFirst().setHost(host);
 
@@ -412,7 +412,7 @@ public final class RouterResourceFactory {
             WanakuRouterSpec.AuthSpec authSpec, String deploymentName, String redirectUrl) {
         List<EnvVar> env = oauth2ProxySharedEnv(authSpec, redirectUrl);
         env.add(envVar("OAUTH2_PROXY_HTTP_ADDRESS", "0.0.0.0:4181"));
-        env.add(envVar("OAUTH2_PROXY_UPSTREAMS", "http://server-%s:9090".formatted(deploymentName)));
+        env.add(envVar("OAUTH2_PROXY_UPSTREAMS", "http://server-%s:8080".formatted(deploymentName)));
         env.add(envVar("OAUTH2_PROXY_SKIP_AUTH_ROUTES", "^/healthz$,^/health$"));
         return env;
     }

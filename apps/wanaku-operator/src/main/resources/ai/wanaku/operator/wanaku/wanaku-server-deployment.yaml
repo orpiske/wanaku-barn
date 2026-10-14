@@ -32,7 +32,9 @@ spec:
             - name: WANAKU_CLASSIC_URL
               value: ""
             - name: WANAKU_MGMT_LISTEN
-              value: "0.0.0.0:9090"
+              value: "0.0.0.0:8080"
+            - name: WANAKU_A2A_LISTEN
+              value: "0.0.0.0:8084"
             - name: WANAKU_PERSIST_BACKEND
               value: "file"
             - name: WANAKU_PERSIST_PATH
@@ -41,26 +43,34 @@ spec:
             failureThreshold: 5
             httpGet:
               path: /healthz
-              port: 9090
+              port: management
             initialDelaySeconds: 10
             periodSeconds: 20
             timeoutSeconds: 10
           ports:
-            - containerPort: 8081
+            - name: management
+              containerPort: 8080
               protocol: TCP
-            - containerPort: 9090
+            - name: mcp
+              containerPort: 8081
+              protocol: TCP
+            - name: inference
+              containerPort: 8083
+              protocol: TCP
+            - name: a2a
+              containerPort: 8084
               protocol: TCP
           readinessProbe:
             httpGet:
               path: /healthz
-              port: 9090
+              port: management
             initialDelaySeconds: 5
             periodSeconds: 5
             timeoutSeconds: 5
           startupProbe:
             httpGet:
               path: /healthz
-              port: 9090
+              port: management
             initialDelaySeconds: 3
             periodSeconds: 5
             failureThreshold: 30

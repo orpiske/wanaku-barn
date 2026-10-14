@@ -7,14 +7,22 @@ metadata:
   name: ""
 spec:
   ports:
-    - name: 8081-tcp
+    - name: management
+      port: 8080
+      protocol: TCP
+      targetPort: management
+    - name: mcp
       port: 8081
       protocol: TCP
-      targetPort: 8081
-    - name: 9090-tcp
-      port: 9090
+      targetPort: mcp
+    - name: inference
+      port: 8083
       protocol: TCP
-      targetPort: 9090
+      targetPort: inference
+    - name: a2a
+      port: 8084
+      protocol: TCP
+      targetPort: a2a
   selector:
     app: ""
   sessionAffinity: None

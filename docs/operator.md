@@ -106,6 +106,31 @@ kubectl logs -n wanaku -l app.kubernetes.io/name=wanaku-operator
 
 ## CRD Reference
 
+### Standard listener ports
+
+The operator uses the embedded listeners described in the
+[Wanaku configuration guide](https://github.com/wanaku-ai/wanaku/blob/main/docs/configuration.md):
+
+| Listener | Server port |
+|----------|-------------|
+| Management API and admin UI | 8080 |
+| MCP | 8081 |
+| Inference proxy | 8083 |
+| A2A proxy | 8084 |
+
+The `server-<router>` Service exposes all four ports. Health probes use the named
+`management` port. Ingress sends `/mcp` to MCP and `/` to management; when authentication
+is enabled, these paths use oauth2-proxy ports 4180 and 4181 respectively. Inference and
+A2A are available through the internal Service and are not exposed by this Ingress.
+
+Management and A2A use `WANAKU_MGMT_LISTEN` and `WANAKU_A2A_LISTEN`; MCP and inference
+use the embedded pipeline configuration. Changing listener ports through custom
+configuration also requires matching Service, probe, and exposure changes.
+
+Wanaku Barn listens on 8180. Its `barn-<router>` Service exposes 8080 and forwards to
+8180, keeping the internal Barn URL unchanged. In Docker Compose, both processes use
+host networking, so Wanaku Server reaches Barn at `http://localhost:8180`.
+
 ### WanakuRouter (`wanaku.ai/v1alpha1`)
 
 `WanakuRouter` deploys the Wanaku execution proxy. The `spec` supports:
