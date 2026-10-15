@@ -10,6 +10,8 @@ The Wanaku Operator manages the following custom resource definitions (CRDs):
   a router
 - **WanakuSemanticRouter** — runs one Wanaku Semantic Router (WSR) runtime and registers it with a
   router as an MCP forward
+- **WanakuIntegration** — runs one Camel Integration Capability (CIC) runtime and registers its
+  MCP tools with a router as an MCP forward
 
 > [!NOTE]
 > The `WanakuCapability`, `WanakuCamelRoute` and `WanakuCamelCodeExecutionEngine` CRDs were
@@ -385,9 +387,34 @@ The status contains these conditions and fields:
 
 When you delete the resource, Kubernetes stops the runtime. The runtime removes the forward if it still owns it. If the router is already gone, the runtime cannot remove the forward.
 
+### WanakuIntegration (`wanaku.ai/v1alpha1`)
+
+`WanakuIntegration` runs one Camel Integration Capability (CIC) runtime. The runtime loads Camel routes, serves the tagged routes as MCP tools, and registers itself with the router as an MCP forward. It removes the forward when it stops.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `spec.routerRef` | string | Name of the `WanakuRouter` that the runtime registers with (required) |
+| `spec.routes.configMapRef` | object | Route files in a ConfigMap: `name`, and `main` (the key of the main route file) |
+| `spec.routes.routesRef` | string | A routes reference that the runtime downloads, for example `datastore://orders.camel.yaml` |
+| `spec.routes.serviceCatalog` | object | A service catalog in Wanaku Barn: `name` and `system` |
+| `spec.dependencies`, `spec.repositories` | list | Extra Maven dependencies (`group:artifact:version`) and repositories |
+| `spec.mcp.port` | int | MCP server port (default `9090`). The health endpoints use the same port |
+| `spec.mcp.tags` | string | Route tags that the runtime serves as MCP tools |
+| `spec.registration.enabled` | bool | Registers the runtime with the router (default `true`) |
+| `spec.registration.name`, `spec.registration.namespace` | string | Forward name (default: the resource name) and Wanaku namespace (default `default`) |
+| `spec.registration.tokenSecretRef` | object | Secret `name` and `key` (default `token`) of a bearer token for the router management API |
+| `spec.image`, `spec.imagePullPolicy`, `spec.env` | mixed | Runtime image (default `quay.io/wanaku/camel-integration-capability:latest`) and configuration |
+
+Set exactly one routes source. `datastore://` references and service catalogs need Wanaku Barn on the router (`spec.barn.enabled: true`).
+
+The operator creates the `<name>-cic` Deployment and the `<name>-cic` Service. They follow the same rules as the semantic router workload: one replica, a rolling update that is safe with the ownership label (`cic.instance`), and a Service that publishes the addresses of pods that are not ready.
+The probes use the Camel health endpoints on the MCP port (`/observe/health/ready` and `/observe/health/live`). When registration is enabled, the pod is ready only after the runtime registered the forward.
+
+The status uses the same conditions as `WanakuSemanticRouter`: `Reconciled`, `Available`, `Registered` (only when registration is enabled) and `Ready`.
+
 ### Environment variables
 
-The `env` lists of `WanakuRouter` (`spec.server.env`, `spec.barn.env`, `spec.auth.env`) and of `WanakuSemanticRouter` (`spec.env`) use the same format. Each entry has a `name` and either a `value` or a `valueFrom.secretKeyRef` (`name` and `key`) that reads the value from a Secret in the same namespace:
+The `env` lists of `WanakuRouter` (`spec.server.env`, `spec.barn.env`, `spec.auth.env`) and of `WanakuSemanticRouter` and `WanakuIntegration` (`spec.env`) use the same format. Each entry has a `name` and either a `value` or a `valueFrom.secretKeyRef` (`name` and `key`) that reads the value from a Secret in the same namespace:
 
 ```yaml
 env:
@@ -477,9 +504,10 @@ kubectl wait wanakuservicecatalog/my-catalogs --for=condition=Ready --timeout=12
 
 ### Registering Capability Services
 
-Capability services (HTTP tools, Camel Integration Capability, etc.) are no longer managed
-through CRDs. Deploy them as regular `Deployment` resources in the same namespace and register
-them with the router:
+To run the Camel Integration Capability with registration that the operator manages, use a
+[`WanakuIntegration`](#wanakuintegration-wanakuaiv1alpha1) resource. Other capability services
+(for example, HTTP tools) are not managed through CRDs. Deploy them as regular `Deployment`
+resources in the same namespace and register them with the router:
 
 ```yaml
 # camel-integration-capability.yaml
@@ -523,7 +551,7 @@ for the service itself.
 **List all Wanaku resources:**
 
 ```shell
-kubectl get wanakurouter,wanakuservicecatalog,wanakusemanticrouter -n wanaku
+kubectl get wanakurouter,wanakuservicecatalog,wanakusemanticrouter,wanakuintegration -n wanaku
 ```
 
 **Get detailed status:**

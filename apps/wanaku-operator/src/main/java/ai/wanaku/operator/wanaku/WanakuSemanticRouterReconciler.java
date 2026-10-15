@@ -2,16 +2,11 @@ package ai.wanaku.operator.wanaku;
 
 import jakarta.inject.Inject;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.List;
-import java.util.Map;
 import org.jboss.logging.Logger;
 import io.fabric8.kubernetes.api.model.Condition;
-import io.fabric8.kubernetes.api.model.Secret;
 import io.fabric8.kubernetes.api.model.Service;
 import io.fabric8.kubernetes.api.model.apps.Deployment;
 import io.fabric8.kubernetes.client.KubernetesClient;
@@ -34,6 +29,8 @@ import ai.wanaku.core.util.StringHelper;
 import ai.wanaku.operator.util.Events;
 import ai.wanaku.operator.util.OperatorUtil;
 import ai.wanaku.operator.util.RouterResourceFactory;
+import ai.wanaku.operator.util.RuntimeRegistration;
+import ai.wanaku.operator.util.RuntimeWorkloads;
 import ai.wanaku.operator.util.SemanticRouterResourceFactory;
 import ai.wanaku.operator.util.WanakuForwards;
 import ai.wanaku.operator.util.Workloads;
@@ -86,7 +83,6 @@ public class WanakuSemanticRouterReconciler implements Reconciler<WanakuSemantic
     private static final Logger LOG = Logger.getLogger(WanakuSemanticRouterReconciler.class);
     static final String RECONCILED_CONDITION = "Reconciled";
     static final String AVAILABLE_CONDITION = "Available";
-    static final String REGISTERED_CONDITION = "Registered";
     private static final Duration NOT_READY_RECHECK = Duration.ofSeconds(30);
 
     @Inject
@@ -181,14 +177,23 @@ public class WanakuSemanticRouterReconciler implements Reconciler<WanakuSemantic
                 "Deployment %s: %s".formatted(deployment.getMetadata().getName(), workload.message),
                 generation,
                 OperatorUtil.findCondition(previous, AVAILABLE_CONDITION)));
-        conditions.add(registeredCondition(resource, workload.available, namespace, generation, previous));
+        conditions.add(RuntimeRegistration.condition(
+                forwards,
+                RuntimeWorkloads.managementUrl(spec.getRouterRef()),
+                SemanticRouterResourceFactory.forwardName(resource),
+                RuntimeRegistration.token(kubernetesClient, namespace, spec.getWanakuTokenSecretRef()),
+                SemanticRouterResourceFactory.OWNER_LABEL,
+                workload.available,
+                generation,
+                previous));
         conditions.add(OperatorUtil.aggregateReady(conditions, generation, previous));
 
         final WanakuRuntimeStatus status = new WanakuRuntimeStatus();
         status.setObservedGeneration(generation);
         status.setForwardName(SemanticRouterResourceFactory.forwardName(resource));
         status.setMcpAddress(SemanticRouterResourceFactory.mcpAddress(resource));
-        status.setWanakuEndpoint(wanakuEndpoint(router, SemanticRouterResourceFactory.forwardNamespace(resource)));
+        status.setWanakuEndpoint(
+                RuntimeRegistration.wanakuEndpoint(router, SemanticRouterResourceFactory.forwardNamespace(resource)));
         status.setConditions(conditions);
         resource.setStatus(status);
         warnOnReadyChange(resource, previous, conditions);
@@ -263,119 +268,8 @@ public class WanakuSemanticRouterReconciler implements Reconciler<WanakuSemantic
                 return "ConfigMap %s does not exist".formatted(configMap.getName());
             }
         }
-        for (WanakuTypes.SecretKeyRef ref :
-                List.of(nonNull(spec.getWanakuTokenSecretRef()), nonNull(spec.getBarnTokenSecretRef()))) {
-            if (StringHelper.isNotEmpty(ref.getName())
-                    && kubernetesClient
-                                    .secrets()
-                                    .inNamespace(namespace)
-                                    .withName(ref.getName())
-                                    .get()
-                            == null) {
-                return "Secret %s does not exist".formatted(ref.getName());
-            }
-        }
-        return null;
-    }
-
-    private Condition registeredCondition(
-            WanakuSemanticRouter resource,
-            boolean available,
-            String namespace,
-            Long generation,
-            List<Condition> previous) {
-        final Condition previousCondition = OperatorUtil.findCondition(previous, REGISTERED_CONDITION);
-        final String forwardName = SemanticRouterResourceFactory.forwardName(resource);
-        if (!available) {
-            return OperatorUtil.condition(
-                    REGISTERED_CONDITION,
-                    false,
-                    "WaitingForRuntime",
-                    "The runtime registers forward %s once it is ready".formatted(forwardName),
-                    generation,
-                    previousCondition);
-        }
-        final String managementUrl =
-                "http://server-%s:8080".formatted(resource.getSpec().getRouterRef());
-        try {
-            final WanakuForwards.Forward forward = forwards.get(
-                    managementUrl, forwardName, token(resource.getSpec().getWanakuTokenSecretRef(), namespace));
-            if (forward == null) {
-                return OperatorUtil.condition(
-                        REGISTERED_CONDITION,
-                        false,
-                        "NotRegistered",
-                        "The router has no forward %s".formatted(forwardName),
-                        generation,
-                        previousCondition);
-            }
-            if (!forward.labels.containsKey("wsr.instance")) {
-                return OperatorUtil.condition(
-                        REGISTERED_CONDITION,
-                        false,
-                        "ForeignForward",
-                        "Forward %s was not registered by a semantic router runtime".formatted(forwardName),
-                        generation,
-                        previousCondition);
-            }
-            if (!forward.available) {
-                return OperatorUtil.condition(
-                        REGISTERED_CONDITION,
-                        false,
-                        "ForwardUnavailable",
-                        "Forward %s is unavailable: %s".formatted(forwardName, forward.statusMessage),
-                        generation,
-                        previousCondition);
-            }
-            return OperatorUtil.condition(
-                    REGISTERED_CONDITION,
-                    true,
-                    "Registered",
-                    "Forward %s is registered and available".formatted(forwardName),
-                    generation,
-                    previousCondition);
-        } catch (IOException e) {
-            return OperatorUtil.condition(
-                    REGISTERED_CONDITION,
-                    false,
-                    "RouterUnreachable",
-                    "Cannot read forward %s from %s: %s".formatted(forwardName, managementUrl, e.getMessage()),
-                    generation,
-                    previousCondition);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException("Interrupted while reading forward " + forwardName, e);
-        }
-    }
-
-    private String token(WanakuTypes.SecretKeyRef ref, String namespace) {
-        if (ref == null || StringHelper.isBlank(ref.getName())) {
-            return null;
-        }
-        final Secret secret = kubernetesClient
-                .secrets()
-                .inNamespace(namespace)
-                .withName(ref.getName())
-                .get();
-        final String key = StringHelper.isNotEmpty(ref.getKey()) ? ref.getKey() : "token";
-        if (secret == null) {
-            return null;
-        }
-        if (secret.getData() != null && secret.getData().get(key) != null) {
-            return new String(Base64.getDecoder().decode(secret.getData().get(key)), StandardCharsets.UTF_8).trim();
-        }
-        return secret.getStringData() != null ? secret.getStringData().get(key) : null;
-    }
-
-    /** The router MCP endpoint for the forward namespace, when the router exposes MCP. */
-    static String wanakuEndpoint(WanakuRouter router, String forwardNamespace) {
-        final Map<String, String> endpoints =
-                router.getStatus() != null ? router.getStatus().getEndpoints() : null;
-        final String mcp = endpoints != null ? endpoints.get("mcp") : null;
-        if (mcp == null) {
-            return null;
-        }
-        return "default".equals(forwardNamespace) ? mcp : mcp.replaceFirst("/mcp$", "/" + forwardNamespace + "/mcp");
+        return RuntimeRegistration.missingSecret(
+                kubernetesClient, namespace, spec.getWanakuTokenSecretRef(), spec.getBarnTokenSecretRef());
     }
 
     private void setFailedStatus(WanakuSemanticRouter resource, String reason, String message) {
@@ -416,9 +310,5 @@ public class WanakuSemanticRouterReconciler implements Reconciler<WanakuSemantic
 
     private static List<Condition> previousConditions(WanakuSemanticRouter resource) {
         return resource.getStatus() != null ? resource.getStatus().getConditions() : null;
-    }
-
-    private static WanakuTypes.SecretKeyRef nonNull(WanakuTypes.SecretKeyRef ref) {
-        return ref != null ? ref : new WanakuTypes.SecretKeyRef();
     }
 }

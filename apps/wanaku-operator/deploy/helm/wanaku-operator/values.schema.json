@@ -124,6 +124,9 @@
             "QUARKUS_OPERATOR_SDK_CONTROLLERS_WANAKU_SEMANTIC_ROUTER_NAMESPACES" : {
               "type" : "string"
             },
+            "QUARKUS_OPERATOR_SDK_CONTROLLERS_WANAKU_INTEGRATION_NAMESPACES" : {
+              "type" : "string"
+            },
             "QUARKUS_OPERATOR_SDK_CONTROLLERS_WANAKU_ROUTER_NAMESPACES" : {
               "type" : "string"
             }
