@@ -36,28 +36,58 @@ class WanakuRouterRouteReconcilerTest {
     WanakuRouterReconciler reconciler;
 
     @Test
-    void openshiftCreatesRoutesWithoutExposureUsingAssignedHost() {
+    void openshiftCreatesRoutesWithoutExposureUsingGeneratedHosts() {
         WanakuRouter resource = createRouter();
         var operations = mockOpenShiftRoutes();
-        Route management = RouterResourceFactory.makeServerRoute(resource, "wanaku.apps.example.com", false);
-        Resource<Route> write = mock(Resource.class);
         Resource<Route> read = mock(Resource.class);
+        Resource<Route> write = mock(Resource.class);
         when(operations.withName(anyString())).thenReturn(read);
         when(operations.resource(any(Route.class))).thenReturn(write);
-        when(write.createOr(any())).thenReturn(management);
+        when(write.createOr(any()))
+                .thenReturn(RouterResourceFactory.makeServerRoute(resource, "wanaku.apps.example.com", false))
+                .thenReturn(RouterResourceFactory.makeServerRoute(resource, "wanaku-mcp.apps.example.com", true));
 
-        assertEquals("wanaku.apps.example.com", reconciler.reconcileExternalAccess(resource, "default"));
+        var hosts = reconciler.reconcileExternalAccess(resource, "default");
+        assertEquals("wanaku.apps.example.com", hosts.management);
+        assertEquals("wanaku-mcp.apps.example.com", hosts.mcp);
 
+        // No Route sets spec.host, so the operator does not need the routes/custom-host permission
         ArgumentCaptor<Route> routes = ArgumentCaptor.forClass(Route.class);
         verify(operations, times(2)).resource(routes.capture());
         assertNull(routes.getAllValues().getFirst().getSpec().getHost());
         Route mcp = routes.getAllValues().getLast();
-        assertEquals("wanaku.apps.example.com", mcp.getSpec().getHost());
+        assertNull(mcp.getSpec().getHost());
         assertEquals("/mcp", mcp.getSpec().getPath());
     }
 
     @Test
-    void openshiftKeepsExistingAssignedHostWithoutUpdatingRoutes() {
+    void openshiftExposureHostIsSharedByBothRoutes() {
+        WanakuRouter resource = createRouter();
+        WanakuTypes.ExposureSpec exposure = new WanakuTypes.ExposureSpec();
+        exposure.setHost("wanaku.example.com");
+        resource.getSpec().setExposure(exposure);
+        var operations = mockOpenShiftRoutes();
+        Resource<Route> read = mock(Resource.class);
+        Resource<Route> write = mock(Resource.class);
+        when(operations.withName(anyString())).thenReturn(read);
+        when(operations.resource(any(Route.class))).thenReturn(write);
+        when(write.createOr(any()))
+                .thenReturn(RouterResourceFactory.makeServerRoute(resource, "wanaku.example.com", false))
+                .thenReturn(RouterResourceFactory.makeServerRoute(resource, "wanaku.example.com", true));
+
+        var hosts = reconciler.reconcileExternalAccess(resource, "default");
+        assertEquals("wanaku.example.com", hosts.management);
+        assertEquals("wanaku.example.com", hosts.mcp);
+
+        ArgumentCaptor<Route> routes = ArgumentCaptor.forClass(Route.class);
+        verify(operations, times(2)).resource(routes.capture());
+        routes.getAllValues()
+                .forEach(route ->
+                        assertEquals("wanaku.example.com", route.getSpec().getHost()));
+    }
+
+    @Test
+    void openshiftKeepsExistingAssignedHostsWithoutUpdatingRoutes() {
         WanakuRouter resource = createRouter();
         var operations = mockOpenShiftRoutes();
         Resource<Route> management = mock(Resource.class);
@@ -66,9 +96,12 @@ class WanakuRouterRouteReconcilerTest {
         when(operations.withName("test-router-mcp")).thenReturn(mcp);
         when(management.get())
                 .thenReturn(RouterResourceFactory.makeServerRoute(resource, "wanaku.apps.example.com", false));
-        when(mcp.get()).thenReturn(RouterResourceFactory.makeServerRoute(resource, "wanaku.apps.example.com", true));
+        when(mcp.get())
+                .thenReturn(RouterResourceFactory.makeServerRoute(resource, "wanaku-mcp.apps.example.com", true));
 
-        assertEquals("wanaku.apps.example.com", reconciler.reconcileExternalAccess(resource, "default"));
+        var hosts = reconciler.reconcileExternalAccess(resource, "default");
+        assertEquals("wanaku.apps.example.com", hosts.management);
+        assertEquals("wanaku-mcp.apps.example.com", hosts.mcp);
         verify(operations, never()).resource(any(Route.class));
     }
 
@@ -82,7 +115,9 @@ class WanakuRouterRouteReconcilerTest {
 
     @Test
     void kubernetesWithoutExposureKeepsInternalServiceName() {
-        assertEquals("server-test-router", reconciler.reconcileExternalAccess(createRouter(), "default"));
+        var hosts = reconciler.reconcileExternalAccess(createRouter(), "default");
+        assertEquals("server-test-router", hosts.management);
+        assertEquals("server-test-router", hosts.mcp);
         verify(kubernetesClient, never()).adapt(OpenShiftClient.class);
     }
 

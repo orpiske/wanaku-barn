@@ -32,6 +32,12 @@ is `true`, and — when `spec.auth.enabled` is `true` — an
 router to have `spec.router.enabled: true`, so that Wanaku Barn is deployed for the catalogs
 to register against.
 
+On OpenShift, the operator creates two Routes: `wanaku-dev` for the management API and
+`wanaku-dev-mcp` for the MCP endpoint (`/mcp`). OpenShift generates a hostname for each Route.
+Set `spec.exposure.host` to use one hostname for both Routes. This needs the
+`routes/custom-host` permission. `status.host` contains the management URL.
+`status.sseEndpoint` and `status.streamableEndpoint` contain the MCP URLs.
+
 ## Upgrading from the PoC naming
 
 Rename `spec.praxis` to `spec.server` in existing `WanakuRouter` manifests and install
@@ -349,14 +355,21 @@ If `kubectl wait --for=condition=Ready` times out, do these steps:
    kubectl logs -n wanaku -l app.kubernetes.io/name=wanaku-operator | grep -iE 'forbidden|exception|error'
    ```
 
-4. On OpenShift, make sure that the operator service account can set Route hosts:
+4. On OpenShift, if you set `spec.exposure.host`, make sure that the operator service account can set Route hosts:
 
    ```shell
    oc auth can-i create routes/custom-host -n wanaku --as=system:serviceaccount:wanaku:wanaku-operator
    ```
 
-An empty `status` means that the installed operator version is older than the CRD.
-Make sure that the operator image and the CRD come from the same release.
+An empty `status` usually means that the installed CRD and the operator image come from different releases.
+The API server rejects a status update that contains fields that the CRD schema does not declare.
+Helm does not upgrade the CRDs in the `crds/` directory of a chart.
+After an operator upgrade, apply the CRDs manually and restart the operator:
+
+```shell
+kubectl apply -f apps/wanaku-operator/deploy/helm/wanaku-operator/crds/
+kubectl rollout restart deployment/wanaku-operator -n wanaku
+```
 
 The Wanaku Server startup probe allows up to 150 seconds. Image pulls add more time.
 Use a wait timeout of at least 300 seconds.

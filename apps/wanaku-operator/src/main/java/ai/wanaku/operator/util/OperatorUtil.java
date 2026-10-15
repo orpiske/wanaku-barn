@@ -3,8 +3,8 @@ package ai.wanaku.operator.util;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HexFormat;
@@ -112,9 +112,7 @@ public final class OperatorUtil {
         final boolean unchanged = previousCondition != null
                 && statusValue.equals(previousCondition.getStatus())
                 && previousCondition.getLastTransitionTime() != null;
-        final String lastTransitionTime = unchanged
-                ? previousCondition.getLastTransitionTime()
-                : OffsetDateTime.now(ZoneOffset.UTC).toString();
+        final String lastTransitionTime = unchanged ? previousCondition.getLastTransitionTime() : now();
 
         return new ConditionBuilder()
                 .withType(type)
@@ -124,6 +122,16 @@ public final class OperatorUtil {
                 .withReason(reason)
                 .withMessage(message)
                 .build();
+    }
+
+    /**
+     * Returns the current time as an RFC 3339 timestamp with second precision, as Kubernetes expects in
+     * condition and event times.
+     *
+     * @return the current UTC time, for example {@code 2026-10-15T09:13:00Z}
+     */
+    public static String now() {
+        return Instant.now().truncatedTo(ChronoUnit.SECONDS).toString();
     }
 
     /**

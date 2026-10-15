@@ -3,8 +3,6 @@ package ai.wanaku.operator.wanaku;
 import jakarta.inject.Inject;
 
 import java.time.Duration;
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -385,7 +383,7 @@ public class WanakuRouterReconciler implements Reconciler<WanakuRouter> {
                 && Objects.equals(before.getReason(), after.getReason())) {
             return;
         }
-        final String now = OffsetDateTime.now(ZoneOffset.UTC).toString();
+        final String now = OperatorUtil.now();
         final ObjectMeta meta = resource.getMetadata();
         final Event event = new EventBuilder()
                 .withNewMetadata()
@@ -433,15 +431,15 @@ public class WanakuRouterReconciler implements Reconciler<WanakuRouter> {
             deployOauth2ProxyService(resource, namespace);
         }
 
-        String host = reconcileExternalAccess(resource, namespace);
+        ExternalHosts hosts = reconcileExternalAccess(resource, namespace);
 
         if (authEnabled) {
-            deployOauth2ProxyDeployment(resource, namespace, host);
+            deployOauth2ProxyDeployment(resource, namespace, hosts.management);
         }
 
-        wanakuStatus.setHost("https://" + host);
-        wanakuStatus.setSseEndpoint("https://%s/mcp/sse".formatted(host));
-        wanakuStatus.setStreamableEndpoint("https://%s/mcp/".formatted(host));
+        wanakuStatus.setHost("https://" + hosts.management);
+        wanakuStatus.setSseEndpoint("https://%s/mcp/sse".formatted(hosts.mcp));
+        wanakuStatus.setStreamableEndpoint("https://%s/mcp/".formatted(hosts.mcp));
 
         WanakuRouterSpec.RouterSpec routerSpec = resource.getSpec().getRouter();
         if (routerSpec != null && routerSpec.isEnabled()) {
@@ -595,31 +593,56 @@ public class WanakuRouterReconciler implements Reconciler<WanakuRouter> {
         }
     }
 
-    String reconcileExternalAccess(WanakuRouter resource, String namespace) {
-        WanakuTypes.ExposureSpec exposureSpec = resource.getSpec().getExposure();
-        if (kubernetesClient.supports(Route.class)) {
-            return createRoutesAndGetHost(resource);
+    /** Externally reachable hostnames of the management API and the MCP endpoint. */
+    static final class ExternalHosts {
+        final String management;
+        final String mcp;
+
+        ExternalHosts(String management, String mcp) {
+            this.management = management;
+            this.mcp = mcp;
         }
-        if (exposureSpec == null) {
-            if (RouterResourceFactory.isAuthEnabled(resource)) {
-                return RouterResourceFactory.oauth2ProxyServiceName(
-                        resource.getMetadata().getName());
-            }
-            return "server-" + resource.getMetadata().getName();
-        }
-        return createIngressAndGetHost(resource, namespace);
     }
 
-    private String createRoutesAndGetHost(WanakuRouter resource) {
+    ExternalHosts reconcileExternalAccess(WanakuRouter resource, String namespace) {
+        WanakuTypes.ExposureSpec exposureSpec = resource.getSpec().getExposure();
+        if (kubernetesClient.supports(Route.class)) {
+            return createRoutesAndGetHosts(resource);
+        }
+        String host;
+        if (exposureSpec != null) {
+            host = createIngressAndGetHost(resource, namespace);
+        } else if (RouterResourceFactory.isAuthEnabled(resource)) {
+            host = RouterResourceFactory.oauth2ProxyServiceName(
+                    resource.getMetadata().getName());
+        } else {
+            host = "server-" + resource.getMetadata().getName();
+        }
+        return new ExternalHosts(host, host);
+    }
+
+    /**
+     * Creates the management and MCP Routes. Without {@code spec.exposure.host}, OpenShift generates a
+     * separate hostname for each Route: setting {@code spec.host} needs the {@code routes/custom-host}
+     * permission, so the operator sets it only when the user asks for a shared hostname.
+     */
+    private ExternalHosts createRoutesAndGetHosts(WanakuRouter resource) {
         OpenShiftClient client = kubernetesClient.adapt(OpenShiftClient.class);
         var exposure = resource.getSpec().getExposure();
         String host = exposure != null ? exposure.getHost() : null;
-        Route management = reconcileRoute(client, RouterResourceFactory.makeServerRoute(resource, host, false));
-        host = management.getSpec().getHost();
+        String management = assignedHost(
+                reconcileRoute(client, RouterResourceFactory.makeServerRoute(resource, host, false)), "management");
+        String mcp = assignedHost(
+                reconcileRoute(client, RouterResourceFactory.makeServerRoute(resource, host, true)), "MCP");
+        return new ExternalHosts(management, mcp);
+    }
+
+    private static String assignedHost(Route route, String kind) {
+        String host = route.getSpec().getHost();
         if (StringHelper.isBlank(host)) {
-            throw new IllegalStateException("OpenShift did not assign a hostname to the Wanaku management Route");
+            throw new IllegalStateException(
+                    "OpenShift did not assign a hostname to the Wanaku %s Route".formatted(kind));
         }
-        reconcileRoute(client, RouterResourceFactory.makeServerRoute(resource, host, true));
         return host;
     }
 

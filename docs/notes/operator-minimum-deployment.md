@@ -83,8 +83,9 @@ validation result, and documentation follow-up.
   No code creates OpenShift Routes despite existing Route RBAC permissions.
 - Decision: automatically detect the Route API. On OpenShift, create a management
   Route named `<router>` for `/` and an MCP Route named `<router>-mcp` for `/mcp`.
-  Reuse the management Route's generated hostname for MCP. An optional
-  `spec.exposure.host` sets the shared hostname explicitly.
+  OpenShift generates a separate hostname for each Route. An optional
+  `spec.exposure.host` sets one shared hostname for both Routes. Setting a Route host
+  needs the `routes/custom-host` permission, so the operator sets it only on request.
 - Use edge TLS with HTTP-to-HTTPS redirection, consistent with the HTTPS endpoints
   already reported in `WanakuRouter.status`. Both Routes are owned by the CR.
 - Target Server ports 8080/8081 without authentication, or oauth2-proxy ports
@@ -109,5 +110,13 @@ validation result, and documentation follow-up.
   availability conditions, and an aggregated `Ready` condition. Record reconciliation errors in the status.
   Emit Warning events. Watch owned Deployments. Detect drift with a desired-spec hash, so that upgrades
   update existing Services and Deployments.
+- Cluster finding: the Route still failed with HTTP 422 after the change, and the status stayed empty.
+  The cluster ClusterRole came from an older chart, so it had no `routes/custom-host` rule. Helm also
+  does not upgrade CRDs: the installed CRD had no `status.observedGeneration`, so the API server rejected
+  the server-side-apply status patch.
+- Follow-up change: the MCP Route no longer copies the management hostname. Each Route gets its own
+  generated hostname unless `spec.exposure.host` is set. `status.sseEndpoint` and
+  `status.streamableEndpoint` use the MCP Route hostname. The default deployment does not need
+  `routes/custom-host`.
 - Validation: unit and mock-API-server tests. Cluster validation is pending.
 - Documentation follow-up: conditions table and troubleshooting steps in `docs/operator.md`.

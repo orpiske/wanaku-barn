@@ -4,8 +4,6 @@ import jakarta.inject.Inject;
 import jakarta.ws.rs.WebApplicationException;
 
 import java.net.URI;
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -29,6 +27,7 @@ import io.quarkus.rest.client.reactive.QuarkusRestClientBuilder;
 import ai.wanaku.capabilities.sdk.api.exceptions.WanakuException;
 import ai.wanaku.capabilities.sdk.api.types.DataStore;
 import ai.wanaku.core.services.api.ServiceCatalogService;
+import ai.wanaku.operator.util.OperatorUtil;
 
 import static ai.wanaku.operator.util.OperatorUtil.READY_CONDITION;
 import static ai.wanaku.operator.util.OperatorUtil.findCondition;
@@ -164,7 +163,7 @@ public class WanakuServiceCatalogReconciler implements Reconciler<WanakuServiceC
                 .withType(READY_CONDITION)
                 .withStatus("False")
                 .withObservedGeneration(resource.getMetadata().getGeneration())
-                .withLastTransitionTime(OffsetDateTime.now(ZoneOffset.UTC).toString())
+                .withLastTransitionTime(OperatorUtil.now())
                 .withReason(reason)
                 .withMessage(message)
                 .build();
