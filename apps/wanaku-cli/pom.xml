@@ -50,6 +50,11 @@
             <artifactId>wanaku-cli-common</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <!-- Kubernetes access for the cloud commands (native-image ready) -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-kubernetes-client</artifactId>
+        </dependency>
         <dependency>
             <groupId>ai.wanaku</groupId>
             <artifactId>core-util</artifactId>
@@ -111,6 +116,12 @@
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-junit-mockito</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- CRUD mock API server for the cloud commands -->
+        <dependency>
+            <groupId>io.fabric8</groupId>
+            <artifactId>kubernetes-server-mock</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>

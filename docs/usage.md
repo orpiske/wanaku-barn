@@ -1483,6 +1483,10 @@ These configurations are handled when adding a new tool to Wanaku MCP Router.
 > [!NOTE]
 > Check the "Configuring Downstream MCP Servers" section for additional details about this.
 
+## Running Integrations in the Cloud
+
+To run a Camel route file with MCP tools in a cluster that runs the Wanaku operator, use `wanaku cloud run integration`. The integration registers with the router automatically. See [Running Integrations in the Cloud](cloud-run.md).
+
 ## Accessing Other MCP servers (MCP Forwards)
 
 The MCP bridge in Wanaku allows it to act as a central gateway or proxy to other MCP servers that use HTTP as the transport mechanism.
