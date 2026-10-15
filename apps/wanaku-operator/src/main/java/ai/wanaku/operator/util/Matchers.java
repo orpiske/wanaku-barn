@@ -48,7 +48,8 @@ public final class Matchers {
         if (existing == null) {
             return false;
         } else {
-            return desired.getSpec().getReplicas().equals(existing.getSpec().getReplicas())
+            return OperatorUtil.sameDesiredHash(desired, existing)
+                    && desired.getSpec().getReplicas().equals(existing.getSpec().getReplicas())
                     && desired.getSpec()
                             .getTemplate()
                             .getSpec()
@@ -104,7 +105,8 @@ public final class Matchers {
             return false;
         }
 
-        return desired.getMetadata().getName().equals(existing.getMetadata().getName());
+        return desired.getMetadata().getName().equals(existing.getMetadata().getName())
+                && OperatorUtil.sameDesiredHash(desired, existing);
     }
 
     public static boolean match(Route desiredRoute, Route existingRoute) {

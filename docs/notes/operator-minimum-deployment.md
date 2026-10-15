@@ -97,3 +97,17 @@ validation result, and documentation follow-up.
   of reachable management or MCP endpoints.
 - Documentation follow-up: explain automatic OpenShift Routes, shared hostname,
   termination, and the difference from Kubernetes exposure requirements.
+
+### Failure 2: Ready condition timeout
+
+- Evidence: `oc apply` creates the `WanakuRouter`. `oc wait --for=condition=Ready --timeout=120s` times out.
+- Cause (code analysis, not yet confirmed on the cluster): the operator set `Ready=True` without any check,
+  so a timeout means that reconciliation threw before the status patch. Reconciliation errors did not
+  update the status. The most likely error is the MCP Route creation: it sets `spec.host`, which needs
+  `create` on `route.openshift.io/routes/custom-host`. The operator role did not grant it.
+- Change (wanaku-ai/wanaku-barn#247): grant `routes/custom-host`. Publish `Reconciled`, per-workload
+  availability conditions, and an aggregated `Ready` condition. Record reconciliation errors in the status.
+  Emit Warning events. Watch owned Deployments. Detect drift with a desired-spec hash, so that upgrades
+  update existing Services and Deployments.
+- Validation: unit and mock-API-server tests. Cluster validation is pending.
+- Documentation follow-up: conditions table and troubleshooting steps in `docs/operator.md`.

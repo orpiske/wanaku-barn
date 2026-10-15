@@ -186,7 +186,7 @@ Apply:
 
 ```shell
 kubectl apply -f router.yaml -n wanaku
-kubectl wait wanakurouter/wanaku-dev --for=condition=Ready --timeout=120s
+kubectl wait wanakurouter/wanaku-dev --for=condition=Ready --timeout=300s
 ```
 
 ### Router with Authentication
@@ -209,7 +209,7 @@ spec:
 
 ```shell
 kubectl apply -f router-auth.yaml -n wanaku
-kubectl wait wanakurouter/wanaku-dev --for=condition=Ready --timeout=120s
+kubectl wait wanakurouter/wanaku-dev --for=condition=Ready --timeout=300s
 ```
 
 ### Deploying Service Catalogs
@@ -301,6 +301,65 @@ The status section shows:
 - `Ready` condition (true/false)
 - Deployed catalogs
 - Error messages (if reconciliation failed)
+
+#### WanakuRouter conditions
+
+The operator sets `Ready=True` only when all required workloads are available.
+The operator records the observed generation in `status.observedGeneration` and in each condition.
+
+| Condition | When the operator sets it | Status `False` means |
+|-----------|---------------------------|----------------------|
+| `Reconciled` | Always | Spec validation failed (`ValidationError`) or a Kubernetes API call failed (`ReconcileError`). The message contains the error. |
+| `ServerAvailable` | Always | The `<router>-server` Deployment is not available. |
+| `AuthProxyAvailable` | `spec.auth.enabled: true` | The `<router>-oauth2-proxy` Deployment is not available. |
+| `BarnAvailable` | `spec.router.enabled: true` | The `<router>-barn` Deployment is not available. |
+| `Ready` | Always | One of the conditions above is `False`. The reason and the message identify the first failed condition. |
+
+A workload condition uses these reasons:
+
+- `Available`: all replicas are available.
+- `Progressing`: the rollout continues.
+- `ImagePullBackOff`, `ErrImagePull`, `CrashLoopBackOff`, `CreateContainerConfigError` and similar: a pod container cannot start. The message contains the container message and the last termination message.
+- `Unschedulable`: the scheduler cannot place a pod.
+- `ProgressDeadlineExceeded`: the rollout did not complete in the Deployment progress deadline.
+- `NotFound`: the Deployment does not exist.
+
+When `Ready` changes to `False`, or the failure reason changes, the operator records a `Warning` event on the custom resource.
+While the router is not ready, the operator checks the workloads again every 30 seconds.
+
+#### Troubleshooting a Ready timeout
+
+If `kubectl wait --for=condition=Ready` times out, do these steps:
+
+1. Read the conditions:
+
+   ```shell
+   kubectl get wanakurouter wanaku-dev -n wanaku -o jsonpath='{.status.conditions}'
+   ```
+
+2. Read the events of the custom resource:
+
+   ```shell
+   kubectl get events -n wanaku --field-selector involvedObject.name=wanaku-dev
+   ```
+
+3. Read the operator log:
+
+   ```shell
+   kubectl logs -n wanaku -l app.kubernetes.io/name=wanaku-operator | grep -iE 'forbidden|exception|error'
+   ```
+
+4. On OpenShift, make sure that the operator service account can set Route hosts:
+
+   ```shell
+   oc auth can-i create routes/custom-host -n wanaku --as=system:serviceaccount:wanaku:wanaku-operator
+   ```
+
+An empty `status` means that the installed operator version is older than the CRD.
+Make sure that the operator image and the CRD come from the same release.
+
+The Wanaku Server startup probe allows up to 150 seconds. Image pulls add more time.
+Use a wait timeout of at least 300 seconds.
 
 **Check operator logs:**
 

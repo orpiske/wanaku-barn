@@ -1,14 +1,22 @@
 package ai.wanaku.operator.util;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.eclipse.microprofile.config.ConfigProvider;
 import org.jboss.logging.Logger;
 import io.fabric8.kubernetes.api.model.Condition;
 import io.fabric8.kubernetes.api.model.ConditionBuilder;
+import io.fabric8.kubernetes.api.model.HasMetadata;
+import io.fabric8.kubernetes.client.utils.Serialization;
 
 /**
  * Shared operator utilities for condition management, image pull policy resolution,
@@ -20,6 +28,12 @@ public final class OperatorUtil {
     public static final String CONDITION_STATUS_TRUE = "True";
     public static final String CONDITION_STATUS_FALSE = "False";
     public static final String CONDITION_REASON_READY = "ReconciliationSucceeded";
+
+    /** Label set on every workload the operator manages; used to scope the operator's informers. */
+    public static final String MANAGED_BY_LABEL = "app.kubernetes.io/managed-by";
+
+    public static final String MANAGED_BY_VALUE = "wanaku-operator";
+    public static final String DESIRED_HASH_ANNOTATION = "wanaku.ai/desired-hash";
 
     public static final String DEFAULT_PULL_POLICY = "IfNotPresent";
     public static final Set<String> VALID_PULL_POLICIES = Set.of("Always", "IfNotPresent", "Never");
@@ -78,20 +92,82 @@ public final class OperatorUtil {
      * @return a new Ready condition
      */
     public static Condition readyCondition(Long generation, Condition previousCondition, String message) {
-        final boolean alreadyReady =
-                previousCondition != null && CONDITION_STATUS_TRUE.equals(previousCondition.getStatus());
-        final String lastTransitionTime = alreadyReady && previousCondition.getLastTransitionTime() != null
+        return condition(READY_CONDITION, true, CONDITION_REASON_READY, message, generation, previousCondition);
+    }
+
+    /**
+     * Creates a condition, keeping the previous transition time when the status did not change.
+     *
+     * @param type the condition type
+     * @param status the condition status
+     * @param reason the machine-readable reason
+     * @param message the human-readable message
+     * @param generation the observed generation
+     * @param previousCondition the previous condition of the same type (may be null)
+     * @return the new condition
+     */
+    public static Condition condition(
+            String type, boolean status, String reason, String message, Long generation, Condition previousCondition) {
+        final String statusValue = status ? CONDITION_STATUS_TRUE : CONDITION_STATUS_FALSE;
+        final boolean unchanged = previousCondition != null
+                && statusValue.equals(previousCondition.getStatus())
+                && previousCondition.getLastTransitionTime() != null;
+        final String lastTransitionTime = unchanged
                 ? previousCondition.getLastTransitionTime()
                 : OffsetDateTime.now(ZoneOffset.UTC).toString();
 
         return new ConditionBuilder()
-                .withType(READY_CONDITION)
-                .withStatus(CONDITION_STATUS_TRUE)
+                .withType(type)
+                .withStatus(statusValue)
                 .withObservedGeneration(generation)
                 .withLastTransitionTime(lastTransitionTime)
-                .withReason(CONDITION_REASON_READY)
+                .withReason(reason)
                 .withMessage(message)
                 .build();
+    }
+
+    /**
+     * Stores a hash of the desired resource spec in an annotation, so drift in any field can be detected
+     * by comparing it with the annotation of the existing resource.
+     *
+     * @param desired the desired resource
+     * @param spec the desired spec to hash
+     */
+    public static void stampDesiredHash(HasMetadata desired, Object spec) {
+        final Map<String, String> annotations = new HashMap<>();
+        if (desired.getMetadata().getAnnotations() != null) {
+            annotations.putAll(desired.getMetadata().getAnnotations());
+        }
+        annotations.put(DESIRED_HASH_ANNOTATION, sha256(Serialization.asJson(spec)));
+        desired.getMetadata().setAnnotations(annotations);
+    }
+
+    /**
+     * Checks whether the existing resource carries the same desired-spec hash as the desired one.
+     *
+     * @param desired the desired resource (may be unstamped, which counts as a match)
+     * @param existing the existing resource
+     * @return true when the hashes match or the desired resource has no hash
+     */
+    public static boolean sameDesiredHash(HasMetadata desired, HasMetadata existing) {
+        final String desiredHash = annotation(desired, DESIRED_HASH_ANNOTATION);
+        return desiredHash == null || desiredHash.equals(annotation(existing, DESIRED_HASH_ANNOTATION));
+    }
+
+    private static String annotation(HasMetadata resource, String key) {
+        if (resource.getMetadata() == null || resource.getMetadata().getAnnotations() == null) {
+            return null;
+        }
+        return resource.getMetadata().getAnnotations().get(key);
+    }
+
+    private static String sha256(String value) {
+        try {
+            return HexFormat.of()
+                    .formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is not available", e);
+        }
     }
 
     /**

@@ -4,10 +4,19 @@ import java.util.List;
 import io.fabric8.kubernetes.api.model.Condition;
 
 public class WanakuRouterStatus {
+    private Long observedGeneration;
     private String host;
     private String sseEndpoint;
     private String streamableEndpoint;
     private List<Condition> conditions;
+
+    public Long getObservedGeneration() {
+        return observedGeneration;
+    }
+
+    public void setObservedGeneration(Long observedGeneration) {
+        this.observedGeneration = observedGeneration;
+    }
 
     public String getHost() {
         return host;

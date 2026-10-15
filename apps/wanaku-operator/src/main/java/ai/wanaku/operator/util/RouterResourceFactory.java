@@ -8,6 +8,7 @@ import org.jboss.logging.Logger;
 import io.fabric8.kubernetes.api.model.Container;
 import io.fabric8.kubernetes.api.model.EnvVar;
 import io.fabric8.kubernetes.api.model.EnvVarBuilder;
+import io.fabric8.kubernetes.api.model.HasMetadata;
 import io.fabric8.kubernetes.api.model.PersistentVolumeClaim;
 import io.fabric8.kubernetes.api.model.Service;
 import io.fabric8.kubernetes.api.model.ServiceSpec;
@@ -66,6 +67,7 @@ public final class RouterResourceFactory {
 
         setupBackendContainer(resource, serviceSpec);
 
+        managed(desiredDeployment, desiredDeployment.getSpec());
         desiredDeployment.addOwnerReference(resource);
         return desiredDeployment;
     }
@@ -86,6 +88,7 @@ public final class RouterResourceFactory {
         ServiceSpec serviceSpec = service.getSpec();
         serviceSpec.setSelector(Map.of("app", barnName(deploymentName), "component", "wanaku-barn-backend"));
 
+        managed(service, service.getSpec());
         service.addOwnerReference(resource);
         return service;
     }
@@ -332,6 +335,7 @@ public final class RouterResourceFactory {
         }
         serverContainer.setEnv(envVars);
 
+        managed(desiredDeployment, desiredDeployment.getSpec());
         desiredDeployment.addOwnerReference(resource);
         return desiredDeployment;
     }
@@ -351,6 +355,7 @@ public final class RouterResourceFactory {
         ServiceSpec serviceSpec = service.getSpec();
         serviceSpec.setSelector(Map.of("app", serverName(deploymentName), "component", "wanaku-server"));
 
+        managed(service, service.getSpec());
         service.addOwnerReference(resource);
         return service;
     }
@@ -376,6 +381,7 @@ public final class RouterResourceFactory {
         ServiceSpec serviceSpec = service.getSpec();
         serviceSpec.setSelector(Map.of("app", oauth2ProxyName(deploymentName), "component", "wanaku-oauth2-proxy"));
 
+        managed(service, service.getSpec());
         service.addOwnerReference(resource);
         return service;
     }
@@ -430,6 +436,7 @@ public final class RouterResourceFactory {
             container.setEnv(envVars);
         }
 
+        managed(desiredDeployment, desiredDeployment.getSpec());
         desiredDeployment.addOwnerReference(resource);
         return desiredDeployment;
     }
@@ -504,6 +511,16 @@ public final class RouterResourceFactory {
                 .endSecretKeyRef()
                 .endValueFrom()
                 .build();
+    }
+
+    private static void managed(HasMetadata desired, Object spec) {
+        Map<String, String> labels = new HashMap<>();
+        if (desired.getMetadata().getLabels() != null) {
+            labels.putAll(desired.getMetadata().getLabels());
+        }
+        labels.put(OperatorUtil.MANAGED_BY_LABEL, OperatorUtil.MANAGED_BY_VALUE);
+        desired.getMetadata().setLabels(labels);
+        OperatorUtil.stampDesiredHash(desired, spec);
     }
 
     private static String barnName(String deploymentName) {

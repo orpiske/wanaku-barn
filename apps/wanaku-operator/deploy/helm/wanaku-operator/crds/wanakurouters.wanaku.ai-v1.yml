@@ -110,6 +110,8 @@ spec:
                 type: "array"
               host:
                 type: "string"
+              observedGeneration:
+                type: "integer"
               sseEndpoint:
                 type: "string"
               streamableEndpoint:
