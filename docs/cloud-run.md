@@ -80,6 +80,8 @@ When you run the command again with the same name, it updates the route files an
 
 The Camel Integration Capability registers itself with the router. This needs a capability image that supports self-registration (wanaku-ai/camel-integration-capability#153). An older image does not register and does not become ready, so the command times out with `0/1 replicas available`. In this case, use `--image` to select a newer image, and `--image-pull-policy Always` if you reuse a tag.
 
+When the integration fails or is not ready before the timeout, the command also prints why its pods are not ready: the waiting reason of each container (for example `ImagePullBackOff`), the reason of the last container stop, and the latest Warning event of the pod (for example `Readiness probe failed: HTTP probe failed with statuscode: 404`). This needs permission to list pods and events in the namespace.
+
 ## Exit Codes
 
 | Code | Meaning |

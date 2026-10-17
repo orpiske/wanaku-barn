@@ -1,14 +1,18 @@
 package ai.wanaku.cli.main.commands.cloud;
 
 import java.time.Duration;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import io.fabric8.kubernetes.api.model.ConfigMap;
+import io.fabric8.kubernetes.api.model.ContainerStatus;
+import io.fabric8.kubernetes.api.model.Event;
 import io.fabric8.kubernetes.api.model.GenericKubernetesResource;
 import io.fabric8.kubernetes.api.model.OwnerReferenceBuilder;
+import io.fabric8.kubernetes.api.model.Pod;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.fabric8.kubernetes.client.dsl.NonDeletingOperation;
@@ -204,6 +208,7 @@ public class CloudRunSupport {
             }
             if (ready != null && FAILED_REASONS.contains(String.valueOf(ready.get("reason")))) {
                 printer.printErrorMessage("%s %s failed: %s".formatted(kind.kind(), name, state));
+                printPodDiagnosis(kind, namespace, name);
                 printHints(kind, name);
                 return exitCodeFor(ready);
             }
@@ -211,6 +216,7 @@ public class CloudRunSupport {
         }
         printer.printErrorMessage("%s %s is not ready after %d seconds: %s"
                 .formatted(kind.kind(), name, timeout.toSeconds(), describe(ready)));
+        printPodDiagnosis(kind, namespace, name);
         printHints(kind, name);
         return exitCodeFor(ready);
     }
@@ -239,8 +245,91 @@ public class CloudRunSupport {
 
     private void printHints(RuntimeKind kind, String name) {
         printer.printInfoMessage("Inspect it with: wanaku cloud status %s %s".formatted(kind.id(), name));
-        printer.printInfoMessage("Read its logs with: kubectl logs deployment/%s-%s"
-                .formatted(name, kind == RuntimeKind.INTEGRATION ? "cic" : "wsr"));
+        printer.printInfoMessage("Read its logs with: kubectl logs deployment/%s".formatted(workloadName(kind, name)));
+    }
+
+    static String workloadName(RuntimeKind kind, String name) {
+        return name + (kind == RuntimeKind.INTEGRATION ? "-cic" : "-wsr");
+    }
+
+    /**
+     * Prints why the runtime pods are not ready: the waiting reason of each container (for example
+     * ImagePullBackOff), the reason of its last termination, and the latest Warning event of the pod (for example a
+     * failed readiness probe). The Ready condition alone only reports the replica count.
+     */
+    void printPodDiagnosis(RuntimeKind kind, String namespace, String name) {
+        final String workload = workloadName(kind, name);
+        final List<Pod> pods;
+        final List<Event> events;
+        try {
+            pods = client.pods()
+                    .inNamespace(namespace)
+                    .withLabel("app", workload)
+                    .list()
+                    .getItems();
+            events = client.v1().events().inNamespace(namespace).list().getItems();
+        } catch (KubernetesClientException e) {
+            printer.printWarningMessage("Cannot read the pods of %s: %s".formatted(workload, e.getMessage()));
+            return;
+        }
+        if (pods.isEmpty()) {
+            printer.printWarningMessage("No pod of %s exists yet".formatted(workload));
+            return;
+        }
+        for (Pod pod : pods) {
+            final String podName = pod.getMetadata().getName();
+            final List<ContainerStatus> statuses =
+                    pod.getStatus() != null && pod.getStatus().getContainerStatuses() != null
+                            ? pod.getStatus().getContainerStatuses()
+                            : List.of();
+            for (ContainerStatus status : statuses) {
+                if (status.getState() != null && status.getState().getWaiting() != null) {
+                    printer.printWarningMessage("Pod %s: %s"
+                            .formatted(
+                                    podName,
+                                    reasonAndMessage(
+                                            status.getState().getWaiting().getReason(),
+                                            status.getState().getWaiting().getMessage())));
+                }
+                if (status.getLastState() != null && status.getLastState().getTerminated() != null) {
+                    printer.printWarningMessage("Pod %s last stopped: %s (exit code %d)"
+                            .formatted(
+                                    podName,
+                                    reasonAndMessage(
+                                            status.getLastState()
+                                                    .getTerminated()
+                                                    .getReason(),
+                                            status.getLastState()
+                                                    .getTerminated()
+                                                    .getMessage()),
+                                    status.getLastState().getTerminated().getExitCode()));
+                }
+            }
+            events.stream()
+                    .filter(e -> "Warning".equals(e.getType())
+                            && e.getInvolvedObject() != null
+                            && podName.equals(e.getInvolvedObject().getName()))
+                    .max(Comparator.comparing(CloudRunSupport::eventTime))
+                    .ifPresent(e -> printer.printWarningMessage(
+                            "Pod %s: %s".formatted(podName, reasonAndMessage(e.getReason(), e.getMessage()))));
+        }
+    }
+
+    private static String eventTime(Event event) {
+        if (event.getLastTimestamp() != null) {
+            return event.getLastTimestamp();
+        }
+        if (event.getEventTime() != null && event.getEventTime().getTime() != null) {
+            return event.getEventTime().getTime();
+        }
+        return Objects.requireNonNullElse(event.getMetadata().getCreationTimestamp(), "");
+    }
+
+    private static String reasonAndMessage(String reason, String message) {
+        if (message == null || message.isBlank()) {
+            return String.valueOf(reason);
+        }
+        return "%s: %s".formatted(reason, message.strip());
     }
 
     @SuppressWarnings("unchecked")

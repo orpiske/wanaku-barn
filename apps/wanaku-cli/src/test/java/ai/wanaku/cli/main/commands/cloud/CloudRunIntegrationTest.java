@@ -6,8 +6,10 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import io.fabric8.kubernetes.api.model.ConfigMap;
+import io.fabric8.kubernetes.api.model.EventBuilder;
 import io.fabric8.kubernetes.api.model.GenericKubernetesResource;
 import io.fabric8.kubernetes.api.model.GenericKubernetesResourceBuilder;
+import io.fabric8.kubernetes.api.model.PodBuilder;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.server.mock.EnableKubernetesMockClient;
 import ai.wanaku.cli.main.support.WanakuPrinter;
@@ -155,6 +157,59 @@ class CloudRunIntegrationTest {
         operator.join();
 
         assertThat(exit).isEqualTo(CloudRunSupport.EXIT_REGISTRATION_FAILED);
+    }
+
+    @Test
+    void aTimeoutReportsWhyThePodIsNotReady() throws Exception {
+        createRouter("True", "ReconciliationSucceeded");
+        client.pods()
+                .inNamespace(NAMESPACE)
+                .resource(new PodBuilder()
+                        .withNewMetadata()
+                        .withName("echo-cic-abc")
+                        .addToLabels("app", "echo-cic")
+                        .endMetadata()
+                        .withNewStatus()
+                        .addNewContainerStatus()
+                        .withName("cic")
+                        .withNewState()
+                        .withNewWaiting()
+                        .withReason("ImagePullBackOff")
+                        .withMessage("Back-off pulling image \"quay.io/example/cic:dev\"")
+                        .endWaiting()
+                        .endState()
+                        .endContainerStatus()
+                        .endStatus()
+                        .build())
+                .create();
+        client.v1()
+                .events()
+                .inNamespace(NAMESPACE)
+                .resource(new EventBuilder()
+                        .withNewMetadata()
+                        .withName("echo-cic-abc.1")
+                        .endMetadata()
+                        .withType("Warning")
+                        .withReason("Unhealthy")
+                        .withMessage("Readiness probe failed: HTTP probe failed with statuscode: 404")
+                        .withLastTimestamp("2026-10-17T08:00:00Z")
+                        .withNewInvolvedObject()
+                        .withKind("Pod")
+                        .withName("echo-cic-abc")
+                        .endInvolvedObject()
+                        .build())
+                .create();
+        CloudRunIntegration command = command(write("echo.camel.yaml", TOOL_ROUTE));
+        command.timeoutSeconds = 1;
+        Thread operator = operatorReports("False", "Progressing");
+
+        int exit = command.doCall(null, printer);
+        operator.join();
+
+        assertThat(exit).isEqualTo(1);
+        verify(printer).printErrorMessage(contains("is not ready after 1 seconds"));
+        verify(printer).printWarningMessage(contains("ImagePullBackOff: Back-off pulling image"));
+        verify(printer).printWarningMessage(contains("Unhealthy: Readiness probe failed"));
     }
 
     @Test
