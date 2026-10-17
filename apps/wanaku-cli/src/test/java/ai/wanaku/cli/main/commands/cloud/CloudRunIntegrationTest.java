@@ -102,6 +102,8 @@ class CloudRunIntegrationTest {
         createRouter("True", "ReconciliationSucceeded");
         CloudRunIntegration command = command(write("echo.camel.yaml", TOOL_ROUTE));
         command.dependencies = List.of("org.apache.camel:camel-http:4.22.1");
+        command.image = "quay.io/example/cic:dev";
+        command.imagePullPolicy = CloudRunSupport.PullPolicy.Always;
         Thread operator = operatorReports("True", "ReconciliationSucceeded");
 
         int exit = command.doCall(null, printer);
@@ -114,7 +116,9 @@ class CloudRunIntegrationTest {
                 (Map<String, Object>) integration.getAdditionalProperties().get("spec");
         assertThat(spec)
                 .containsEntry("routerRef", "wanaku-dev")
-                .containsEntry("dependencies", List.of("org.apache.camel:camel-http:4.22.1"));
+                .containsEntry("dependencies", List.of("org.apache.camel:camel-http:4.22.1"))
+                .containsEntry("image", "quay.io/example/cic:dev")
+                .containsEntry("imagePullPolicy", "Always");
         assertThat(spec.get("routes").toString()).contains("echo-routes").contains("echo.camel.yaml");
         ConfigMap files = client.configMaps()
                 .inNamespace(NAMESPACE)

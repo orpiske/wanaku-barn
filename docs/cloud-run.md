@@ -72,10 +72,13 @@ When the integration is ready, the command prints the forward name and the route
 | `--dependencies` | Extra Maven dependencies, comma separated (`group:artifact:version`) |
 | `--tags` | Route tags to serve as MCP tools (default `wanaku`) |
 | `--image` | Capability image (default: chosen by the operator) |
+| `--image-pull-policy` | `Always`, `IfNotPresent` or `Never` (default: chosen by the operator). Use `Always` to get a new build of a moving tag, such as `latest` |
 | `--no-wait` | Return after the submission, without waiting |
 | `--timeout` | Seconds to wait for the integration (default 300) |
 
 When you run the command again with the same name, it updates the route files and restarts the integration.
+
+The Camel Integration Capability registers itself with the router. This needs a capability image that supports self-registration (wanaku-ai/camel-integration-capability#153). An older image does not register and does not become ready, so the command times out with `0/1 replicas available`. In this case, use `--image` to select a newer image, and `--image-pull-policy Always` if you reuse a tag.
 
 ## Exit Codes
 

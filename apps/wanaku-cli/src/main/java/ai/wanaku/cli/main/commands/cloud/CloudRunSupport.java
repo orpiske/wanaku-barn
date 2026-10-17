@@ -26,6 +26,14 @@ public class CloudRunSupport {
     static final long MAX_INPUT_BYTES = 900L * 1024;
 
     static final String API_VERSION = "wanaku.ai/v1alpha1";
+
+    /** Kubernetes image pull policies, spelled as the API expects them. */
+    public enum PullPolicy {
+        Always,
+        IfNotPresent,
+        Never
+    }
+
     static final ResourceDefinitionContext ROUTERS = wanakuContext("WanakuRouter", "wanakurouters");
 
     /** Ready reasons that do not resolve without a change: stop waiting. */
