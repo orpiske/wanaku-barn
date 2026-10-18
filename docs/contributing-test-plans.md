@@ -85,19 +85,19 @@ The main plan should only contain logic unique to that test scenario. If a step 
 
 ## Use the Wanaku CLI, not raw API clients
 
-Test plans **must** use the Wanaku CLI for all interactions with the router and Keycloak. Use either a native binary installed on the system or — preferably — the CLI jar file built from the codebase (`java -jar apps/wanaku-cli/target/quarkus-app/quarkus-run.jar`). For Keycloak administration (users, credentials, realm), use the standalone `wanaku-keycloak-admin` binary (`java -jar apps/wanaku-keycloak-admin/target/quarkus-app/quarkus-run.jar`).
+Test plans **must** use the Wanaku CLI for all interactions with Wanaku Server, Wanaku Barn and Keycloak. Use either a native binary installed on the system or — preferably — the CLI jar file built from the codebase (`java -jar apps/wanaku-cli/target/quarkus-app/quarkus-run.jar`). For Keycloak administration (users, credentials, realm), use the standalone `wanaku-keycloak-admin` binary (`java -jar apps/wanaku-keycloak-admin/target/quarkus-app/quarkus-run.jar`).
 
-Do **not** use `curl`, `wget`, `httpie`, or other HTTP clients to call Wanaku or Keycloak APIs unless the test is specifically oriented to verify HTTP-level behavior (e.g., checking raw HTTP status codes on health endpoints, testing SSE streaming headers, or verifying endpoint reachability before the CLI can connect).
+Do **not** use `curl`, `wget`, `httpie`, or other HTTP clients to call Wanaku or Keycloak APIs unless the test is specifically oriented to verify HTTP-level behavior (e.g., checking raw HTTP status codes on health endpoints, testing Streamable HTTP headers, or verifying endpoint reachability before the CLI can connect), or the API has no CLI command (for example the enable/disable, audit and metrics routes of Wanaku Server).
 
 ```bash
 # Bad — uses curl to list tools
-curl -s "${WANAKU_ROUTER_URL}/api/v1/tools" | jq '.data[].name'
+curl -s "${WANAKU_SERVER_URL}/api/v1/tools" | jq '.data[].name'
 
 # Good — uses the CLI
-wanaku tools list --host "${WANAKU_ROUTER_URL}" --plain
+wanaku tools list --host "${WANAKU_SERVER_URL}" --no-auth --plain
 
 # Acceptable — specifically testing HTTP endpoint reachability
-curl -s -o /dev/null -w "%{http_code}" "${WANAKU_ROUTER_URL}/q/health/ready"
+curl -s -o /dev/null -w "%{http_code}" "${WANAKU_SERVER_URL}/health"
 ```
 
 ## Shell compatibility
@@ -108,21 +108,53 @@ Use POSIX-compatible constructs. Avoid bash-only features like `${!VAR}` (indire
 
 Verify that invalid inputs are rejected gracefully — missing required fields, references to non-existent resources, malformed data. These often catch real bugs.
 
-## Re-augmentation for local test plans
+## Components under test
 
-Test plans that run locally (not on OpenShift) must re-augment the router before starting it. The router ships with OIDC authentication enabled, and without a Keycloak instance it will fail to start. Re-augmentation disables OIDC at Quarkus build time so the router can run unauthenticated.
+Wanaku is now two processes. Each test plan must state which of them it needs:
 
-After unzipping the router distribution, run:
+| Component | Source | Role | Local URL | Health check |
+|-----------|--------|------|-----------|--------------|
+| **Wanaku Server** | [wanaku-ai/wanaku](https://github.com/wanaku-ai/wanaku) (Rust) | MCP endpoint, namespaces, forwards, discovered tools/resources/prompts, admin UI | management `http://localhost:8080`, MCP `http://localhost:8081/<namespace>/mcp` | `GET /health` |
+| **Wanaku Barn** | this repository (Java) | Service catalogs, service templates, data stores, kamelets, semantic routers, audit, backup | `http://localhost:8180` | `GET /q/health/ready` |
 
-```bash
-java -Dquarkus.launch.rebuild=true \
-     -Dquarkus.log.level=WARNING \
-     -Dquarkus.oidc.enabled=false \
-     -Dquarkus.oidc-proxy.enabled=false \
-     -jar quarkus-run.jar
-```
+Use these common procedures:
 
-Then start the router with `WANAKU_HTTP_AUTH=none` and `-Dquarkus.profile=local`. This is not needed for OpenShift-based test plans, where Keycloak is deployed as part of the environment setup.
+- [common/start-server.md](../tests/plans/common/start-server.md) — build and start Wanaku Server. Every local plan
+  needs it.
+- [common/start-barn.md](../tests/plans/common/start-barn.md) — build and start Barn. Only plans that use Barn APIs
+  need it.
+- [common/start-test-mcp-server.md](../tests/plans/common/start-test-mcp-server.md) — start an upstream MCP server
+  and register it as a forward. Wanaku Server only discovers tools from forwards. It has no other way to add a tool.
+- [common/start-cic.md](../tests/plans/common/start-cic.md) — serve a Barn service catalog through the Camel
+  Integration Capability and register it as a forward.
+
+Point each CLI command at the component that owns the API:
+
+- `tools`, `resources`, `prompts`, `namespaces`, `forwards`: `--host "${WANAKU_SERVER_URL}"`
+- `service`, `data-store`, `backup`: `--host "${WANAKU_BARN_URL}"`
+- `mcp`: `--uri "${WANAKU_MCP_BASE_URL}/<namespace>/mcp"`
+
+Keep these differences from the Java router in mind:
+
+- Wanaku Server has no built-in authentication. Pass `--no-auth` to the CLI in local plans. Authentication is
+  provided by oauth2-proxy in front of the server (the operator deploys it when `spec.auth.enabled` is `true`).
+- Barn does not enforce authentication. The OIDC re-augmentation step (`-Dquarkus.launch.rebuild=true`) is obsolete.
+  Do not add it to new plans.
+- The MCP endpoint uses Streamable HTTP only, on port `8081`, at `/<namespace>/mcp`. There is no SSE endpoint, no
+  `public` namespace and no `ns-0`..`ns-9` slots. Namespace names are DNS labels (lowercase letters, digits and
+  hyphens, 1 to 63 characters).
+- Tools, resources and prompts cannot be added with the CLI or the API. They come from forwards. They can be
+  enabled, disabled or deleted, but the next discovery adds a deleted entry again.
+- Wanaku Server governance is fail-safe. It denies `tools/call`, `resources/read` and `prompts/get` unless an action
+  policy or an evaluator allows the action. Plans that invoke tools must start the server with the test governance
+  configuration (see [common/start-server.md](../tests/plans/common/start-server.md), step 2b). Allow only the
+  namespaces that the plan uses.
+- There is no capability registration or discovery API (`/api/v1/capabilities`, `/api/v1/management/discovery`).
+  Register MCP servers as forwards.
+- Wanaku Server stores its registry in `registry.json` under `WANAKU_PERSIST_PATH`. Use a new directory per run so
+  that runs do not share state.
+- Wanaku Server does not export OpenTelemetry traces or Prometheus metrics. It exposes `GET /api/v1/metrics` and the
+  audit trail (`GET /api/v1/audit/events`). Barn still supports OpenTelemetry.
 
 ## Cleanup must be idempotent
 
@@ -130,6 +162,8 @@ Use `--ignore-not-found=true` on all delete commands and `2>/dev/null || true` o
 
 ## Checklist for new plans
 
+- [ ] The plan states whether it needs Wanaku Server only, or Wanaku Server and Wanaku Barn
+- [ ] Each CLI command points at the component that owns the API (`WANAKU_SERVER_URL` or `WANAKU_BARN_URL`)
 - [ ] All configurable values are environment variables with defaults
 - [ ] OpenShift namespace/project defaults are unique per run, not shared cluster-wide
 - [ ] Common procedures reference shared docs, not inline copies
