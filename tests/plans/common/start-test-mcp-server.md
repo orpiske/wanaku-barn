@@ -1,4 +1,4 @@
-# Common: Start an Upstream Test MCP Server
+# Procedure: Start an Upstream Test MCP Server
 
 Reusable steps for starting a local upstream MCP server and registering it with Wanaku Server as a forward.
 
@@ -36,9 +36,11 @@ Use the [Camel Integration Capability](start-cic.md) instead when the plan tests
 | `TEST_MCP_URL` | Streamable HTTP endpoint of the reference server (`http://localhost:3001/mcp`) |
 | `TEST_MCP_PID` | PID of the reference server process |
 
-## Steps
+## Phase 1: Start an Upstream Test MCP Server
 
-### 1. Start the reference server
+### Step 1: Start the reference server
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 export TEST_MCP_PACKAGE="${TEST_MCP_PACKAGE:-@modelcontextprotocol/server-everything@1.0.0}"
@@ -64,7 +66,15 @@ for i in $(seq 1 30); do
 done
 ```
 
-### 2. Register the forward
+**Expected result:**
+
+- The output includes `PASS: reference MCP server listens on <TEST_MCP_URL>`.
+- The output contains no line starting with `FAIL`.
+- The commands exit with code 0.
+
+### Step 2: Register the forward
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 export TEST_MCP_FORWARD="${TEST_MCP_FORWARD:-everything}"
@@ -82,9 +92,17 @@ the entries to the namespace of the second forward. Removing that forward then d
 namespace, start a second reference server on another port with another forward name, and expect the same collision.
 Use `forwards refresh --name "${TEST_MCP_FORWARD}"` to restore the entries after a collision.
 
-### 3. Verify the tools were discovered
+**Expected result:**
+
+- The output includes `PASS: forward '<TEST_MCP_FORWARD>' registered`.
+- The output contains no line starting with `FAIL`.
+- The commands exit with code 0.
+
+### Step 3: Verify the tools were discovered
 
 Wanaku Server discovers the upstream entries when the forward is created.
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 OUTPUT=$(java -jar "${CLI_JAR}" tools list --host "${WANAKU_SERVER_URL}" --no-auth --plain 2>&1)
@@ -92,18 +110,14 @@ echo "${OUTPUT}" | grep -q "echo" && echo "PASS: tool 'echo' discovered" \
   || { echo "FAIL: tool 'echo' not discovered"; echo "${OUTPUT}"; exit 1; }
 ```
 
+**Expected result:**
+
+- The output includes `PASS: tool 'echo' discovered`.
+- The output contains no line starting with `FAIL`.
+- The commands exit with code 0.
+
 ## Shutdown
 
 Remove the forward first. Wanaku Server also removes the entries that it discovered from the forward.
 
-```bash
-java -jar "${CLI_JAR}" forwards remove --host "${WANAKU_SERVER_URL}" --no-auth \
-  --name "${TEST_MCP_FORWARD:-everything}" 2>/dev/null || true
-# TEST_MCP_PID is the npx wrapper. Stop the node process that listens on the port too.
-if [ -n "${TEST_MCP_PID}" ]; then
-  kill "${TEST_MCP_PID}" 2>/dev/null || true
-  wait "${TEST_MCP_PID}" 2>/dev/null || true
-fi
-lsof -ti "tcp:${TEST_MCP_PORT:-3001}" -sTCP:LISTEN 2>/dev/null | xargs kill 2>/dev/null || true
-echo "PASS: reference MCP server stopped"
-```
+The entry plan runs the original shutdown block in its local cleanup unit.

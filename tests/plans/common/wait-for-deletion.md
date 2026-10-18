@@ -1,4 +1,4 @@
-# Common: Wait for Resource Deletion
+# Procedure: Wait for Resource Deletion
 
 Reusable helper that polls for Kubernetes resource deletion instead of using a fixed sleep.
 
@@ -7,7 +7,9 @@ Reusable helper that polls for Kubernetes resource deletion instead of using a f
 - `oc` CLI installed and logged in
 - `WANAKU_NAMESPACE` environment variable set
 
-## Helper function
+## Phase 1: Wait for Resource Deletion
+
+### Step 0: Define the wait_for_deletion helper
 
 Define this function before use:
 
@@ -33,6 +35,10 @@ wait_for_deletion() {
   return 0
 }
 ```
+
+**Expected result:**
+
+- The block defines the function without errors (inferred).
 
 ## Usage
 

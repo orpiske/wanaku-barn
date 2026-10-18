@@ -1,4 +1,4 @@
-# Common: Namespace Setup
+# Procedure: Namespace Setup
 
 Reusable steps for creating and configuring the test namespace on OpenShift.
 Use this shared setup from each OpenShift plan instead of re-defining the namespace derivation inline.
@@ -11,9 +11,9 @@ Use this shared setup from each OpenShift plan instead of re-defining the namesp
 | `WANAKU_TEST_RUN_ID` | Unique suffix for the namespace when one is not provided | `20260716-043000` |
 | `WANAKU_NAMESPACE` | Target namespace for all Wanaku resources | `wanaku-test-<run-id>` |
 
-## Steps
+## Phase 1: Namespace Setup
 
-### 1. Export the namespace variable
+### Step 1: Export the namespace variable
 
 ```bash
 export WANAKU_TEST_RUN_ID="${WANAKU_TEST_RUN_ID:-$(date +%Y%m%d-%H%M%S)-$$}"
@@ -23,12 +23,20 @@ export WANAKU_NAMESPACE="${WANAKU_NAMESPACE:-${WANAKU_NAMESPACE_PREFIX}-${WANAKU
 
 This keeps each test run isolated by default while still allowing callers to override `WANAKU_NAMESPACE` when they intentionally want to reuse a namespace.
 
-### 2. Create the namespace (project)
+**Expected result:**
+
+- The commands exit with code 0 (inferred).
+
+### Step 2: Create the namespace (project)
 
 ```bash
 oc new-project "${WANAKU_NAMESPACE}" --display-name="Wanaku Operator Test" 2>/dev/null \
   || oc project "${WANAKU_NAMESPACE}"
 ```
+
+**Expected result:**
+
+- The output includes `exit_code=0`.
 
 **Verification:**
 
@@ -38,7 +46,9 @@ echo "exit_code=$?"
 # Expected: exit_code=0
 ```
 
-### 3. Verify current context targets the correct namespace
+### Step 3: Verify current context targets the correct namespace
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 CURRENT_NS=$(oc project -q)
@@ -49,7 +59,13 @@ fi
 echo "PASS: namespace is ${WANAKU_NAMESPACE}"
 ```
 
-### 4. Verify the user has sufficient permissions
+**Expected result:**
+
+- The output includes `PASS: namespace is <WANAKU_NAMESPACE>`.
+- The output contains no line starting with `FAIL`.
+- The commands exit with code 0.
+
+### Step 4: Verify the user has sufficient permissions
 
 ```bash
 oc auth can-i create deployments -n "${WANAKU_NAMESPACE}" | grep -q "yes"
@@ -72,6 +88,15 @@ echo "can-create-secrets=$?"
 
 # Expected: all values should be 0
 ```
+
+**Expected result:**
+
+- The output includes `can-create-deployments=0`.
+- The output includes `can-create-services=0`.
+- The output includes `can-create-pvcs=0`.
+- The output includes `can-create-routes=0`.
+- The output includes `can-create-configmaps=0`.
+- The output includes `can-create-secrets=0`.
 
 ## Output Variables
 

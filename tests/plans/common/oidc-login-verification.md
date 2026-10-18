@@ -1,4 +1,4 @@
-# Common: OIDC Login Verification
+# Procedure: OIDC Login Verification
 
 Reusable steps for verifying OIDC authentication end to end: log in against Keycloak, then call Wanaku Server through
 the oauth2-proxy that protects its management API.
@@ -24,9 +24,9 @@ client's audience, so the client secret must be available in `WANAKU_CLIENT_SECR
 - `KEYCLOAK_URL` and `WANAKU_CLIENT_SECRET` environment variables set
 - `WANAKU_CREDENTIALS` exported to a per-run path (see [#1697](https://github.com/wanaku-ai/wanaku/issues/1697)) to isolate credential storage across concurrent test runs
 
-## Steps
+## Phase 1: OIDC Login Verification
 
-### 1. Verify the OIDC login works
+### Step 1: Verify the OIDC login works
 
 Log in as the test user against Keycloak with the `wanaku-mcp-router` client.
 
@@ -52,10 +52,16 @@ else
 fi
 ```
 
-### 2. Workaround: regenerate the router client secret if login fails
+**Expected result:**
+
+- The output includes `PASS: OIDC login works for user '<WANAKU_TEST_USER>'`, or `FAIL: OIDC login failed` and Step 2 then applies the workaround.
+
+### Step 2: Workaround: regenerate the router client secret if login fails
 
 If the stored `wanaku-mcp-router` secret does not match Keycloak (for example after the realm was re-imported),
 regenerate it, re-read it and log in again:
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 if [ "${LOGIN_FAILED}" = "true" ]; then
@@ -97,9 +103,17 @@ fi
 > the `client-secret` key of the Secret that `spec.auth.secretName` names (`${WANAKU_AUTH_SECRET_NAME}`, see
 > [keycloak-setup.md](keycloak-setup.md), step 9). The operator restarts the proxies when the Secret changes.
 
-### 3. Verify the token is accepted by the router's management proxy
+**Expected result:**
+
+- If `LOGIN_FAILED` is `true`, the output includes `PASS: OIDC login works after secret regeneration`; otherwise the workaround is not needed.
+- The output contains no line starting with `FAIL`.
+- The commands exit with code 0.
+
+### Step 3: Verify the token is accepted by the router's management proxy
 
 The CLI sends the token that `wanaku auth login` stored.
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 # WANAKU_CLI_TLS_OPTS is not quoted on purpose: it holds zero or one option
@@ -113,9 +127,17 @@ fi
 echo "PASS: token accepted by the management proxy at ${WANAKU_ROUTER_URL}"
 ```
 
-### 4. Verify the management proxy rejects requests without a token
+**Expected result:**
+
+- The output includes `PASS: token accepted by the management proxy at <WANAKU_ROUTER_URL>`.
+- The output contains no line starting with `FAIL`.
+- The commands exit with code 0.
+
+### Step 4: Verify the management proxy rejects requests without a token
 
 `--no-auth` makes the CLI send no token. The proxy must answer `401`, so the command must fail.
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 OUTPUT=$(${WANAKU_CLI:-wanaku} tools list --host "${WANAKU_ROUTER_URL}" ${WANAKU_CLI_TLS_OPTS} --no-auth --plain 2>&1)
@@ -127,6 +149,12 @@ if [ $? -eq 0 ]; then
 fi
 echo "PASS: management proxy rejected the request without a token"
 ```
+
+**Expected result:**
+
+- The output includes `PASS: management proxy rejected the request without a token`.
+- The output contains no line starting with `FAIL`.
+- The commands exit with code 0.
 
 ## Output Variables
 

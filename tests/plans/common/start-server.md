@@ -1,4 +1,4 @@
-# Common: Start Wanaku Server Locally
+# Procedure: Start Wanaku Server Locally
 
 Reusable steps for building and starting Wanaku Server locally, with no authentication and no Kubernetes.
 
@@ -43,14 +43,16 @@ overrides for the A2A listener, the CORS origin and the inference upstream then 
 | `WANAKU_SERVER_PID` | PID of the background server process |
 | `WANAKU_SERVER_DATA_DIR` | Directory that holds `registry.json` for this run |
 
-## Steps
+## Phase 1: Start Wanaku Server Locally
 
-### 1. Build Wanaku Server
+### Step 1: Build Wanaku Server
 
 Skip this step when `WANAKU_SERVER_BIN` points to a prebuilt binary.
 
 The default build embeds the admin UI. It builds the UI with Node.js and Yarn. To build without the admin UI (headless),
 add `--no-default-features`. The headless build is sufficient for CLI and MCP test plans.
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 export WANAKU_SERVER_REPO_ROOT="${WANAKU_SERVER_REPO_ROOT:-../wanaku}"
@@ -69,9 +71,17 @@ fi
 export WANAKU_SERVER_BIN
 ```
 
-### 2. Verify the ports are free
+**Expected result:**
+
+- The output includes `PASS: <WANAKU_SERVER_BIN> exists`.
+- The output contains no line starting with `FAIL`.
+- The commands exit with code 0.
+
+### Step 2: Verify the ports are free
 
 A server left over from an earlier run makes the test results unreliable.
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 export WANAKU_SERVER_MGMT_PORT="${WANAKU_SERVER_MGMT_PORT:-8080}"
@@ -84,7 +94,14 @@ for PORT in "${WANAKU_SERVER_MGMT_PORT}" 8081; do
 done
 ```
 
-### 2b. (Optional) Prepare the test governance configuration
+**Expected result:**
+
+- The output includes `PASS: port <WANAKU_SERVER_MGMT_PORT> is free`.
+- The output includes `PASS: port 8081 is free`.
+- The output contains no line starting with `FAIL`.
+- The commands exit with code 0.
+
+### Step 2b: (Optional) Prepare the test governance configuration
 
 Wanaku Server is fail-safe by default. It denies every `tools/call`, `resources/read` and `prompts/get` request that
 no action policy and no evaluator explicitly allows. The error is `No governance policy permits this action.`
@@ -126,7 +143,11 @@ file there changes the governance and bootstrap configuration silently. Run the 
 When `WANAKU_SERVER_CONFIG` is set, step 3 passes it with `--wanaku-config`. A plan can append more sections (for
 example `forwards`, `plugins` or `action_policy`) to the same file before step 3.
 
-### 3. Start Wanaku Server
+**Expected result:**
+
+- The output includes `PASS: test governance configuration written to <WANAKU_SERVER_CONFIG>`.
+
+### Step 3: Start Wanaku Server
 
 Each run uses a new data directory. This keeps the run independent of `$HOME/.wanaku/server` and of earlier runs.
 Authentication is disabled by default in Wanaku Server, so no extra configuration is necessary.
@@ -150,9 +171,15 @@ export WANAKU_SERVER_PID
 echo "Wanaku Server started with PID ${WANAKU_SERVER_PID} (data: ${WANAKU_SERVER_DATA_DIR})"
 ```
 
-### 4. Wait for health
+**Expected result:**
+
+- The commands exit with code 0 (inferred).
+
+### Step 4: Wait for health
 
 `curl` is used here to test HTTP-level readiness. `GET /health` returns the standard response envelope.
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 MAX_RETRIES=30
@@ -172,9 +199,17 @@ for i in $(seq 1 ${MAX_RETRIES}); do
 done
 ```
 
-### 5. Verify the MCP listener
+**Expected result:**
+
+- The output includes `PASS: Wanaku Server is healthy`.
+- The output contains no line starting with `FAIL`.
+- The commands exit with code 0.
+
+### Step 5: Verify the MCP listener
 
 The MCP listener accepts only `/<namespace>/mcp`. The `default` namespace always exists.
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${WANAKU_MCP_BASE_URL}/default/mcp" \
@@ -188,11 +223,19 @@ else
 fi
 ```
 
-### 6. Verify the CLI can connect
+**Expected result:**
+
+- The output includes `PASS: MCP endpoint <WANAKU_MCP_BASE_URL>/default/mcp answers`.
+- The output contains no line starting with `FAIL`.
+- The commands exit with code 0.
+
+### Step 6: Verify the CLI can connect
 
 Use the CLI jar from this repository (see
 [contributing-test-plans.md](../../../docs/contributing-test-plans.md#use-the-wanaku-cli-not-raw-api-clients)).
 Wanaku Server has no built-in authentication, so pass `--no-auth`.
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 CLI_JAR="${CLI_JAR:-apps/wanaku-cli/target/quarkus-app/quarkus-run.jar}"
@@ -206,6 +249,12 @@ else
 fi
 ```
 
+**Expected result:**
+
+- The output includes `PASS: CLI can connect to Wanaku Server`.
+- The output contains no line starting with `FAIL`.
+- The commands exit with code 0.
+
 ## Restart
 
 Some plans verify that the registry survives a restart. Stop the server with `SIGTERM` (see [Shutdown](#shutdown)),
@@ -216,14 +265,7 @@ shutdown, so a `SIGKILL` loses the latest changes.
 
 Stop the server with the PID captured at startup. Then remove the data directory of the run.
 
-```bash
-if [ -n "${WANAKU_SERVER_PID}" ]; then
-  kill "${WANAKU_SERVER_PID}" 2>/dev/null || true
-  wait "${WANAKU_SERVER_PID}" 2>/dev/null || true
-  echo "PASS: Wanaku Server stopped"
-fi
-rm -rf "${WANAKU_SERVER_DATA_DIR}"
-```
+The entry plan runs the original shutdown block in its local cleanup unit.
 
 Do **not** use `kill -9`. It bypasses the orderly Pingora shutdown and the final registry snapshot. If Pingora worker
 processes remain, find them with `lsof -ti :8081` and stop them with `SIGTERM`.

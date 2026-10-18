@@ -1,4 +1,4 @@
-# Common: Operator Deployment via Helm
+# Procedure: Operator Deployment via Helm
 
 Reusable steps for installing the Wanaku operator on OpenShift using Helm.
 
@@ -18,9 +18,9 @@ Reusable steps for installing the Wanaku operator on OpenShift using Helm.
 | `WANAKU_OPERATOR_IMAGE` | Operator container image | `quay.io/wanaku/wanaku-operator:latest` |
 | `WANAKU_OPERATOR_PULL_POLICY` | Image pull policy of the operator | `Always` |
 
-## Steps
+## Phase 1: Operator Deployment via Helm
 
-### 1. Set the repository root
+### Step 1: Set the repository root
 
 ```bash
 # Set this to the root of the wanaku-barn git checkout
@@ -29,7 +29,13 @@ export WANAKU_OPERATOR_IMAGE="${WANAKU_OPERATOR_IMAGE:-quay.io/wanaku/wanaku-ope
 export WANAKU_OPERATOR_PULL_POLICY="${WANAKU_OPERATOR_PULL_POLICY:-Always}"
 ```
 
-### 2. Verify the Helm chart exists
+**Expected result:**
+
+- The commands exit with code 0 (inferred).
+
+### Step 2: Verify the Helm chart exists
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 CHART_DIR="${WANAKU_REPO_ROOT}/apps/wanaku-operator/deploy/helm/wanaku-operator"
@@ -40,7 +46,13 @@ fi
 echo "PASS: Helm chart found"
 ```
 
-### 3. Install the operator via Helm
+**Expected result:**
+
+- The output includes `PASS: Helm chart found`.
+- The output contains no line starting with `FAIL`.
+- The commands exit with code 0.
+
+### Step 3: Install the operator via Helm
 
 The chart installs the four CRDs from its `crds/` directory. By default, every controller watches only the release
 namespace (`JOSDK_WATCH_CURRENT`).
@@ -55,6 +67,11 @@ helm install wanaku-operator \
 
 **Expected output:** Helm prints a success message containing `STATUS: deployed`.
 
+**Expected result:**
+
+- The output includes `helm-status=0`.
+- Helm prints a success message containing `STATUS: deployed`.
+
 **Verification:**
 
 ```bash
@@ -63,7 +80,7 @@ echo "helm-status=$?"
 # Expected: helm-status=0
 ```
 
-### 4. Wait for the operator deployment to become available
+### Step 4: Wait for the operator deployment to become available
 
 ```bash
 oc wait deployment/wanaku-operator \
@@ -74,7 +91,13 @@ oc wait deployment/wanaku-operator \
 
 **Expected output:** `deployment.apps/wanaku-operator condition met`
 
-### 5. Verify the operator pod is running
+**Expected result:**
+
+- `deployment.apps/wanaku-operator condition met`
+
+### Step 5: Verify the operator pod is running
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 OPERATOR_POD_STATUS=$(oc get pods -l app.kubernetes.io/name=wanaku-operator \
@@ -106,12 +129,25 @@ for CONTROLLER in ROUTER SERVICE_CATALOG SEMANTIC_ROUTER INTEGRATION; do
 done
 ```
 
-### 6. Verify CRDs are installed
+**Expected result:**
+
+- The output includes `PASS: operator pod is Running`.
+- The output includes `PASS: operator image is <WANAKU_OPERATOR_IMAGE>`.
+- The output includes `PASS: QUARKUS_OPERATOR_SDK_CONTROLLERS_WANAKU_ROUTER_NAMESPACES=JOSDK_WATCH_CURRENT`.
+- The output includes `PASS: QUARKUS_OPERATOR_SDK_CONTROLLERS_WANAKU_SERVICE_CATALOG_NAMESPACES=JOSDK_WATCH_CURRENT`.
+- The output includes `PASS: QUARKUS_OPERATOR_SDK_CONTROLLERS_WANAKU_SEMANTIC_ROUTER_NAMESPACES=JOSDK_WATCH_CURRENT`.
+- The output includes `PASS: QUARKUS_OPERATOR_SDK_CONTROLLERS_WANAKU_INTEGRATION_NAMESPACES=JOSDK_WATCH_CURRENT`.
+- The output contains no line starting with `FAIL`.
+- The commands exit with code 0.
+
+### Step 6: Verify CRDs are installed
 
 Helm installs the CRDs only when they do not exist yet. It does not upgrade them. If an earlier operator release
 installed the CRDs, apply the current CRDs before you continue:
 `oc apply -f "${WANAKU_REPO_ROOT}/apps/wanaku-operator/deploy/helm/wanaku-operator/crds/"`. A CRD that does not match
 the operator causes an empty `status` on the custom resources.
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 for CRD in wanakurouters.wanaku.ai wanakuservicecatalogs.wanaku.ai wanakusemanticrouters.wanaku.ai wanakuintegrations.wanaku.ai; do
@@ -130,7 +166,18 @@ for CRD in wanakucapabilities.wanaku.ai wanakucamelroutes.wanaku.ai wanakucamelc
 done
 ```
 
-### 7. Verify RBAC resources were created
+**Expected result:**
+
+- The output includes `PASS: CRD wanakurouters.wanaku.ai exists`.
+- The output includes `PASS: CRD wanakuservicecatalogs.wanaku.ai exists`.
+- The output includes `PASS: CRD wanakusemanticrouters.wanaku.ai exists`.
+- The output includes `PASS: CRD wanakuintegrations.wanaku.ai exists`.
+- The output contains no line starting with `FAIL`.
+- The commands exit with code 0.
+
+### Step 7: Verify RBAC resources were created
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 # Check ClusterRoles
@@ -177,11 +224,35 @@ echo "can-create-custom-host=$?"
 # Expected: can-create-custom-host=0
 ```
 
-### 8. Verify operator health endpoints
+**Expected result:**
+
+- The output includes `PASS: ClusterRole <WANAKU_NAMESPACE>-wanaku-router-cluster-role exists`.
+- The output includes `PASS: ClusterRole <WANAKU_NAMESPACE>-wanaku-service-catalog-cluster-role exists`.
+- The output includes `PASS: ClusterRole <WANAKU_NAMESPACE>-wanaku-semantic-router-cluster-role exists`.
+- The output includes `PASS: ClusterRole <WANAKU_NAMESPACE>-wanaku-integration-cluster-role exists`.
+- The output includes `PASS: ClusterRole <WANAKU_NAMESPACE>-josdk-crd-validating-cluster-role exists`.
+- The output includes `PASS: ClusterRoleBinding <WANAKU_NAMESPACE>-crd-validating-role-binding exists`.
+- The output includes `PASS: ClusterRoleBinding <WANAKU_NAMESPACE>-wanaku-router-crd-validating-role-binding exists`.
+- The output includes `PASS: ClusterRoleBinding <WANAKU_NAMESPACE>-wanaku-service-catalog-crd-validating-role-binding exists`.
+- The output includes `PASS: ClusterRoleBinding <WANAKU_NAMESPACE>-wanaku-semantic-router-crd-validating-role-binding exists`.
+- The output includes `PASS: ClusterRoleBinding <WANAKU_NAMESPACE>-wanaku-integration-crd-validating-role-binding exists`.
+- The output includes `PASS: RoleBinding wanaku-operator-view exists`.
+- The output includes `PASS: RoleBinding wanaku-router-role-binding exists`.
+- The output includes `PASS: RoleBinding wanaku-service-catalog-role-binding exists`.
+- The output includes `PASS: RoleBinding wanaku-semantic-router-role-binding exists`.
+- The output includes `PASS: RoleBinding wanaku-integration-role-binding exists`.
+- The output includes `service-account-exists=0`.
+- The output includes `can-create-custom-host=0`, or this impersonation check is recorded as SKIP when the user cannot impersonate.
+- The output contains no line starting with `FAIL`.
+- The commands exit with code 0.
+
+### Step 8: Verify operator health endpoints
 
 The operator Deployment uses the Quarkus health endpoints on port `8081` (`/q/health/started`, `/q/health/ready` and
 `/q/health/live`) as probes. The pod is Ready only when the readiness probe succeeds. The operator image does not need
 `curl` for this check.
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 for PROBE in livenessProbe readinessProbe startupProbe; do
@@ -198,3 +269,12 @@ oc wait pod -l app.kubernetes.io/name=wanaku-operator \
 echo "operator-ready=$?"
 # Expected: operator-ready=0
 ```
+
+**Expected result:**
+
+- The output includes `PASS: livenessProbe uses <PROBE_PATH>`.
+- The output includes `PASS: readinessProbe uses <PROBE_PATH>`.
+- The output includes `PASS: startupProbe uses <PROBE_PATH>`.
+- The output includes `operator-ready=0`.
+- The output contains no line starting with `FAIL`.
+- The commands exit with code 0.
