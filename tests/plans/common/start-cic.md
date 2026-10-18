@@ -122,6 +122,9 @@ java -jar "${CLI_JAR}" forwards list --host "${WANAKU_SERVER_URL}" --no-auth --p
   || { echo "FAIL: forward '${CIC_NAME}' is not registered"; exit 1; }
 ```
 
+Wanaku Server keys tools by name across all namespaces and forwards. If another forward serves a tool with the same
+name, the latest discovery replaces the entry. Use tool names that are unique on the server.
+
 After this step, the catalog tools are in `wanaku tools list --host "${WANAKU_SERVER_URL}" --no-auth` and MCP clients
 can call them at `${WANAKU_MCP_BASE_URL}/${CIC_NAMESPACE}/mcp`.
 
