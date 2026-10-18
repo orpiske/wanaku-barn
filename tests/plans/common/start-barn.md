@@ -23,6 +23,7 @@ Barn does not enforce authentication and does not serve MCP. There is no OIDC re
 |----------|-------------|---------|
 | `WANAKU_REPO_ROOT` | Path to this repository (wanaku-barn) | `.` |
 | `WANAKU_BARN_PORT` | HTTP port of the Barn backend | `8180` |
+| `WANAKU_BARN_MCAST_PORT` | JGroups multicast port. Use a different value for each Barn on the same host, or the instances join one Infinispan cluster. | `46655` |
 | `WANAKU_BARN_HOME` | Wanaku home directory of Barn for this run (the store is in `${WANAKU_BARN_HOME}/barn`) | `$(mktemp -d)` |
 
 ## Output variables
@@ -71,6 +72,7 @@ export WANAKU_BARN_HOME="${WANAKU_BARN_HOME:-$(mktemp -d)}"
 
 java -Dquarkus.http.port="${WANAKU_BARN_PORT}" \
   -Dwanaku.home="${WANAKU_BARN_HOME}" \
+  -Djgroups.mcast_port="${WANAKU_BARN_MCAST_PORT:-46655}" \
   -jar "${BARN_JAR}" > "${WANAKU_BARN_HOME}/barn.log" 2>&1 &
 WANAKU_BARN_PID=$!
 export WANAKU_BARN_PID
@@ -118,10 +120,14 @@ fi
 The admin UI of Wanaku Server reaches Barn through the `wanaku-barn` plugin service. The operator writes the same
 configuration (see `RouterResourceFactory.serverConfig`). Plans that use the Barn pages in the admin UI must start
 Wanaku Server with this `wanaku.yaml` and install the Barn UI plugin (`apps/ui`) in the server plugins directory
-(`${WANAKU_SERVER_DATA_DIR}/plugins`):
+(`${WANAKU_SERVER_DATA_DIR}/plugins`).
+
+Append the section to the configuration file. Do not overwrite it, because the file can already contain the test
+governance configuration from [start-server.md](start-server.md), step 2b:
 
 ```bash
-cat > "${WANAKU_SERVER_DATA_DIR}/wanaku.yaml" <<EOF
+export WANAKU_SERVER_CONFIG="${WANAKU_SERVER_CONFIG:-${WANAKU_SERVER_DATA_DIR}/wanaku.yaml}"
+cat >> "${WANAKU_SERVER_CONFIG}" <<EOF
 plugins:
   - id: wanaku-barn
     services:
@@ -130,8 +136,8 @@ plugins:
 EOF
 ```
 
-Then start the server with `--wanaku-config "${WANAKU_SERVER_DATA_DIR}/wanaku.yaml"` (see
-[start-server.md](start-server.md), step 3), and verify the proxy route:
+Then start the server (see [start-server.md](start-server.md), step 3). Step 3 passes `WANAKU_SERVER_CONFIG` with
+`--wanaku-config`. Verify the proxy route:
 
 ```bash
 HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
@@ -139,6 +145,12 @@ HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
 [ "${HTTP_CODE}" = "200" ] && echo "PASS: Wanaku Server proxies requests to Barn" \
   || echo "FAIL: plugin proxy returned HTTP ${HTTP_CODE}"
 ```
+
+## Restart
+
+A Barn that restarts on an existing store keeps its data, but `/q/health/ready` can stay `DOWN` (caches
+`catalog-version` and `catalog-version-counter`). This is a known defect. Plans that restart Barn must report it
+instead of waiting for readiness indefinitely.
 
 ## Shutdown
 

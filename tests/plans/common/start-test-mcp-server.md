@@ -99,9 +99,11 @@ Remove the forward first. Wanaku Server also removes the entries that it discove
 ```bash
 java -jar "${CLI_JAR}" forwards remove --host "${WANAKU_SERVER_URL}" --no-auth \
   --name "${TEST_MCP_FORWARD:-everything}" 2>/dev/null || true
+# TEST_MCP_PID is the npx wrapper. Stop the node process that listens on the port too.
 if [ -n "${TEST_MCP_PID}" ]; then
   kill "${TEST_MCP_PID}" 2>/dev/null || true
   wait "${TEST_MCP_PID}" 2>/dev/null || true
 fi
+lsof -ti "tcp:${TEST_MCP_PORT:-3001}" -sTCP:LISTEN 2>/dev/null | xargs kill 2>/dev/null || true
 echo "PASS: reference MCP server stopped"
 ```

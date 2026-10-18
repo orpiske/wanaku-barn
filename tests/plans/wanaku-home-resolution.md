@@ -1,8 +1,38 @@
-# Test Plan: Centralized Wanaku Home Directory Resolution
+# Test Plan: Wanaku Home and Server Persistence Path Resolution
 
 ## Overview
 
-This test plan verifies the centralized home directory resolution introduced by `WanakuHome` (PR #1412). It confirms that the Wanaku home directory can be overridden via environment variable (`WANAKU_HOME`) or system property (`wanaku.home`), that the precedence order is correct (system property > env var > default), and that the router and the CLI respect the resolved path. Tests run locally with **no authentication** and are fully automatable.
+This test plan verifies where Wanaku components store local state, and how the location can be overridden.
+
+Wanaku Barn and the Wanaku CLI resolve a **Wanaku home** directory with `ai.wanaku.core.util.WanakuHome`
+(`core/core-util`). The resolution order is:
+
+1. The Java system property `wanaku.home`
+2. The environment variable `WANAKU_HOME`
+3. The default `${user.home}/.wanaku`
+
+A blank value (empty or only spaces) is ignored, and the next source is used.
+
+| Component | What it stores under the Wanaku home | Override that wins over the home |
+|-----------|---------------------------------------|----------------------------------|
+| Wanaku Barn | Infinispan store in `<home>/barn` (`wanaku.persistence.infinispan.base-folder`) and, with the `local` profile, the log file `<home>/local/logs/wanaku-router.log` | `-Dwanaku.persistence.infinispan.base-folder` |
+| Wanaku CLI | Credentials file `<home>/credentials` (`wanaku auth login`) and cloud target `<home>/cloud.properties` (`wanaku cloud target set`) | `WANAKU_CREDENTIALS` for the credentials file |
+
+Wanaku Server (Rust) does **not** use `WanakuHome` or `WANAKU_HOME`. It stores its registry snapshot `registry.json`
+in `WANAKU_PERSIST_PATH`. The default is `$HOME/.wanaku/server`, where `HOME` is the environment variable.
+`WANAKU_PERSIST_BACKEND=none` disables persistence. The server writes `registry.json` when the registry changes and
+flushes pending changes during an orderly shutdown (`SIGTERM`). It loads the file at startup.
+
+**Components:** Wanaku Barn, the Wanaku CLI and Wanaku Server. Each phase starts its own processes.
+
+The plan never writes to the real `~/.wanaku` directory:
+
+- Barn and the CLI tests that check the default location set `-Duser.home` to a temporary directory.
+- The Wanaku Server tests that check the default location set the `HOME` environment variable of the server process
+  to a temporary directory.
+- Phase 10 compares the real `~/.wanaku` before and after the run.
+
+Tests run locally, with no authentication, and are fully automatable.
 
 ## Prerequisites
 
@@ -12,58 +42,56 @@ This test plan verifies the centralized home directory resolution introduced by 
 |------|-----------------|----------------|
 | `java` | 21+ | `java -version` |
 | `mvn` | 3.9+ | `mvn -version` |
+| `cargo` | 1.96+ (or a prebuilt `wanaku-server` binary) | `cargo --version` |
+| `node` / `npx` | 18+ | `node --version` |
 | `jq` | 1.6+ | `jq --version` |
 | `curl` | any | `curl --version` |
-
-### Prerequisite check script
-
-```bash
-java -version 2>&1 || { echo "FAIL: java not found"; exit 1; }
-mvn -version 2>&1 || { echo "FAIL: mvn not found"; exit 1; }
-jq --version 2>&1 || { echo "FAIL: jq not found"; exit 1; }
-curl --version > /dev/null 2>&1 || { echo "FAIL: curl not found"; exit 1; }
-echo "PASS: all prerequisites met"
-```
-
-### CLI invocation
-
-When using the CLI from a local build (not installed), use `java -jar` directly:
-
-```bash
-CLI_JAR="apps/wanaku-cli/target/quarkus-app/quarkus-run.jar"
-java -jar ${CLI_JAR} tools list --host "${WANAKU_ROUTER_URL}" --plain
-```
-
-Do **not** assign the full command to a single variable (e.g., `WANAKU_CLI="java -jar path/to/jar"`) -- zsh treats it as a single token. Use `CLI_JAR` for the path and call `java -jar ${CLI_JAR}` explicitly.
 
 ### Environment variables
 
 ```bash
 export WANAKU_REPO_ROOT="${WANAKU_REPO_ROOT:-.}"
-export WANAKU_ROUTER_PORT="${WANAKU_ROUTER_PORT:-8080}"
-export WANAKU_ROUTER_URL="${WANAKU_ROUTER_URL:-http://localhost:${WANAKU_ROUTER_PORT}}"
-export MCP_SERVER_URI="${MCP_SERVER_URI:-http://localhost:${WANAKU_ROUTER_PORT}/public/mcp/}"
-export CUSTOM_HOME_DIR="${CUSTOM_HOME_DIR:-/tmp/wanaku-test-home-$$}"
-export CUSTOM_HOME_DIR_SYSPROP="${CUSTOM_HOME_DIR_SYSPROP:-/tmp/wanaku-test-sysprop-$$}"
-# Isolate credentials per test run to avoid contention (see #1697)
-export WANAKU_CREDENTIALS="${WANAKU_CREDENTIALS:-/tmp/wanaku-creds-home-$$}"
+export WANAKU_SERVER_REPO_ROOT="${WANAKU_SERVER_REPO_ROOT:-../wanaku}"
+export HOME_TEST_ROOT="${HOME_TEST_ROOT:-$(mktemp -d)}"
+export HOME_BARN_PORT="${HOME_BARN_PORT:-8180}"
+export HOME_BARN_JGROUPS_PORT="${HOME_BARN_JGROUPS_PORT:-46700}"
+export HOME_SERVER_MGMT_PORT="${HOME_SERVER_MGMT_PORT:-8080}"
+export HOME_SERVER_MCP_PORT="${HOME_SERVER_MCP_PORT:-8081}"
+export HOME_SERVER_INFERENCE_PORT="${HOME_SERVER_INFERENCE_PORT:-8083}"
+export HOME_SERVER_A2A_PORT="${HOME_SERVER_A2A_PORT:-8084}"
+export HOME_NS="${HOME_NS:-home-$(date +%s)}"
+export HOME_BARN_URL="http://localhost:${HOME_BARN_PORT}"
+export WANAKU_SERVER_URL="http://localhost:${HOME_SERVER_MGMT_PORT}"
+export WANAKU_MCP_BASE_URL="http://localhost:${HOME_SERVER_MCP_PORT}"
+unset WANAKU_HOME WANAKU_CREDENTIALS WANAKU_PERSIST_PATH WANAKU_PERSIST_BACKEND
 ```
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `WANAKU_REPO_ROOT` | `.` | Path to the Wanaku repository root |
-| `WANAKU_ROUTER_PORT` | `8080` | HTTP port the router listens on |
-| `WANAKU_ROUTER_URL` | `http://localhost:8080` | Router base URL (no trailing slash) |
-| `MCP_SERVER_URI` | `http://localhost:8080/public/mcp/` | MCP Streamable HTTP endpoint |
-| `CUSTOM_HOME_DIR` | `/tmp/wanaku-test-home-$$` | Temporary directory for WANAKU_HOME env var tests |
-| `CUSTOM_HOME_DIR_SYSPROP` | `/tmp/wanaku-test-sysprop-$$` | Temporary directory for wanaku.home system property tests |
+| `WANAKU_REPO_ROOT` | `.` | Path to this repository (wanaku-barn) |
+| `WANAKU_SERVER_REPO_ROOT` | `../wanaku` | Path to the `wanaku-ai/wanaku` checkout |
+| `HOME_TEST_ROOT` | `$(mktemp -d)` | Parent directory for every home and data directory of this run |
+| `HOME_BARN_PORT` | `8180` | HTTP port of the Barn instances of this plan |
+| `HOME_BARN_JGROUPS_PORT` | `46700` | JGroups multicast port of the Barn instances (see the note below) |
+| `HOME_SERVER_MGMT_PORT` | `8080` | Management port of the Wanaku Server instances of this plan |
+| `HOME_SERVER_MCP_PORT`, `HOME_SERVER_INFERENCE_PORT`, `HOME_SERVER_A2A_PORT` | `8081`, `8083`, `8084` | Listener ports of the Wanaku Server instances |
+| `HOME_NS` | `home-<epoch>` | Wanaku namespace that Phase 9 creates |
+
+The plan starts and stops Barn and Wanaku Server several times. Do not run another Barn or Wanaku Server on the same
+ports. To run next to other instances, set all port variables to free ports.
+
+**Note on JGroups:** Barn starts an Infinispan JGroups channel with UDP multicast. Barn processes on the same host
+that use the same multicast port join one cluster. A test instance then exchanges cluster state with other Barn
+processes, and its caches can fail to start. The helpers below set `-Djgroups.mcast_port` to
+`HOME_BARN_JGROUPS_PORT`, so the test instances form their own cluster.
 
 ### Known limitations
 
-- **No Kubernetes:** This plan tests local execution only. Operator/container behavior is out of scope.
-- **No authentication:** The router is always started with `WANAKU_HTTP_AUTH=none`.
-- **Router only:** No capabilities are started. The CLI itself only uses the home directory for its credential store.
-- **System property override scope:** The `-Dwanaku.home` system property only affects the JVM it is passed to. The router and the CLI are separate JVMs, so each must receive its own override.
+- **No Kubernetes:** The operator sets `WANAKU_PERSIST_PATH` and the Barn home in the pods. That is out of scope.
+- **Separate JVMs:** `-Dwanaku.home` affects only the JVM that receives it. Barn and the CLI each need their own
+  override.
+- **Root user:** File permission tests do not work as `root`. The negative tests use a path below a regular file
+  instead. This path fails for every user.
 
 ---
 
@@ -72,758 +100,681 @@ export WANAKU_CREDENTIALS="${WANAKU_CREDENTIALS:-/tmp/wanaku-creds-home-$$}"
 ### Test 0.1: Verify required tools
 
 ```bash
-java -version 2>&1 | head -1
-JAVA_EXIT=$?
+for TOOL in java curl jq npx; do
+  command -v "${TOOL}" > /dev/null 2>&1 \
+    && echo "PASS: ${TOOL} found" || { echo "FAIL: ${TOOL} not found"; exit 1; }
+done
+JAVA_VERSION=$(java -version 2>&1 | grep -m1 'version' | sed 's/[^"]*"\([0-9]*\).*/\1/')
+[ "${JAVA_VERSION}" -ge 21 ] && echo "PASS: Java ${JAVA_VERSION}" || { echo "FAIL: Java ${JAVA_VERSION} < 21"; exit 1; }
+```
 
-mvn -version 2>&1 | head -1
-MVN_EXIT=$?
+### Test 0.2: Verify the test root is not the default home
 
-jq --version 2>&1
-JQ_EXIT=$?
+```bash
+case "${HOME_TEST_ROOT}" in
+  "${HOME}/.wanaku"*) echo "FAIL: HOME_TEST_ROOT must not be inside ${HOME}/.wanaku"; exit 1 ;;
+esac
+mkdir -p "${HOME_TEST_ROOT}" && echo "PASS: test root ${HOME_TEST_ROOT}"
+```
 
-if [ "${JAVA_EXIT}" -eq 0 ] && [ "${MVN_EXIT}" -eq 0 ] && [ "${JQ_EXIT}" -eq 0 ]; then
-  echo "PASS: all required tools present"
+### Test 0.3: Record the state of the real default home
+
+Phase 10 compares this listing with the state after the run.
+
+```bash
+REAL_HOME_SNAPSHOT_BEFORE="${HOME_TEST_ROOT}/real-home-before.txt"
+if [ -d "${HOME}/.wanaku" ]; then
+  find "${HOME}/.wanaku" -type f -exec ls -l --time-style=+%s {} \; 2>/dev/null | sort > "${REAL_HOME_SNAPSHOT_BEFORE}"
 else
-  echo "FAIL: one or more tools missing (java=${JAVA_EXIT}, mvn=${MVN_EXIT}, jq=${JQ_EXIT})"
-  exit 1
+  : > "${REAL_HOME_SNAPSHOT_BEFORE}"
 fi
+echo "PASS: recorded $(wc -l < "${REAL_HOME_SNAPSHOT_BEFORE}" | tr -d ' ') files of ${HOME}/.wanaku"
 ```
 
-### Test 0.2: Verify Java version is 21+
+### Test 0.4: Verify the ports are free
 
 ```bash
-JAVA_VERSION=$(java -version 2>&1 | head -1 | sed 's/.*"\([0-9]*\).*/\1/')
-if [ "${JAVA_VERSION}" -ge 21 ]; then
-  echo "PASS: Java version ${JAVA_VERSION} >= 21"
-else
-  echo "FAIL: Java version ${JAVA_VERSION} < 21"
-  exit 1
-fi
-```
-
-### Test 0.3: Create temporary test directories
-
-```bash
-mkdir -p "${CUSTOM_HOME_DIR}"
-mkdir -p "${CUSTOM_HOME_DIR_SYSPROP}"
-
-if [ -d "${CUSTOM_HOME_DIR}" ] && [ -d "${CUSTOM_HOME_DIR_SYSPROP}" ]; then
-  echo "PASS: temporary test directories created"
-  echo "  CUSTOM_HOME_DIR=${CUSTOM_HOME_DIR}"
-  echo "  CUSTOM_HOME_DIR_SYSPROP=${CUSTOM_HOME_DIR_SYSPROP}"
-else
-  echo "FAIL: could not create temporary test directories"
-  exit 1
-fi
-```
-
-### Test 0.4: Verify default home does not conflict with test directories
-
-```bash
-DEFAULT_HOME="${HOME}/.wanaku"
-if [ "${CUSTOM_HOME_DIR}" = "${DEFAULT_HOME}" ]; then
-  echo "FAIL: CUSTOM_HOME_DIR must differ from default home ${DEFAULT_HOME}"
-  exit 1
-fi
-if [ "${CUSTOM_HOME_DIR_SYSPROP}" = "${DEFAULT_HOME}" ]; then
-  echo "FAIL: CUSTOM_HOME_DIR_SYSPROP must differ from default home ${DEFAULT_HOME}"
-  exit 1
-fi
-echo "PASS: test directories do not overlap with default home"
-```
-
----
-
-## Phase 1: Build
-
-Follow [common/start-backend.md](common/start-backend.md) **steps 1 and 2 only** (build the project and re-augment the backend). Do **not** start the backend yet -- individual phases start it with different environment configurations.
-
-After completion, the following variables must be set:
-
-- `VERSION` -- Wanaku version string
-- `CLI_JAR` -- path to the CLI JAR
-- `ROUTER_JAR` -- path to the backend runner JAR
-
-### Test 1.1: Verify build artifacts exist
-
-```bash
-cd "${WANAKU_REPO_ROOT:-.}"
-mvn -DskipTests clean package
-
-VERSION=$(cat core/core-util/target/classes/version.txt)
-CLI_JAR="apps/wanaku-cli/target/quarkus-app/quarkus-run.jar"
-ROUTER_JAR="apps/wanaku-barn-backend/target/quarkus-app/quarkus-run.jar"
-
-for FILE in "${CLI_JAR}" "${ROUTER_JAR}"; do
-  if [ ! -f "${FILE}" ]; then
-    echo "FAIL: ${FILE} not found"
+for PORT in "${HOME_BARN_PORT}" "${HOME_SERVER_MGMT_PORT}" "${HOME_SERVER_MCP_PORT}"; do
+  if curl -s -o /dev/null "http://localhost:${PORT}/" 2>/dev/null; then
+    echo "FAIL: port ${PORT} is in use"
     exit 1
   fi
-  echo "PASS: ${FILE} exists"
+  echo "PASS: port ${PORT} is free"
 done
 ```
 
-### Test 1.2: Re-augment the backend to disable OIDC
+---
+
+## Phase 1: Build and Helpers
+
+### Step 1.1: Build Barn and the CLI
+
+Follow [common/start-barn.md](common/start-barn.md) step 1 only. Do not start Barn. After completion, `CLI_JAR` and
+`BARN_JAR` must be set.
+
+### Step 1.2: Build Wanaku Server
+
+Follow [common/start-server.md](common/start-server.md) step 1 only. Do not start the server. After completion,
+`WANAKU_SERVER_BIN` must be set.
+
+### Step 1.3: Write the pipeline configuration
+
+The MCP, inference and A2A listener ports come from the pipeline configuration. This step writes a copy of the
+embedded default with the ports of this plan. A file passed with `--pipeline-config` replaces the embedded default
+completely. The environment overrides of the embedded default (`WANAKU_A2A_LISTEN`, `WANAKU_CORS_ORIGIN` and the
+inference upstream) then do not apply. This plan does not need them.
 
 ```bash
-java -Dquarkus.launch.rebuild=true \
-     -Dquarkus.log.level=WARNING \
-     -Dquarkus.oidc.enabled=false \
-     -Dquarkus.oidc-proxy.enabled=false \
-     -jar "${ROUTER_JAR}"
-echo "PASS: re-augmentation complete"
+HOME_PIPELINE="${HOME_TEST_ROOT}/pipeline.yaml"
+sed -e "s/:8081\"/:${HOME_SERVER_MCP_PORT}\"/" \
+    -e "s/:8083\"/:${HOME_SERVER_INFERENCE_PORT}\"/" \
+    -e "s/:8084/:${HOME_SERVER_A2A_PORT}/g" \
+    "${WANAKU_SERVER_REPO_ROOT}/server/src/default.yaml" > "${HOME_PIPELINE}"
+grep -q "0.0.0.0:${HOME_SERVER_MCP_PORT}" "${HOME_PIPELINE}" \
+  && echo "PASS: pipeline configuration written to ${HOME_PIPELINE}" || { echo "FAIL: MCP port not set"; exit 1; }
 ```
+
+### Step 1.4: Define the helper functions
+
+The helpers poll the health endpoints. They do not use fixed waits. Run the remaining phases in the same shell.
+
+```bash
+# wait_http URL EXPECTED_CODE MAX_SECONDS
+wait_http() {
+  _i=0
+  while [ "${_i}" -lt "$3" ]; do
+    _code=$(curl -s -o /dev/null -w "%{http_code}" "$1" 2>/dev/null)
+    [ "${_code}" = "$2" ] && return 0
+    _i=$((_i + 1))
+    sleep 1
+  done
+  return 1
+}
+
+# start_barn LOG_FILE [extra JVM options...]  (uses WANAKU_HOME from the current environment)
+start_barn() {
+  _log="$1"; shift
+  java -Dquarkus.http.port="${HOME_BARN_PORT}" -Djgroups.mcast_port="${HOME_BARN_JGROUPS_PORT}" \
+    "$@" -jar "${BARN_JAR}" > "${_log}" 2>&1 &
+  BARN_PID=$!
+  wait_http "${HOME_BARN_URL}/q/health/live" 200 120
+}
+
+stop_barn() {
+  if [ -n "${BARN_PID}" ]; then
+    kill "${BARN_PID}" 2>/dev/null || true
+    wait "${BARN_PID}" 2>/dev/null || true
+    BARN_PID=""
+  fi
+}
+
+# start_server LOG_FILE HOME_DIR  (uses WANAKU_PERSIST_PATH and WANAKU_PERSIST_BACKEND from the current environment)
+start_server() {
+  env HOME="$2" WANAKU_MGMT_LISTEN="0.0.0.0:${HOME_SERVER_MGMT_PORT}" \
+    "${WANAKU_SERVER_BIN}" --pipeline-config "${HOME_PIPELINE}" > "$1" 2>&1 &
+  SERVER_PID=$!
+  wait_http "${WANAKU_SERVER_URL}/health" 200 30
+}
+
+# stop_server: SIGTERM for an orderly shutdown, then wait until the process exits
+stop_server() {
+  if [ -n "${SERVER_PID}" ]; then
+    kill -TERM "${SERVER_PID}" 2>/dev/null || true
+    wait "${SERVER_PID}" 2>/dev/null || true
+    SERVER_PID=""
+  fi
+}
+echo "PASS: helper functions defined"
+```
+
+The Barn helper waits for `/q/health/live`, not for `/q/health/ready`. Phase 6 explains why.
 
 ---
 
-## Phase 2: Default Behavior (Backward Compatibility)
+## Phase 2: Barn Default Home
 
-Start Wanaku with **no overrides** and verify data goes to the default `~/.wanaku/` path.
-
-### Test 2.1: Start the router with default home
+### Test 2.1: Start Barn without overrides
 
 ```bash
 unset WANAKU_HOME
-
-WANAKU_HTTP_AUTH=none java -Dquarkus.profile=local \
-  -Dquarkus.http.port="${WANAKU_ROUTER_PORT}" \
-  -jar "${ROUTER_JAR}" &
-WANAKU_PID=$!
-echo "Wanaku started with PID ${WANAKU_PID}"
+BARN_USER_HOME="${HOME_TEST_ROOT}/barn-user-home"
+mkdir -p "${BARN_USER_HOME}"
+start_barn "${HOME_TEST_ROOT}/barn-default.log" -Duser.home="${BARN_USER_HOME}" \
+  && echo "PASS: Barn started with the default home" || { echo "FAIL: Barn did not start"; tail -20 "${HOME_TEST_ROOT}/barn-default.log"; }
 ```
 
-### Test 2.2: Wait for router health
+### Test 2.2: Barn is ready
 
 ```bash
-MAX_RETRIES=30
-RETRY_INTERVAL=5
-for i in $(seq 1 ${MAX_RETRIES}); do
-  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${WANAKU_ROUTER_URL}/q/health/ready" 2>/dev/null || echo "000")
-  if [ "${HTTP_CODE}" = "200" ]; then
-    echo "PASS: router is healthy (attempt ${i})"
-    break
-  fi
-  if [ "${i}" -eq "${MAX_RETRIES}" ]; then
-    echo "FAIL: router not healthy after ${MAX_RETRIES} attempts (last HTTP ${HTTP_CODE})"
-    kill "${WANAKU_PID}" 2>/dev/null || true
-    exit 1
-  fi
-  sleep ${RETRY_INTERVAL}
-done
+wait_http "${HOME_BARN_URL}/q/health/ready" 200 60 \
+  && echo "PASS: Barn is ready" || echo "FAIL: Barn is not ready"
 ```
 
-### Test 2.3: Verify default Infinispan data directory exists
+### Test 2.3: The store is in the default home
 
 ```bash
-DEFAULT_BARN_DATA="${HOME}/.wanaku/barn"
-
-if [ -d "${DEFAULT_BARN_DATA}" ]; then
-  echo "PASS: default Infinispan data directory exists at ${DEFAULT_BARN_DATA}"
-else
-  echo "FAIL: default Infinispan data directory not found at ${DEFAULT_BARN_DATA}"
-fi
+[ -d "${BARN_USER_HOME}/.wanaku/barn" ] \
+  && echo "PASS: store created at ${BARN_USER_HOME}/.wanaku/barn" \
+  || echo "FAIL: store not found at ${BARN_USER_HOME}/.wanaku/barn"
 ```
 
-### Test 2.4: Verify default log file exists
+### Test 2.4: The CLI can connect
 
 ```bash
-DEFAULT_LOG_FILE="${HOME}/.wanaku/local/logs/wanaku-router.log"
-
-if [ -f "${DEFAULT_LOG_FILE}" ]; then
-  echo "PASS: default router log file exists at ${DEFAULT_LOG_FILE}"
-else
-  echo "FAIL: default router log file not found at ${DEFAULT_LOG_FILE}"
-fi
+java -jar "${CLI_JAR}" service catalog list --host "${HOME_BARN_URL}" --no-auth --plain
+[ $? -eq 0 ] && echo "PASS: CLI connected to Barn" || echo "FAIL: CLI cannot connect to Barn"
 ```
 
-### Test 2.5: Stop default instance
+### Step 2.5: Stop Barn
 
 ```bash
-if [ -n "${WANAKU_PID}" ]; then
-  kill "${WANAKU_PID}" 2>/dev/null || true
-  wait "${WANAKU_PID}" 2>/dev/null || true
-  echo "PASS: default instance stopped"
-fi
-```
-
-### Test 2.6: Verify process is gone
-
-```bash
-if [ -n "${WANAKU_PID}" ]; then
-  kill -0 "${WANAKU_PID}" 2>/dev/null
-  if [ $? -ne 0 ]; then
-    echo "PASS: default instance process is no longer running"
-  else
-    echo "FAIL: default instance process ${WANAKU_PID} is still running"
-  fi
-fi
+STOPPED_PID="${BARN_PID}"
+stop_barn
+kill -0 "${STOPPED_PID}" 2>/dev/null && echo "FAIL: Barn still running" || echo "PASS: Barn stopped"
 ```
 
 ---
 
-## Phase 3: WANAKU_HOME Environment Variable Override
+## Phase 3: Barn WANAKU_HOME Override
 
-Start Wanaku with `WANAKU_HOME` set to a custom temporary directory. Verify that data directories are created under the custom path instead of `~/.wanaku/`.
+This phase also uses the `local` profile, which writes the log file into the Wanaku home.
 
-### Test 3.1: Start the router with WANAKU_HOME override
+### Test 3.1: Start Barn with WANAKU_HOME
 
 ```bash
-export WANAKU_HOME="${CUSTOM_HOME_DIR}"
-
-WANAKU_HTTP_AUTH=none java -Dquarkus.profile=local \
-  -Dquarkus.http.port="${WANAKU_ROUTER_PORT}" \
-  -jar "${ROUTER_JAR}" &
-WANAKU_PID=$!
-echo "Wanaku started with PID ${WANAKU_PID} and WANAKU_HOME=${WANAKU_HOME}"
+export WANAKU_HOME="${HOME_TEST_ROOT}/barn-env-home"
+BARN_USER_HOME_2="${HOME_TEST_ROOT}/barn-user-home-2"
+mkdir -p "${BARN_USER_HOME_2}"
+start_barn "${HOME_TEST_ROOT}/barn-env.log" -Duser.home="${BARN_USER_HOME_2}" -Dquarkus.profile=local \
+  && echo "PASS: Barn started with WANAKU_HOME=${WANAKU_HOME}" || echo "FAIL: Barn did not start"
+wait_http "${HOME_BARN_URL}/q/health/ready" 200 60 && echo "PASS: Barn is ready" || echo "FAIL: Barn is not ready"
 ```
 
-### Test 3.2: Wait for router health
+### Test 3.2: The store and the log are in WANAKU_HOME
 
 ```bash
-MAX_RETRIES=30
-RETRY_INTERVAL=5
-for i in $(seq 1 ${MAX_RETRIES}); do
-  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${WANAKU_ROUTER_URL}/q/health/ready" 2>/dev/null || echo "000")
-  if [ "${HTTP_CODE}" = "200" ]; then
-    echo "PASS: router is healthy with WANAKU_HOME override (attempt ${i})"
-    break
-  fi
-  if [ "${i}" -eq "${MAX_RETRIES}" ]; then
-    echo "FAIL: router not healthy after ${MAX_RETRIES} attempts (last HTTP ${HTTP_CODE})"
-    kill "${WANAKU_PID}" 2>/dev/null || true
-    exit 1
-  fi
-  sleep ${RETRY_INTERVAL}
-done
+[ -d "${WANAKU_HOME}/barn" ] && echo "PASS: store at ${WANAKU_HOME}/barn" || echo "FAIL: store not at ${WANAKU_HOME}/barn"
+LOG_FILE="${WANAKU_HOME}/local/logs/wanaku-router.log"
+[ -s "${LOG_FILE}" ] && echo "PASS: log file ${LOG_FILE} has content" || echo "FAIL: log file ${LOG_FILE} missing or empty"
 ```
 
-### Test 3.3: Verify Infinispan data directory under custom home
+### Test 3.3: The default home was not used
 
 ```bash
-CUSTOM_BARN_DATA="${CUSTOM_HOME_DIR}/barn"
-
-if [ -d "${CUSTOM_BARN_DATA}" ]; then
-  echo "PASS: Infinispan data directory created under custom home at ${CUSTOM_BARN_DATA}"
-else
-  echo "FAIL: Infinispan data directory not found at ${CUSTOM_BARN_DATA}"
-fi
+[ -e "${BARN_USER_HOME_2}/.wanaku" ] \
+  && echo "FAIL: ${BARN_USER_HOME_2}/.wanaku exists — WANAKU_HOME was ignored" \
+  || echo "PASS: default home not created"
 ```
 
-### Test 3.4: Verify log file under custom home
+### Step 3.4: Stop Barn
 
 ```bash
-CUSTOM_LOG_FILE="${CUSTOM_HOME_DIR}/local/logs/wanaku-router.log"
-
-if [ -f "${CUSTOM_LOG_FILE}" ]; then
-  echo "PASS: router log file created under custom home at ${CUSTOM_LOG_FILE}"
-else
-  echo "FAIL: router log file not found at ${CUSTOM_LOG_FILE}"
-fi
-```
-
-### Test 3.5: Verify CLI can connect to router with custom home
-
-```bash
-java -jar ${CLI_JAR} tools list --host "${WANAKU_ROUTER_URL}" --plain 2>&1
-EXIT_CODE=$?
-if [ "${EXIT_CODE}" -eq 0 ]; then
-  echo "PASS: CLI connected to router with WANAKU_HOME override"
-else
-  echo "FAIL: CLI cannot connect to router with WANAKU_HOME override (exit code ${EXIT_CODE})"
-fi
-```
-
-### Test 3.6: Verify router persists data at custom location
-
-Verify the Infinispan store has content under the custom home by listing tools (which triggers data access).
-
-```bash
-java -jar ${CLI_JAR} tools list \
-  --host "${WANAKU_ROUTER_URL}" --plain 2>&1
-
-# Verify data files exist under custom barn directory
-CUSTOM_BARN_DATA="${CUSTOM_HOME_DIR}/barn"
-FILE_COUNT=$(find "${CUSTOM_BARN_DATA}" -type f 2>/dev/null | wc -l | tr -d ' ')
-if [ "${FILE_COUNT}" -gt 0 ]; then
-  echo "PASS: Infinispan data files present under custom home (${FILE_COUNT} files)"
-else
-  echo "FAIL: no Infinispan data files found under ${CUSTOM_BARN_DATA}"
-fi
-```
-
-### Test 3.7: Verify log file has content
-
-```bash
-CUSTOM_LOG_FILE="${CUSTOM_HOME_DIR}/local/logs/wanaku-router.log"
-
-if [ -f "${CUSTOM_LOG_FILE}" ]; then
-  LOG_SIZE=$(wc -c < "${CUSTOM_LOG_FILE}" | tr -d ' ')
-  if [ "${LOG_SIZE}" -gt 0 ]; then
-    echo "PASS: router log file has content (${LOG_SIZE} bytes)"
-  else
-    echo "FAIL: router log file exists but is empty"
-  fi
-else
-  echo "FAIL: router log file not found at ${CUSTOM_LOG_FILE}"
-fi
-```
-
-### Test 3.8: Stop custom-home instance
-
-```bash
-if [ -n "${WANAKU_PID}" ]; then
-  kill "${WANAKU_PID}" 2>/dev/null || true
-  wait "${WANAKU_PID}" 2>/dev/null || true
-  echo "PASS: custom-home instance stopped"
-fi
+stop_barn
 unset WANAKU_HOME
-```
-
-### Test 3.9: Verify process is gone
-
-```bash
-if [ -n "${WANAKU_PID}" ]; then
-  kill -0 "${WANAKU_PID}" 2>/dev/null
-  if [ $? -ne 0 ]; then
-    echo "PASS: custom-home instance process is no longer running"
-  else
-    echo "FAIL: custom-home instance process ${WANAKU_PID} is still running"
-  fi
-fi
+echo "PASS: Barn stopped"
 ```
 
 ---
 
-## Phase 4: System Property Override
+## Phase 4: Barn System Property Override
 
-This phase tests the `-Dwanaku.home` system property by starting the router JAR with the property set.
-
-### Test 4.1: Verify the router JAR is available
-
-```bash
-if [ -f "${ROUTER_JAR}" ]; then
-  echo "PASS: router JAR found at ${ROUTER_JAR}"
-else
-  echo "FAIL: router JAR not found at ${ROUTER_JAR}"
-  exit 1
-fi
-```
-
-### Test 4.2: Start router with -Dwanaku.home system property
+### Test 4.1: Start Barn with -Dwanaku.home
 
 ```bash
 unset WANAKU_HOME
-
-WANAKU_HTTP_AUTH=none java -Dquarkus.profile=local \
-  -Dquarkus.http.port="${WANAKU_ROUTER_PORT}" \
-  -Dwanaku.home="${CUSTOM_HOME_DIR_SYSPROP}" \
-  -jar "${ROUTER_JAR}" &
-ROUTER_PID=$!
-echo "Router started with PID ${ROUTER_PID} and -Dwanaku.home=${CUSTOM_HOME_DIR_SYSPROP}"
+BARN_SYSPROP_HOME="${HOME_TEST_ROOT}/barn-sysprop-home"
+start_barn "${HOME_TEST_ROOT}/barn-sysprop.log" -Duser.home="${BARN_USER_HOME_2}" -Dwanaku.home="${BARN_SYSPROP_HOME}" \
+  && echo "PASS: Barn started with -Dwanaku.home" || echo "FAIL: Barn did not start"
 ```
 
-### Test 4.3: Wait for router health
+### Test 4.2: The store is under the system property path
 
 ```bash
-MAX_RETRIES=30
-RETRY_INTERVAL=5
-for i in $(seq 1 ${MAX_RETRIES}); do
-  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${WANAKU_ROUTER_URL}/q/health/ready" 2>/dev/null || echo "000")
-  if [ "${HTTP_CODE}" = "200" ]; then
-    echo "PASS: router is healthy with system property override (attempt ${i})"
-    break
-  fi
-  if [ "${i}" -eq "${MAX_RETRIES}" ]; then
-    echo "FAIL: router not healthy after ${MAX_RETRIES} attempts (last HTTP ${HTTP_CODE})"
-    kill "${ROUTER_PID}" 2>/dev/null || true
-    exit 1
-  fi
-  sleep ${RETRY_INTERVAL}
-done
+[ -d "${BARN_SYSPROP_HOME}/barn" ] && echo "PASS: store at ${BARN_SYSPROP_HOME}/barn" \
+  || echo "FAIL: store not at ${BARN_SYSPROP_HOME}/barn"
 ```
 
-### Test 4.4: Verify Infinispan data directory under system property path
+### Step 4.3: Stop Barn
 
 ```bash
-SYSPROP_BARN_DATA="${CUSTOM_HOME_DIR_SYSPROP}/barn"
-
-if [ -d "${SYSPROP_BARN_DATA}" ]; then
-  echo "PASS: Infinispan data directory created at system property path ${SYSPROP_BARN_DATA}"
-else
-  echo "FAIL: Infinispan data directory not found at ${SYSPROP_BARN_DATA}"
-fi
-```
-
-### Test 4.5: Verify log file under system property path
-
-```bash
-SYSPROP_LOG_FILE="${CUSTOM_HOME_DIR_SYSPROP}/local/logs/wanaku-router.log"
-
-if [ -f "${SYSPROP_LOG_FILE}" ]; then
-  echo "PASS: router log file created at system property path ${SYSPROP_LOG_FILE}"
-else
-  echo "FAIL: router log file not found at ${SYSPROP_LOG_FILE}"
-fi
-```
-
-### Test 4.6: Stop system property router
-
-```bash
-if [ -n "${ROUTER_PID}" ]; then
-  kill "${ROUTER_PID}" 2>/dev/null || true
-  wait "${ROUTER_PID}" 2>/dev/null || true
-  echo "PASS: system property router stopped"
-fi
-```
-
-### Test 4.7: Verify process is gone
-
-```bash
-if [ -n "${ROUTER_PID}" ]; then
-  kill -0 "${ROUTER_PID}" 2>/dev/null
-  if [ $? -ne 0 ]; then
-    echo "PASS: system property router process is no longer running"
-  else
-    echo "FAIL: system property router process ${ROUTER_PID} is still running"
-  fi
-fi
+stop_barn
+echo "PASS: Barn stopped"
 ```
 
 ---
 
-## Phase 5: Precedence (System Property Wins Over Env Var)
+## Phase 5: Barn Precedence (System Property Wins)
 
-Set **both** `WANAKU_HOME` env var and `-Dwanaku.home` system property to different paths. Verify the system property takes precedence for the router.
-
-### Test 5.1: Start router with both overrides
+### Test 5.1: Start Barn with both overrides
 
 ```bash
-PRECEDENCE_ENVVAR_DIR="${CUSTOM_HOME_DIR}/precedence-envvar"
-PRECEDENCE_SYSPROP_DIR="${CUSTOM_HOME_DIR}/precedence-sysprop"
-mkdir -p "${PRECEDENCE_ENVVAR_DIR}"
-mkdir -p "${PRECEDENCE_SYSPROP_DIR}"
-
-export WANAKU_HOME="${PRECEDENCE_ENVVAR_DIR}"
-
-WANAKU_HTTP_AUTH=none java -Dquarkus.profile=local \
-  -Dquarkus.http.port="${WANAKU_ROUTER_PORT}" \
-  -Dwanaku.home="${PRECEDENCE_SYSPROP_DIR}" \
-  -jar "${ROUTER_JAR}" &
-ROUTER_PID=$!
-echo "Router started with PID ${ROUTER_PID}"
-echo "  WANAKU_HOME=${WANAKU_HOME} (env var -- should be ignored)"
-echo "  -Dwanaku.home=${PRECEDENCE_SYSPROP_DIR} (system property -- should win)"
+PRECEDENCE_ENV_DIR="${HOME_TEST_ROOT}/precedence-env"
+PRECEDENCE_SYSPROP_DIR="${HOME_TEST_ROOT}/precedence-sysprop"
+export WANAKU_HOME="${PRECEDENCE_ENV_DIR}"
+start_barn "${HOME_TEST_ROOT}/barn-precedence.log" -Duser.home="${BARN_USER_HOME_2}" -Dwanaku.home="${PRECEDENCE_SYSPROP_DIR}" \
+  && echo "PASS: Barn started with both overrides" || echo "FAIL: Barn did not start"
 ```
 
-### Test 5.2: Wait for router health
+### Test 5.2: The system property path wins
 
 ```bash
-MAX_RETRIES=30
-RETRY_INTERVAL=5
-for i in $(seq 1 ${MAX_RETRIES}); do
-  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${WANAKU_ROUTER_URL}/q/health/ready" 2>/dev/null || echo "000")
-  if [ "${HTTP_CODE}" = "200" ]; then
-    echo "PASS: router is healthy in precedence test (attempt ${i})"
-    break
-  fi
-  if [ "${i}" -eq "${MAX_RETRIES}" ]; then
-    echo "FAIL: router not healthy after ${MAX_RETRIES} attempts (last HTTP ${HTTP_CODE})"
-    kill "${ROUTER_PID}" 2>/dev/null || true
-    exit 1
-  fi
-  sleep ${RETRY_INTERVAL}
-done
+[ -d "${PRECEDENCE_SYSPROP_DIR}/barn" ] && echo "PASS: store under the system property path" \
+  || echo "FAIL: store not under ${PRECEDENCE_SYSPROP_DIR}"
+[ -e "${PRECEDENCE_ENV_DIR}/barn" ] && echo "FAIL: store also under the WANAKU_HOME path" \
+  || echo "PASS: WANAKU_HOME path not used"
 ```
 
-### Test 5.3: Verify system property path has router data (wins)
+### Step 5.3: Stop Barn
 
 ```bash
-if [ -d "${PRECEDENCE_SYSPROP_DIR}/barn" ]; then
-  echo "PASS: system property path has router data (precedence correct)"
+stop_barn
+unset WANAKU_HOME
+echo "PASS: Barn stopped"
+```
+
+---
+
+## Phase 6: Barn Data Survives a Restart
+
+### Test 6.1: Create a data store in a fresh home
+
+```bash
+export WANAKU_HOME="${HOME_TEST_ROOT}/barn-persist-home"
+start_barn "${HOME_TEST_ROOT}/barn-persist-1.log" -Duser.home="${BARN_USER_HOME_2}" || echo "FAIL: Barn did not start"
+wait_http "${HOME_BARN_URL}/q/health/ready" 200 60 || echo "FAIL: Barn is not ready"
+DS_FILE="${HOME_TEST_ROOT}/home-entry.txt"
+echo "wanaku-home-resolution" > "${DS_FILE}"
+java -jar "${CLI_JAR}" data-store add --host "${HOME_BARN_URL}" --no-auth \
+  --name "${HOME_NS}-entry" --read-from-file "${DS_FILE}"
+[ $? -eq 0 ] && echo "PASS: data store ${HOME_NS}-entry created" || echo "FAIL: data store not created"
+stop_barn
+```
+
+### Test 6.2: Restart with the same home and read the data store
+
+```bash
+start_barn "${HOME_TEST_ROOT}/barn-persist-2.log" -Duser.home="${BARN_USER_HOME_2}" || echo "FAIL: Barn did not restart"
+java -jar "${CLI_JAR}" data-store list --host "${HOME_BARN_URL}" --no-auth --plain 2>/dev/null \
+  | awk '{print $2}' | grep -qx "${HOME_NS}-entry" \
+  && echo "PASS: data store survived the restart" || echo "FAIL: data store lost after the restart"
+```
+
+### Test 6.3: Barn is ready after the restart
+
+Expected result: `/q/health/ready` returns `200`.
+
+On 2026-10-18 (Barn `0.3.0-SNAPSHOT`) this test failed. After a restart with an existing store, the readiness check
+stays `DOWN` with `"failedCaches": "catalog-version,catalog-version-counter"`. The caches start only when a request
+uses them. The data is intact (Test 6.2). In Kubernetes, a readiness probe on `/q/health/ready` would keep the
+restarted pod out of service. Report a failure of this test as a Barn defect.
+
+```bash
+if wait_http "${HOME_BARN_URL}/q/health/ready" 200 60; then
+  echo "PASS: Barn is ready after the restart"
 else
-  echo "FAIL: system property path ${PRECEDENCE_SYSPROP_DIR}/barn not found"
+  echo "FAIL: Barn is not ready after the restart: $(curl -s "${HOME_BARN_URL}/q/health/ready" | jq -c '[.checks[] | select(.status == "DOWN")]')"
 fi
-```
-
-### Test 5.4: Verify env var path does NOT have router data (loses)
-
-```bash
-if [ -d "${PRECEDENCE_ENVVAR_DIR}/barn" ]; then
-  echo "FAIL: env var path ${PRECEDENCE_ENVVAR_DIR}/barn exists -- system property should have taken precedence"
-else
-  echo "PASS: env var path does not have router data (system property took precedence)"
-fi
-```
-
-### Test 5.5: Verify log file under system property path (not env var path)
-
-```bash
-SYSPROP_LOG="${PRECEDENCE_SYSPROP_DIR}/local/logs/wanaku-router.log"
-ENVVAR_LOG="${PRECEDENCE_ENVVAR_DIR}/local/logs/wanaku-router.log"
-
-if [ -f "${SYSPROP_LOG}" ]; then
-  echo "PASS: log file at system property path"
-else
-  echo "FAIL: log file not found at system property path ${SYSPROP_LOG}"
-fi
-
-if [ -f "${ENVVAR_LOG}" ]; then
-  echo "FAIL: log file also at env var path -- precedence violation"
-else
-  echo "PASS: no log file at env var path (correct)"
-fi
-```
-
-### Test 5.6: Stop precedence test router
-
-```bash
-if [ -n "${ROUTER_PID}" ]; then
-  kill "${ROUTER_PID}" 2>/dev/null || true
-  wait "${ROUTER_PID}" 2>/dev/null || true
-  echo "PASS: precedence test router stopped"
-fi
+stop_barn
 unset WANAKU_HOME
 ```
 
-### Test 5.7: Verify process is gone
-
-```bash
-if [ -n "${ROUTER_PID}" ]; then
-  kill -0 "${ROUTER_PID}" 2>/dev/null
-  if [ $? -ne 0 ]; then
-    echo "PASS: precedence test router process is no longer running"
-  else
-    echo "FAIL: precedence test router process ${ROUTER_PID} is still running"
-  fi
-fi
-```
-
 ---
 
-## Phase 6: Credential Store Path
+## Phase 7: Barn Negative Tests
 
-Verify that the CLI credential store respects the resolved home directory when `WANAKU_HOME` is set.
-
-### Test 6.1: Verify credentials file path uses custom home
-
-The `AuthCredentialStore` stores credentials at `WanakuHome.get() + "/credentials"`. When `WANAKU_HOME` is set, the credentials file should be under the custom home.
-
-```bash
-export WANAKU_HOME="${CUSTOM_HOME_DIR}"
-
-# Trigger credential storage by performing a login attempt (expected to fail against noauth)
-# The CLI should still create or attempt to access the credentials path under WANAKU_HOME
-java -jar ${CLI_JAR} login \
-  --host "${WANAKU_ROUTER_URL}" \
-  --username test --password test 2>&1 || true
-
-CREDENTIALS_DIR="${CUSTOM_HOME_DIR}"
-# The credentials file may or may not exist (login to noauth router may not create it),
-# but the directory structure should at least be reachable
-if [ -d "${CREDENTIALS_DIR}" ]; then
-  echo "PASS: custom home directory exists for credentials path"
-else
-  echo "FAIL: custom home directory not accessible for credentials path"
-fi
-
-unset WANAKU_HOME
-```
-
-### Test 6.2: Verify credentials file does not appear in default home from custom-home login
-
-```bash
-# If a credentials file was created, it should be under CUSTOM_HOME_DIR, not ~/.wanaku/
-DEFAULT_CREDS="${HOME}/.wanaku/credentials"
-CUSTOM_CREDS="${CUSTOM_HOME_DIR}/credentials"
-
-if [ -f "${CUSTOM_CREDS}" ]; then
-  echo "PASS: credentials file created under custom home"
-elif [ -f "${DEFAULT_CREDS}" ]; then
-  # Check modification time to see if it was recently modified (within this test run)
-  echo "WARN: credentials file exists at default location -- may be from a previous run"
-else
-  echo "PASS: no credentials file found (expected for noauth -- no leak)"
-fi
-```
-
----
-
-## Phase 7: Cleanup Isolation
-
-Verify that cleaning up a custom `WANAKU_HOME` directory does not affect the default `~/.wanaku/` directory.
-
-### Test 7.1: Record default home state before cleanup
-
-```bash
-DEFAULT_HOME="${HOME}/.wanaku"
-
-if [ -d "${DEFAULT_HOME}" ]; then
-  DEFAULT_HOME_FILE_COUNT=$(find "${DEFAULT_HOME}" -type f 2>/dev/null | wc -l | tr -d ' ')
-  echo "PASS: default home has ${DEFAULT_HOME_FILE_COUNT} files before cleanup"
-else
-  DEFAULT_HOME_FILE_COUNT=0
-  echo "PASS: default home does not exist (nothing to protect)"
-fi
-```
-
-### Test 7.2: Remove custom home directories
-
-```bash
-rm -rf "${CUSTOM_HOME_DIR}" 2>/dev/null || true
-rm -rf "${CUSTOM_HOME_DIR_SYSPROP}" 2>/dev/null || true
-
-if [ ! -d "${CUSTOM_HOME_DIR}" ] && [ ! -d "${CUSTOM_HOME_DIR_SYSPROP}" ]; then
-  echo "PASS: custom home directories removed"
-else
-  echo "FAIL: custom home directories still exist after removal"
-fi
-```
-
-### Test 7.3: Verify default home is unchanged
-
-```bash
-DEFAULT_HOME="${HOME}/.wanaku"
-
-if [ -d "${DEFAULT_HOME}" ]; then
-  CURRENT_FILE_COUNT=$(find "${DEFAULT_HOME}" -type f 2>/dev/null | wc -l | tr -d ' ')
-  if [ "${CURRENT_FILE_COUNT}" -ge "${DEFAULT_HOME_FILE_COUNT}" ]; then
-    echo "PASS: default home intact after custom home cleanup (${CURRENT_FILE_COUNT} files)"
-  else
-    echo "FAIL: default home lost files (was ${DEFAULT_HOME_FILE_COUNT}, now ${CURRENT_FILE_COUNT})"
-  fi
-else
-  if [ "${DEFAULT_HOME_FILE_COUNT}" -eq 0 ]; then
-    echo "PASS: default home still absent (consistent)"
-  else
-    echo "FAIL: default home disappeared during cleanup"
-  fi
-fi
-```
-
----
-
-## Phase 8: Negative Tests
-
-### Test 8.1: WANAKU_HOME set to unwritable path
-
-Start the router with `WANAKU_HOME` pointing to a path the current user cannot write to. The router should fail to start or report an error (Infinispan cannot create the data directory).
-
-```bash
-UNWRITABLE_DIR="/tmp/wanaku-unwritable-$$"
-mkdir -p "${UNWRITABLE_DIR}"
-chmod 000 "${UNWRITABLE_DIR}"
-
-export WANAKU_HOME="${UNWRITABLE_DIR}"
-
-WANAKU_HTTP_AUTH=none java -Dquarkus.profile=local \
-  -Dquarkus.http.port="${WANAKU_ROUTER_PORT}" \
-  -jar "${ROUTER_JAR}" > /tmp/wanaku-unwritable-output-$$.log 2>&1 &
-ROUTER_PID=$!
-
-# Wait briefly for the process to fail
-sleep 10
-
-# The router should have failed -- either the process exited or health check fails
-kill -0 "${ROUTER_PID}" 2>/dev/null
-STILL_RUNNING=$?
-
-if [ "${STILL_RUNNING}" -ne 0 ]; then
-  echo "PASS: router failed to start with unwritable WANAKU_HOME (process exited)"
-else
-  # Process is still running -- check health
-  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${WANAKU_ROUTER_URL}/q/health/ready" 2>/dev/null || echo "000")
-  if [ "${HTTP_CODE}" != "200" ]; then
-    echo "PASS: router is not healthy with unwritable WANAKU_HOME"
-  else
-    echo "FAIL: router is healthy despite unwritable WANAKU_HOME"
-  fi
-  kill "${ROUTER_PID}" 2>/dev/null || true
-  wait "${ROUTER_PID}" 2>/dev/null || true
-fi
-
-unset WANAKU_HOME
-chmod 755 "${UNWRITABLE_DIR}" 2>/dev/null || true
-rm -rf "${UNWRITABLE_DIR}" 2>/dev/null || true
-rm -f /tmp/wanaku-unwritable-output-$$.log 2>/dev/null || true
-```
-
-### Test 8.2: WANAKU_HOME set to empty string
-
-When `WANAKU_HOME` is empty, `WanakuHome.get()` should fall through to the default. Verify the router starts normally and uses `~/.wanaku/`.
+### Test 7.1: Empty WANAKU_HOME falls back to the default
 
 ```bash
 export WANAKU_HOME=""
+BARN_USER_HOME_3="${HOME_TEST_ROOT}/barn-user-home-3"
+mkdir -p "${BARN_USER_HOME_3}"
+start_barn "${HOME_TEST_ROOT}/barn-empty.log" -Duser.home="${BARN_USER_HOME_3}" \
+  && echo "PASS: Barn started with an empty WANAKU_HOME" || echo "FAIL: Barn did not start"
+[ -d "${BARN_USER_HOME_3}/.wanaku/barn" ] && echo "PASS: empty WANAKU_HOME ignored, default home used" \
+  || echo "FAIL: store not at ${BARN_USER_HOME_3}/.wanaku/barn"
+stop_barn
+unset WANAKU_HOME
+```
 
-WANAKU_HTTP_AUTH=none java -Dquarkus.profile=local \
-  -Dquarkus.http.port="${WANAKU_ROUTER_PORT}" \
-  -jar "${ROUTER_JAR}" &
-ROUTER_PID=$!
+### Test 7.2: WANAKU_HOME below a regular file stops Barn
 
-MAX_RETRIES=30
-RETRY_INTERVAL=5
-ROUTER_HEALTHY=false
-for i in $(seq 1 ${MAX_RETRIES}); do
-  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${WANAKU_ROUTER_URL}/q/health/ready" 2>/dev/null || echo "000")
-  if [ "${HTTP_CODE}" = "200" ]; then
-    ROUTER_HEALTHY=true
-    break
-  fi
-  sleep ${RETRY_INTERVAL}
-done
+Barn cannot create its store. It must exit with an error. It must not run without a store.
 
-if [ "${ROUTER_HEALTHY}" = "true" ]; then
-  echo "PASS: router started with empty WANAKU_HOME (fell through to default)"
+```bash
+NOT_A_DIR="${HOME_TEST_ROOT}/not-a-directory"
+: > "${NOT_A_DIR}"
+export WANAKU_HOME="${NOT_A_DIR}/home"
+java -Dquarkus.http.port="${HOME_BARN_PORT}" -Djgroups.mcast_port="${HOME_BARN_JGROUPS_PORT}" \
+  -jar "${BARN_JAR}" > "${HOME_TEST_ROOT}/barn-invalid.log" 2>&1 &
+BARN_PID=$!
+i=0
+while kill -0 "${BARN_PID}" 2>/dev/null && [ "${i}" -lt 60 ]; do i=$((i + 1)); sleep 1; done
+if kill -0 "${BARN_PID}" 2>/dev/null; then
+  echo "FAIL: Barn still runs with an invalid WANAKU_HOME"
+  stop_barn
 else
-  echo "FAIL: router did not start with empty WANAKU_HOME"
+  wait "${BARN_PID}"; EXIT_CODE=$?
+  grep -q "Not a directory" "${HOME_TEST_ROOT}/barn-invalid.log" && [ "${EXIT_CODE}" -ne 0 ] \
+    && echo "PASS: Barn exited (code ${EXIT_CODE}) and reported 'Not a directory'" \
+    || echo "FAIL: Barn exited with code ${EXIT_CODE} without the expected error"
+  BARN_PID=""
 fi
-
-# Verify it used the default path
-DEFAULT_BARN_DATA="${HOME}/.wanaku/barn"
-if [ -d "${DEFAULT_BARN_DATA}" ]; then
-  echo "PASS: default router data directory exists (empty env var ignored)"
-else
-  echo "FAIL: default router data directory not found"
-fi
-
-kill "${ROUTER_PID}" 2>/dev/null || true
-wait "${ROUTER_PID}" 2>/dev/null || true
 unset WANAKU_HOME
 ```
 
 ---
 
-## Phase 9: Final Cleanup
+## Phase 8: CLI Home Resolution
 
-All cleanup is idempotent. This phase removes temporary directories and ensures no test processes are left running.
+The CLI uses the Wanaku home for its credentials file and its cloud target. `wanaku auth login --api-token` stores a
+token without a network call. Every CLI command creates the home directory, because the credentials store creates its
+parent directory.
 
-### Step 9.1: Kill any remaining test processes
+### Test 8.1: WANAKU_HOME selects the credentials file
 
 ```bash
-for PID_VAR in WANAKU_PID ROUTER_PID; do
-  eval "PID_VAL=\${${PID_VAR}}"
-  if [ -n "${PID_VAL}" ]; then
-    kill "${PID_VAL}" 2>/dev/null || true
-    wait "${PID_VAL}" 2>/dev/null || true
+CLI_USER_HOME="${HOME_TEST_ROOT}/cli-user-home"
+CLI_ENV_HOME="${HOME_TEST_ROOT}/cli-env-home"
+mkdir -p "${CLI_USER_HOME}"
+WANAKU_HOME="${CLI_ENV_HOME}" java -Duser.home="${CLI_USER_HOME}" -jar "${CLI_JAR}" auth login --api-token=home-token-env
+[ $? -eq 0 ] && [ -f "${CLI_ENV_HOME}/credentials" ] \
+  && echo "PASS: credentials stored at ${CLI_ENV_HOME}/credentials" || echo "FAIL: credentials not under WANAKU_HOME"
+[ -e "${CLI_USER_HOME}/.wanaku" ] && echo "FAIL: default home also created" || echo "PASS: default home not used"
+```
+
+### Test 8.2: auth status reports the resolved file
+
+```bash
+OUTPUT=$(WANAKU_HOME="${CLI_ENV_HOME}" java -jar "${CLI_JAR}" auth status 2>/dev/null)
+echo "${OUTPUT}" | grep -q "Credentials File: ${CLI_ENV_HOME}/credentials" \
+  && echo "PASS: auth status shows ${CLI_ENV_HOME}/credentials" || echo "FAIL: unexpected status: ${OUTPUT}"
+```
+
+### Test 8.3: The credentials file is private
+
+```bash
+MODE=$(stat -c '%a' "${CLI_ENV_HOME}/credentials" 2>/dev/null || stat -f '%Lp' "${CLI_ENV_HOME}/credentials")
+[ "${MODE}" = "600" ] && echo "PASS: credentials file mode 600" || echo "FAIL: credentials file mode ${MODE}"
+```
+
+### Test 8.4: Another home does not see the token (negative)
+
+```bash
+OUTPUT=$(WANAKU_HOME="${HOME_TEST_ROOT}/cli-other-home" java -jar "${CLI_JAR}" auth token --get 2>&1)
+EXIT_CODE=$?
+[ "${EXIT_CODE}" -ne 0 ] && echo "${OUTPUT}" | grep -q "No valid API token" \
+  && echo "PASS: no token in another home (exit ${EXIT_CODE})" || echo "FAIL: token visible from another home"
+```
+
+### Test 8.5: The system property wins over WANAKU_HOME
+
+```bash
+CLI_SYSPROP_HOME="${HOME_TEST_ROOT}/cli-sysprop-home"
+CLI_ENV_HOME_2="${HOME_TEST_ROOT}/cli-env-home-2"
+WANAKU_HOME="${CLI_ENV_HOME_2}" java -Duser.home="${CLI_USER_HOME}" -Dwanaku.home="${CLI_SYSPROP_HOME}" \
+  -jar "${CLI_JAR}" auth login --api-token=home-token-sysprop > /dev/null 2>&1
+[ -f "${CLI_SYSPROP_HOME}/credentials" ] && [ ! -e "${CLI_ENV_HOME_2}/credentials" ] \
+  && echo "PASS: -Dwanaku.home wins" || echo "FAIL: precedence not respected"
+```
+
+### Test 8.6: Default and empty WANAKU_HOME use ${user.home}/.wanaku
+
+```bash
+for VALUE in unset empty; do
+  CLI_DEFAULT_HOME="${HOME_TEST_ROOT}/cli-default-${VALUE}"
+  mkdir -p "${CLI_DEFAULT_HOME}"
+  if [ "${VALUE}" = "unset" ]; then
+    env -u WANAKU_HOME java -Duser.home="${CLI_DEFAULT_HOME}" -jar "${CLI_JAR}" auth login --api-token=t > /dev/null 2>&1
+  else
+    WANAKU_HOME="" java -Duser.home="${CLI_DEFAULT_HOME}" -jar "${CLI_JAR}" auth login --api-token=t > /dev/null 2>&1
   fi
+  [ -f "${CLI_DEFAULT_HOME}/.wanaku/credentials" ] && echo "PASS: ${VALUE} WANAKU_HOME uses the default home" \
+    || echo "FAIL: ${VALUE} WANAKU_HOME did not use ${CLI_DEFAULT_HOME}/.wanaku"
 done
+```
+
+### Test 8.7: WANAKU_CREDENTIALS wins over the home
+
+```bash
+CLI_EXPLICIT="${HOME_TEST_ROOT}/cli-explicit/creds"
+WANAKU_HOME="${HOME_TEST_ROOT}/cli-env-home-3" WANAKU_CREDENTIALS="${CLI_EXPLICIT}" \
+  java -jar "${CLI_JAR}" auth login --api-token=home-token-explicit > /dev/null 2>&1
+[ -f "${CLI_EXPLICIT}" ] && [ ! -e "${HOME_TEST_ROOT}/cli-env-home-3/credentials" ] \
+  && echo "PASS: WANAKU_CREDENTIALS selects the file" || echo "FAIL: WANAKU_CREDENTIALS ignored"
+```
+
+### Test 8.8: The cloud target is stored in the home
+
+```bash
+WANAKU_HOME="${CLI_ENV_HOME}" java -jar "${CLI_JAR}" cloud target set --context home-ctx -n home-ns --router home-router
+grep -q "^router=home-router$" "${CLI_ENV_HOME}/cloud.properties" 2>/dev/null \
+  && echo "PASS: cloud target stored in ${CLI_ENV_HOME}/cloud.properties" || echo "FAIL: cloud.properties not written"
+OUTPUT=$(WANAKU_HOME="${CLI_ENV_HOME}" java -jar "${CLI_JAR}" cloud target show 2>/dev/null)
+echo "${OUTPUT}" | grep -q "router: home-router" && echo "PASS: cloud target show reads it back" \
+  || echo "FAIL: unexpected output: ${OUTPUT}"
+```
+
+### Test 8.9: Logout removes the credentials file
+
+```bash
+WANAKU_HOME="${CLI_ENV_HOME}" java -jar "${CLI_JAR}" auth logout > /dev/null 2>&1
+[ ! -e "${CLI_ENV_HOME}/credentials" ] && echo "PASS: credentials removed by logout" || echo "FAIL: credentials still present"
+```
+
+---
+
+## Phase 9: Wanaku Server Persistence Path
+
+Wanaku Server is the replacement of the Java router. It does not read `WANAKU_HOME`. This phase uses its own
+server instance (helpers of Step 1.4).
+
+### Test 9.1: Default path is $HOME/.wanaku/server
+
+```bash
+unset WANAKU_PERSIST_PATH WANAKU_PERSIST_BACKEND
+SERVER_HOME="${HOME_TEST_ROOT}/server-home"
+mkdir -p "${SERVER_HOME}"
+start_server "${HOME_TEST_ROOT}/server-default.log" "${SERVER_HOME}" || echo "FAIL: server did not start"
+java -jar "${CLI_JAR}" namespaces create "${HOME_NS}-default" --host "${WANAKU_SERVER_URL}" --no-auth
+REGISTRY="${SERVER_HOME}/.wanaku/server/registry.json"
+i=0; while [ ! -f "${REGISTRY}" ] && [ "${i}" -lt 10 ]; do i=$((i + 1)); sleep 1; done
+jq -e --arg ns "${HOME_NS}-default" '[.namespaces[].name] | index($ns) != null' "${REGISTRY}" > /dev/null 2>&1 \
+  && echo "PASS: registry.json written to ${REGISTRY}" || echo "FAIL: ${REGISTRY} missing or without the namespace"
+stop_server
+```
+
+### Test 9.2: The server ignores WANAKU_HOME
+
+```bash
+SERVER_HOME_2="${HOME_TEST_ROOT}/server-home-2"
+SERVER_WANAKU_HOME="${HOME_TEST_ROOT}/server-wanaku-home"
+mkdir -p "${SERVER_HOME_2}" "${SERVER_WANAKU_HOME}"
+export WANAKU_HOME="${SERVER_WANAKU_HOME}"
+start_server "${HOME_TEST_ROOT}/server-wanaku-home.log" "${SERVER_HOME_2}" || echo "FAIL: server did not start"
+java -jar "${CLI_JAR}" namespaces create "${HOME_NS}-ignored" --host "${WANAKU_SERVER_URL}" --no-auth > /dev/null 2>&1
+i=0; while [ ! -f "${SERVER_HOME_2}/.wanaku/server/registry.json" ] && [ "${i}" -lt 10 ]; do i=$((i + 1)); sleep 1; done
+stop_server
+unset WANAKU_HOME
+[ -f "${SERVER_HOME_2}/.wanaku/server/registry.json" ] && [ -z "$(ls -A "${SERVER_WANAKU_HOME}")" ] \
+  && echo "PASS: registry under \$HOME/.wanaku/server, WANAKU_HOME untouched" || echo "FAIL: server used WANAKU_HOME"
+```
+
+### Test 9.3: WANAKU_PERSIST_PATH selects the directory
+
+```bash
+export WANAKU_PERSIST_BACKEND=file
+export WANAKU_PERSIST_PATH="${HOME_TEST_ROOT}/server-data"
+start_server "${HOME_TEST_ROOT}/server-data-1.log" "${SERVER_HOME}" || echo "FAIL: server did not start"
+java -jar "${CLI_JAR}" namespaces create "${HOME_NS}" --host "${WANAKU_SERVER_URL}" --no-auth
+[ $? -eq 0 ] && echo "PASS: namespace ${HOME_NS} created" || echo "FAIL: namespace not created"
+```
+
+### Step 9.4: Register a forward
+
+Follow [common/start-test-mcp-server.md](common/start-test-mcp-server.md) with `TEST_MCP_NAMESPACE="${HOME_NS}"`. It
+uses `WANAKU_SERVER_URL` of this plan. After completion, `TEST_MCP_URL`, `TEST_MCP_PID` and `TEST_MCP_FORWARD` must be
+set.
+
+### Test 9.5: registry.json contains the namespace, the forward and the tools
+
+```bash
+REGISTRY="${WANAKU_PERSIST_PATH}/registry.json"
+i=0
+until jq -e --arg f "${TEST_MCP_FORWARD}" '[.forwards[].name] | index($f) != null' "${REGISTRY}" > /dev/null 2>&1; do
+  i=$((i + 1)); [ "${i}" -ge 10 ] && break; sleep 1
+done
+jq -e --arg ns "${HOME_NS}" --arg f "${TEST_MCP_FORWARD}" \
+  '([.namespaces[].name] | index($ns) != null) and ([.forwards[].name] | index($f) != null) and (.tools | length > 0)' \
+  "${REGISTRY}" > /dev/null \
+  && echo "PASS: registry.json has the namespace, the forward and $(jq '.tools | length' "${REGISTRY}") tools" \
+  || echo "FAIL: registry.json incomplete"
+```
+
+### Test 9.6: Change state and stop the server in an orderly way
+
+The enable/disable route has no CLI command, so `curl` is used. The namespace is created immediately before the
+shutdown, so the final flush must write it.
+
+```bash
+curl -s -o /dev/null -X PUT "${WANAKU_SERVER_URL}/api/v1/tools/echo/disable"
+java -jar "${CLI_JAR}" namespaces create "${HOME_NS}-late" --host "${WANAKU_SERVER_URL}" --no-auth > /dev/null 2>&1
+stop_server
+grep -q "registry persistence flushed during shutdown" "${HOME_TEST_ROOT}/server-data-1.log" \
+  && echo "PASS: registry flushed during the orderly shutdown" || echo "FAIL: no flush message in the log"
+```
+
+### Test 9.7: The registry is reloaded after the restart
+
+```bash
+start_server "${HOME_TEST_ROOT}/server-data-2.log" "${SERVER_HOME}" || echo "FAIL: server did not restart"
+NAMESPACES=$(java -jar "${CLI_JAR}" namespaces list --host "${WANAKU_SERVER_URL}" --no-auth --plain 2>/dev/null | awk 'NR>1 {print $1}')
+for NS in "${HOME_NS}" "${HOME_NS}-late"; do
+  echo "${NAMESPACES}" | grep -qx "${NS}" && echo "PASS: namespace ${NS} reloaded" || echo "FAIL: namespace ${NS} lost"
+done
+java -jar "${CLI_JAR}" forwards list --host "${WANAKU_SERVER_URL}" --no-auth --plain 2>/dev/null \
+  | awk 'NR>1 {print $1}' | grep -qx "${TEST_MCP_FORWARD}" \
+  && echo "PASS: forward ${TEST_MCP_FORWARD} reloaded" || echo "FAIL: forward lost"
+ENABLED=$(curl -s "${WANAKU_SERVER_URL}/api/v1/tools/echo" | jq '.data.enabled')
+[ "${ENABLED}" = "false" ] && echo "PASS: tool 'echo' is still disabled" || echo "FAIL: tool 'echo' enabled=${ENABLED}"
+```
+
+### Step 9.8: Stop the reference MCP server and the server
+
+Follow the [Shutdown](common/start-test-mcp-server.md#shutdown) section of
+[common/start-test-mcp-server.md](common/start-test-mcp-server.md). Then stop the server:
+
+```bash
+stop_server
+echo "PASS: server stopped"
+```
+
+### Test 9.9: WANAKU_PERSIST_BACKEND=none writes nothing
+
+```bash
+export WANAKU_PERSIST_BACKEND=none
+unset WANAKU_PERSIST_PATH
+SERVER_HOME_NONE="${HOME_TEST_ROOT}/server-home-none"
+mkdir -p "${SERVER_HOME_NONE}"
+start_server "${HOME_TEST_ROOT}/server-none-1.log" "${SERVER_HOME_NONE}" || echo "FAIL: server did not start"
+java -jar "${CLI_JAR}" namespaces create "${HOME_NS}-none" --host "${WANAKU_SERVER_URL}" --no-auth > /dev/null 2>&1
+stop_server
+[ -z "$(ls -A "${SERVER_HOME_NONE}")" ] && echo "PASS: nothing written with persistence disabled" \
+  || echo "FAIL: files written: $(find "${SERVER_HOME_NONE}" -type f)"
+start_server "${HOME_TEST_ROOT}/server-none-2.log" "${SERVER_HOME_NONE}" || echo "FAIL: server did not restart"
+java -jar "${CLI_JAR}" namespaces list --host "${WANAKU_SERVER_URL}" --no-auth --plain 2>/dev/null \
+  | awk 'NR>1 {print $1}' | grep -qx "${HOME_NS}-none" \
+  && echo "FAIL: namespace survived without persistence" || echo "PASS: namespace not restored without persistence"
+stop_server
+unset WANAKU_PERSIST_BACKEND
+```
+
+### Test 9.10: Unusable WANAKU_PERSIST_PATH (negative)
+
+The server starts, serves requests and logs each failed write. It does not exit.
+
+```bash
+export WANAKU_PERSIST_BACKEND=file
+export WANAKU_PERSIST_PATH="${NOT_A_DIR}/server"
+start_server "${HOME_TEST_ROOT}/server-invalid.log" "${SERVER_HOME}" \
+  && echo "PASS: server started with an unusable persistence path" || echo "FAIL: server did not start"
+java -jar "${CLI_JAR}" namespaces create "${HOME_NS}-invalid" --host "${WANAKU_SERVER_URL}" --no-auth > /dev/null 2>&1
+i=0; until grep -q "failed to persist registry" "${HOME_TEST_ROOT}/server-invalid.log" || [ "${i}" -ge 10 ]; do i=$((i + 1)); sleep 1; done
+grep -q "failed to persist registry" "${HOME_TEST_ROOT}/server-invalid.log" \
+  && echo "PASS: write failure logged" || echo "FAIL: no write failure in the log"
+stop_server
+```
+
+### Test 9.11: Corrupt registry.json (negative)
+
+The server logs the load failure and starts with an empty registry. It does not overwrite the file until the
+registry changes.
+
+```bash
+export WANAKU_PERSIST_PATH="${HOME_TEST_ROOT}/server-corrupt"
+mkdir -p "${WANAKU_PERSIST_PATH}"
+echo '{not json' > "${WANAKU_PERSIST_PATH}/registry.json"
+start_server "${HOME_TEST_ROOT}/server-corrupt.log" "${SERVER_HOME}" \
+  && echo "PASS: server started with a corrupt registry.json" || echo "FAIL: server did not start"
+grep -q "failed to load persisted registry" "${HOME_TEST_ROOT}/server-corrupt.log" \
+  && echo "PASS: load failure logged" || echo "FAIL: no load failure in the log"
+stop_server
+[ "$(cat "${WANAKU_PERSIST_PATH}/registry.json")" = "{not json" ] \
+  && echo "PASS: corrupt file kept unchanged" || echo "FAIL: corrupt file was overwritten"
+unset WANAKU_PERSIST_PATH WANAKU_PERSIST_BACKEND
+```
+
+---
+
+## Phase 10: Default Home Isolation
+
+### Test 10.1: The real default home is unchanged
+
+```bash
+REAL_HOME_SNAPSHOT_AFTER="${HOME_TEST_ROOT}/real-home-after.txt"
+if [ -d "${HOME}/.wanaku" ]; then
+  find "${HOME}/.wanaku" -type f -exec ls -l --time-style=+%s {} \; 2>/dev/null | sort > "${REAL_HOME_SNAPSHOT_AFTER}"
+else
+  : > "${REAL_HOME_SNAPSHOT_AFTER}"
+fi
+if cmp -s "${REAL_HOME_SNAPSHOT_BEFORE}" "${REAL_HOME_SNAPSHOT_AFTER}"; then
+  echo "PASS: ${HOME}/.wanaku unchanged by the test run"
+else
+  echo "FAIL: ${HOME}/.wanaku changed:"
+  diff "${REAL_HOME_SNAPSHOT_BEFORE}" "${REAL_HOME_SNAPSHOT_AFTER}"
+fi
+```
+
+The snapshot uses GNU `ls --time-style`. On macOS, use `stat -f '%m %z %N'` instead.
+
+---
+
+## Phase 11: Cleanup
+
+All cleanup steps are idempotent.
+
+### Step 11.1: Stop the remaining processes
+
+```bash
+stop_barn 2>/dev/null || true
+stop_server 2>/dev/null || true
+if [ -n "${TEST_MCP_PID}" ]; then
+  kill "${TEST_MCP_PID}" 2>/dev/null || true
+  wait "${TEST_MCP_PID}" 2>/dev/null || true
+fi
 echo "PASS: all test processes stopped (or already absent)"
 ```
 
-### Step 9.2: Remove temporary directories
+### Step 11.2: Remove the temporary directories
 
 ```bash
-rm -rf "${CUSTOM_HOME_DIR}" 2>/dev/null || true
-rm -rf "${CUSTOM_HOME_DIR_SYSPROP}" 2>/dev/null || true
-rm -rf /tmp/wanaku-unwritable-* 2>/dev/null || true
-echo "PASS: temporary directories cleaned up"
+rm -rf "${HOME_TEST_ROOT}" 2>/dev/null || true
+echo "PASS: ${HOME_TEST_ROOT} removed"
 ```
 
-### Step 9.3: Unset test environment variables
+### Step 11.3: Unset the test variables
 
 ```bash
-unset WANAKU_HOME
-unset CUSTOM_HOME_DIR
-unset CUSTOM_HOME_DIR_SYSPROP
+unset WANAKU_HOME WANAKU_CREDENTIALS WANAKU_PERSIST_PATH WANAKU_PERSIST_BACKEND HOME_TEST_ROOT
 echo "PASS: test environment variables cleared"
 ```
 
@@ -834,47 +785,54 @@ echo "PASS: test environment variables cleared"
 | Phase | Test ID | Test Name | Priority |
 |-------|---------|-----------|----------|
 | 0 | 0.1 | Verify required tools | Critical |
-| 0 | 0.2 | Verify Java version >= 21 | Critical |
-| 0 | 0.3 | Create temporary test directories | Critical |
-| 0 | 0.4 | Verify no conflict with default home | Critical |
-| 1 | 1.1 | Verify build artifacts exist | Critical |
-| 1 | 1.2 | Re-augment the backend to disable OIDC | Critical |
-| 2 | 2.1 | Start the router with default home | Critical |
-| 2 | 2.2 | Wait for router health (default) | Critical |
-| 2 | 2.3 | Verify default Infinispan data directory | Critical |
-| 2 | 2.4 | Verify default log file | High |
-| 2 | 2.5 | Stop default instance | Critical |
-| 2 | 2.6 | Verify default process is gone | High |
-| 3 | 3.1 | Start the router with WANAKU_HOME | Critical |
-| 3 | 3.2 | Wait for router health (env var) | Critical |
-| 3 | 3.3 | Verify Infinispan data under custom home | Critical |
-| 3 | 3.4 | Verify log file under custom home | High |
-| 3 | 3.5 | CLI connects with custom home | High |
-| 3 | 3.6 | Router persists data at custom location | Critical |
-| 3 | 3.7 | Verify log file has content | Medium |
-| 3 | 3.8 | Stop custom-home instance | Critical |
-| 3 | 3.9 | Verify custom-home process is gone | High |
-| 4 | 4.1 | Verify the router JAR is available | Critical |
-| 4 | 4.2 | Start router with -Dwanaku.home | Critical |
-| 4 | 4.3 | Wait for router health (sys prop) | Critical |
-| 4 | 4.4 | Verify Infinispan data under sys prop path | Critical |
-| 4 | 4.5 | Verify log file under sys prop path | High |
-| 4 | 4.6 | Stop system property router | Critical |
-| 4 | 4.7 | Verify sys prop process is gone | High |
-| 5 | 5.1 | Start router with both overrides | Critical |
-| 5 | 5.2 | Wait for router health (precedence) | Critical |
-| 5 | 5.3 | System property path has data (wins) | Critical |
-| 5 | 5.4 | Env var path has no data (loses) | Critical |
-| 5 | 5.5 | Log file under sys prop, not env var | High |
-| 5 | 5.6 | Stop precedence test router | Critical |
-| 5 | 5.7 | Verify precedence process is gone | High |
-| 6 | 6.1 | Credentials path uses custom home | Medium |
-| 6 | 6.2 | No credentials leak to default home | Medium |
-| 7 | 7.1 | Record default home state | High |
-| 7 | 7.2 | Remove custom home directories | High |
-| 7 | 7.3 | Default home unchanged after cleanup | High |
-| 8 | 8.1 | Unwritable WANAKU_HOME (negative) | High |
-| 8 | 8.2 | Empty WANAKU_HOME falls to default | High |
-| 9 | 9.1 | Kill remaining test processes | Critical |
-| 9 | 9.2 | Remove temporary directories | Critical |
-| 9 | 9.3 | Unset test environment variables | Medium |
+| 0 | 0.2 | Test root is not the default home | Critical |
+| 0 | 0.3 | Record the state of the real default home | High |
+| 0 | 0.4 | Verify the ports are free | Critical |
+| 1 | 1.1 | Build Barn and the CLI | Critical |
+| 1 | 1.2 | Build Wanaku Server | Critical |
+| 1 | 1.3 | Write the pipeline configuration | Critical |
+| 1 | 1.4 | Define the helper functions | Critical |
+| 2 | 2.1 | Start Barn without overrides | Critical |
+| 2 | 2.2 | Barn is ready | Critical |
+| 2 | 2.3 | Store in the default home | Critical |
+| 2 | 2.4 | CLI can connect | High |
+| 2 | 2.5 | Stop Barn | High |
+| 3 | 3.1 | Start Barn with WANAKU_HOME | Critical |
+| 3 | 3.2 | Store and log in WANAKU_HOME | Critical |
+| 3 | 3.3 | Default home not used | High |
+| 3 | 3.4 | Stop Barn | High |
+| 4 | 4.1 | Start Barn with -Dwanaku.home | Critical |
+| 4 | 4.2 | Store under the system property path | Critical |
+| 4 | 4.3 | Stop Barn | High |
+| 5 | 5.1 | Start Barn with both overrides | Critical |
+| 5 | 5.2 | System property path wins | Critical |
+| 5 | 5.3 | Stop Barn | High |
+| 6 | 6.1 | Create a data store in a fresh home | High |
+| 6 | 6.2 | Data store survives a restart | Critical |
+| 6 | 6.3 | Barn is ready after the restart | High |
+| 7 | 7.1 | Empty WANAKU_HOME falls back to the default | High |
+| 7 | 7.2 | WANAKU_HOME below a regular file stops Barn (negative) | High |
+| 8 | 8.1 | WANAKU_HOME selects the credentials file | Critical |
+| 8 | 8.2 | auth status reports the resolved file | Medium |
+| 8 | 8.3 | Credentials file is private | High |
+| 8 | 8.4 | Another home does not see the token (negative) | High |
+| 8 | 8.5 | System property wins over WANAKU_HOME | High |
+| 8 | 8.6 | Default and empty WANAKU_HOME | High |
+| 8 | 8.7 | WANAKU_CREDENTIALS wins over the home | Medium |
+| 8 | 8.8 | Cloud target stored in the home | Medium |
+| 8 | 8.9 | Logout removes the credentials file | Medium |
+| 9 | 9.1 | Server default path is $HOME/.wanaku/server | Critical |
+| 9 | 9.2 | Server ignores WANAKU_HOME | High |
+| 9 | 9.3 | WANAKU_PERSIST_PATH selects the directory | Critical |
+| 9 | 9.4 | Register a forward | Critical |
+| 9 | 9.5 | registry.json contains namespace, forward and tools | Critical |
+| 9 | 9.6 | Change state and stop in an orderly way | Critical |
+| 9 | 9.7 | Registry reloaded after the restart | Critical |
+| 9 | 9.8 | Stop the reference MCP server and the server | High |
+| 9 | 9.9 | WANAKU_PERSIST_BACKEND=none writes nothing | High |
+| 9 | 9.10 | Unusable WANAKU_PERSIST_PATH (negative) | High |
+| 9 | 9.11 | Corrupt registry.json (negative) | High |
+| 10 | 10.1 | Real default home unchanged | High |
+| 11 | 11.1 | Stop the remaining processes | Critical |
+| 11 | 11.2 | Remove the temporary directories | Critical |
+| 11 | 11.3 | Unset the test variables | Medium |

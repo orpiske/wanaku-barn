@@ -104,7 +104,7 @@ curl -sf http://localhost:11434/api/tags | jq -r '.models[].name' | grep -q "^${
 export AGENT_MODEL_KIND=openai
 export AGENT_MODEL_NAME=meta-llama/llama-3-8b-instruct
 export AGENT_BASE_URL=https://openrouter.ai/api/v1
-export AGENT_API_KEY=<your OpenRouter key>
+export AGENT_API_KEY="${AGENT_API_KEY:?set AGENT_API_KEY to your OpenRouter key}"
 ```
 
 ### Option C: OpenAI
@@ -113,7 +113,7 @@ export AGENT_API_KEY=<your OpenRouter key>
 export AGENT_MODEL_KIND=openai
 export AGENT_MODEL_NAME=gpt-4o-mini
 export AGENT_BASE_URL=https://api.openai.com/v1
-export AGENT_API_KEY=<your OpenAI key>
+export AGENT_API_KEY="${AGENT_API_KEY:?set AGENT_API_KEY to your OpenAI key}"
 ```
 
 You do not add the Forage model library manually. Barn adds the dependencies for `forage.agent.model.kind` to the

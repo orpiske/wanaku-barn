@@ -1,12 +1,35 @@
-# Test Plan: Extended UI Page Tests
+# Test Plan: Barn and Debugger UI Plugins
 
 ## Overview
 
-This test plan describes Playwright e2e tests for Wanaku admin UI pages that are not covered by the basic UI test suite. It targets: Forwards, Data Stores, Namespaces, Service Catalog, Tool Call Debugger, and cross-page Navigation.
+This test plan covers the admin UI pages that do not belong to the Wanaku Server core UI. These pages come from two
+UI plugins that this repository builds:
 
-The basic UI tests (`basic-ui-test.md`) cover Dashboard, Tools, Resources, and Prompts. This plan extends coverage to the remaining pages.
+| Plugin | Plugin ID | Source | Pages (host route) | Backend |
+|--------|-----------|--------|--------------------|---------|
+| Wanaku Barn | `wanaku-barn` | `apps/ui/admin` | Data Stores (`#/wanaku/data-stores`), Service Catalog (`#/wanaku/service-catalog`), Semantic Routers (`#/wanaku/semantic-routers`), Kamelets (`#/wanaku/kamelets`), Change History (`#/wanaku/change-history`) | Barn, through the plugin service `wanaku-barn-api` |
+| Deployment Debugger | `wanaku-debugger` | `apps/ui/debugger` | Debugger (`#/wanaku/debugger`, in the Developer section) with the tabs MCP, A2A, Inference and LLM Chat | None. It calls the MCP (`8081`), inference (`8083`) and A2A (`8084`) listeners and the management API directly. |
 
-Every scenario is described in Playwright terms (navigate, click, fill, assert) and is fully automatable.
+The core pages of Wanaku Server (Dashboard, Tools, Resources, Prompts, Namespaces, Forwards and others) are tested in
+[basic-ui-test.md](basic-ui-test.md). The Java router pages "Tool Call Debugger", "LLM Chat" and "Code Execution"
+were removed. The Deployment Debugger plugin replaces the debugger and the chat page. Namespace editing with paths
+and the `public` namespace do not exist any more.
+
+The plan runs four test suites from this repository and one integration phase:
+
+| Phase | Suite | Target |
+|-------|-------|--------|
+| 2 | Unit tests of both plugins (`node --test`) | No server |
+| 3 | Playwright, `tests/e2e/ui/playwright.config.ts` | Barn standalone admin UI at `${WANAKU_BARN_URL}/admin/` |
+| 4 | Playwright, `tests/e2e/debugger/playwright.config.ts` | Debugger plugin in a stub host on `127.0.0.1:4177` |
+| 5 | Playwright, `tests/e2e/ui/playwright.live.config.ts` (optional) | Barn admin UI dev server and a live Barn |
+| 6 | HTTP checks and browser steps | Both plugins installed in Wanaku Server |
+
+Most Playwright specs mock the Barn API with `page.route`. Only `smoke.spec.ts` and the optional live spec use a real
+Barn. Phase 6 is the only phase that tests the plugins inside the Wanaku Server host. No automated suite covers that
+integration yet, so Phase 6 uses HTTP checks and browser steps.
+
+**Components:** Wanaku Barn (Phases 3, 5 and 6) and Wanaku Server (Phase 6).
 
 ## Prerequisites
 
@@ -14,523 +37,400 @@ Every scenario is described in Playwright terms (navigate, click, fill, assert) 
 
 | Tool | Minimum version | Verify command |
 |------|-----------------|----------------|
-| `node` | 18+ | `node --version` |
+| `node` | 22+ (the debugger unit tests use `--experimental-strip-types`) | `node --version` |
 | `yarn` | 1.22+ | `yarn --version` |
 | `npx` | any | `npx --version` |
+| `java` | 21+ | `java -version` |
 | `curl` | any | `curl --version` |
+| `jq` | 1.6+ | `jq --version` |
+
+Playwright downloads Chromium from `cdn.playwright.dev`. The host must be able to reach it.
 
 ### Prerequisite check
 
 ```bash
-node --version || { echo "FAIL: node not found"; exit 1; }
-yarn --version || { echo "FAIL: yarn not found"; exit 1; }
-npx --version || { echo "FAIL: npx not found"; exit 1; }
-curl --version > /dev/null || { echo "FAIL: curl not found"; exit 1; }
-echo "PASS: all prerequisites met"
+for TOOL in node yarn npx java curl jq; do
+  command -v "${TOOL}" > /dev/null 2>&1 \
+    && echo "PASS: ${TOOL} found" \
+    || { echo "FAIL: ${TOOL} not found"; exit 1; }
+done
+NODE_MAJOR=$(node --version | sed 's/^v\([0-9]*\).*/\1/')
+[ "${NODE_MAJOR}" -ge 22 ] && echo "PASS: Node.js ${NODE_MAJOR}" || echo "FAIL: Node.js 22+ required (found ${NODE_MAJOR})"
 ```
 
 ### Environment variables
 
 ```bash
-export WANAKU_ROUTER_URL="${WANAKU_ROUTER_URL:-http://localhost:8080}"
+export WANAKU_REPO_ROOT="${WANAKU_REPO_ROOT:-.}"
+export GROUP_PREFIX="${GROUP_PREFIX:-uix-}"
+export BARN_LIVE_TESTS="${BARN_LIVE_TESTS:-false}"
 ```
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `WANAKU_ROUTER_URL` | `http://localhost:8080` | Base URL of the Wanaku router (no trailing slash) |
+| `WANAKU_REPO_ROOT` | `.` | Path to this repository (wanaku-barn) |
+| `GROUP_PREFIX` | `uix-` | Prefix for the data store that Phase 6 creates |
+| `BARN_LIVE_TESTS` | `false` | Set to `true` to run Phase 5. Phase 5 needs a Barn with the native deterministic preview service. |
 
-### Remote instance requirements
-
-The router at `WANAKU_ROUTER_URL` must:
-- Be running and healthy (`/q/health/ready` returns 200)
-- Have auth disabled (`WANAKU_HTTP_AUTH=none`) or the test user must be authenticated
-- Serve the admin UI at `/admin/`
+[common/start-barn.md](common/start-barn.md) sets `WANAKU_BARN_URL`, `CLI_JAR` and `WANAKU_BARN_PID`.
+[common/start-server.md](common/start-server.md) sets `WANAKU_SERVER_URL`, `WANAKU_MCP_BASE_URL`,
+`WANAKU_SERVER_PID` and `WANAKU_SERVER_DATA_DIR`. The Playwright suites read the Barn URL from `WANAKU_ROUTER_URL`.
+The name is historical. It must point at Barn, not at Wanaku Server.
 
 ---
 
-## Phase 0: Verify Router Connectivity
+## Phase 0: Manual Prerequisites
 
-### Test 0.1: Router health check
+There are no manual prerequisites.
+
+---
+
+## Phase 1: Environment Setup
+
+### Step 1.1: Start Wanaku Barn
+
+Follow [common/start-barn.md](common/start-barn.md) steps 1 to 4. After completion, `WANAKU_BARN_URL`, `CLI_JAR`
+and `WANAKU_BARN_PID` must be set. Do not start Wanaku Server yet. Phase 6 starts it with the plugins installed.
+
+### Test 1.2: Barn serves its standalone admin UI
+
+Barn still embeds a standalone build of `apps/ui/admin` at `/admin/`. The Playwright suite of Phase 3 uses it.
 
 ```bash
-HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${WANAKU_ROUTER_URL}/q/health/ready")
-if [ "${HTTP_STATUS}" -eq 200 ]; then
-  echo "PASS: router healthy at ${WANAKU_ROUTER_URL}"
+BODY=$(curl -s "${WANAKU_BARN_URL}/admin/")
+if echo "${BODY}" | grep -q "<title>Wanaku Console</title>"; then
+  echo "PASS: Barn admin UI served at ${WANAKU_BARN_URL}/admin/"
 else
-  echo "FAIL: router not reachable (HTTP ${HTTP_STATUS})"
+  echo "FAIL: Barn admin UI not served"
   exit 1
 fi
 ```
 
-### Test 0.2: Install dependencies and Playwright browser
+### Step 1.3: Install the Node.js dependencies
 
 ```bash
-cd tests/e2e/ui
-yarn install && npx playwright install chromium
+cd "${WANAKU_REPO_ROOT}"
+(cd apps/ui/admin && yarn install --frozen-lockfile) \
+  && (cd apps/ui/debugger && yarn install --frozen-lockfile) \
+  && (cd tests/e2e/ui && yarn install --frozen-lockfile && npx playwright install chromium)
 if [ $? -eq 0 ]; then
-  echo "PASS: dependencies and browser installed"
+  echo "PASS: dependencies and Chromium installed"
 else
-  echo "FAIL: installation failed"
+  echo "FAIL: dependency installation failed"
   exit 1
+fi
+```
+
+### Step 1.4: Build both plugins
+
+```bash
+cd "${WANAKU_REPO_ROOT}"
+(cd apps/ui/admin && yarn build:plugin) && (cd apps/ui/debugger && yarn build:plugin)
+for FILE in apps/ui/admin/plugin-dist/plugin.js apps/ui/admin/plugin-dist/plugin.json \
+            apps/ui/debugger/plugin-dist/plugin.js apps/ui/debugger/plugin-dist/plugin.json; do
+  [ -f "${FILE}" ] && echo "PASS: ${FILE} exists" || { echo "FAIL: ${FILE} not found"; exit 1; }
+done
+```
+
+---
+
+## Phase 2: Plugin Unit Tests
+
+### Test 2.1: Barn plugin unit tests
+
+These tests cover the response envelope handling of the plugin HTTP client, the pages that the plugin mounts, and
+the semantic router publication flow.
+
+```bash
+(cd "${WANAKU_REPO_ROOT}/apps/ui/admin" && yarn test)
+[ $? -eq 0 ] && echo "PASS: Barn plugin unit tests passed" || echo "FAIL: Barn plugin unit tests failed"
+```
+
+### Test 2.2: Debugger plugin unit tests
+
+These tests cover credential redaction, governance denial messages, the management envelope and the chat tool
+loop.
+
+```bash
+(cd "${WANAKU_REPO_ROOT}/apps/ui/debugger" && yarn test)
+[ $? -eq 0 ] && echo "PASS: Debugger plugin unit tests passed" || echo "FAIL: Debugger plugin unit tests failed"
+```
+
+---
+
+## Phase 3: Barn Pages (Playwright, Barn Standalone UI)
+
+The default configuration runs every spec in `tests/e2e/ui/tests` against `${WANAKU_ROUTER_URL}/admin/`. When the
+URL is on `localhost` and does not answer, the configuration starts the Barn jar itself. Test 1.2 makes sure that the
+Barn of Phase 1 answers, so Playwright reuses it.
+
+### Test 3.1: Smoke test against the live Barn
+
+`smoke.spec.ts` loads the landing page. The landing page is Data Stores.
+
+```bash
+(cd "${WANAKU_REPO_ROOT}/tests/e2e/ui" && WANAKU_ROUTER_URL="${WANAKU_BARN_URL}" \
+  npx playwright test tests/smoke.spec.ts --reporter=line)
+[ $? -eq 0 ] && echo "PASS: Barn admin UI landing page loads" || echo "FAIL: smoke test failed"
+```
+
+### Test 3.2: Complete Barn page suite
+
+```bash
+(cd "${WANAKU_REPO_ROOT}/tests/e2e/ui" && WANAKU_ROUTER_URL="${WANAKU_BARN_URL}" npx playwright test --reporter=line)
+EXIT_CODE=$?
+if [ "${EXIT_CODE}" -eq 0 ]; then
+  echo "PASS: Barn page suite passed"
+else
+  echo "FAIL: Barn page suite failed (exit code ${EXIT_CODE}) — see tests/e2e/ui/playwright-report"
+fi
+```
+
+The suite skips `semantic-routers.live.spec.ts` when `BARN_URL` is not set. This skip is expected.
+
+| Page | Spec | Scenarios |
+|------|------|-----------|
+| Data Stores | `data-store-downloads.spec.ts` | Binary ZIP and UTF-8 JSON downloads, filenames, download errors, labels and audit metadata, search and filter, delete with revision, pagination |
+| Kamelets | `kamelets.spec.ts` | List and search, bundled entries protected, upload, rejected files (negative), removal, failure and retry, wizard refresh |
+| Semantic Routers | `semantic-routers.spec.ts` | Create, validate, preview, publish, reopen, remove, name validation (negative), drafts, generated files, experts, guards |
+| Change History | `change-history.spec.ts` | Newest-first list, filter by resource type, deep link, empty state |
+| Landing page | `smoke.spec.ts` | Data Stores loads against the live Barn |
+
+### Test 3.3 (optional): Barn pages against the Vite preview build
+
+`playwright.ui.config.ts` runs the mocked specs against `vite preview` on `127.0.0.1:4173`. It needs no Barn. Build
+the standalone UI first.
+
+```bash
+(cd "${WANAKU_REPO_ROOT}/apps/ui/admin" && yarn build) \
+  && (cd "${WANAKU_REPO_ROOT}/tests/e2e/ui" && npx playwright test --config playwright.ui.config.ts --reporter=line)
+[ $? -eq 0 ] && echo "PASS: preview suite passed" || echo "FAIL: preview suite failed"
+```
+
+---
+
+## Phase 4: Debugger Page (Playwright, Stub Host)
+
+`tests/e2e/debugger/serve.mjs` serves `apps/ui/debugger/plugin-dist` in a minimal plugin host on
+`127.0.0.1:4177`. The specs mock the MCP, A2A, inference and management endpoints. The configuration uses the
+Playwright installation of `tests/e2e/ui`.
+
+### Test 4.1: Debugger suite
+
+```bash
+(cd "${WANAKU_REPO_ROOT}/tests/e2e/ui" && npx playwright test --config ../debugger/playwright.config.ts --reporter=line)
+EXIT_CODE=$?
+if [ "${EXIT_CODE}" -eq 0 ]; then
+  echo "PASS: Debugger suite passed"
+else
+  echo "FAIL: Debugger suite failed (exit code ${EXIT_CODE})"
+fi
+```
+
+| Area | Spec | Scenarios |
+|------|------|-----------|
+| Registration | `debugger.spec.ts` | The plugin registers and renders without Barn services |
+| MCP | `debugger.spec.ts` | Schema-driven invocation, allowed and governance-denied (negative), inspector, custom namespace without discovery |
+| A2A | `debugger.spec.ts` | Send a message and follow the returned task |
+| Inference | `debugger.spec.ts` | Token forwarding, tool calls shown and not executed |
+| LLM Chat | `chat.spec.ts` | Only selected namespaced tools run, credential storage opt-in, stop and clear, refused unselected tools (negative), inert HTML |
+
+---
+
+## Phase 5 (Optional): Semantic Router Against a Live Barn
+
+Run this phase only when `BARN_LIVE_TESTS` is `true`. The spec authors, classifies, publishes and removes a semantic
+router through the live Barn API. The Barn must have the native deterministic preview service configured. The
+configuration starts the admin UI dev server on `127.0.0.1:4174` with a proxy to `BARN_URL`.
+
+### Test 5.1: Live semantic router flow
+
+```bash
+if [ "${BARN_LIVE_TESTS}" = "true" ]; then
+  (cd "${WANAKU_REPO_ROOT}/tests/e2e/ui" && BARN_URL="${WANAKU_BARN_URL}" \
+    npx playwright test --config playwright.live.config.ts --reporter=line)
+  [ $? -eq 0 ] && echo "PASS: live semantic router flow passed" || echo "FAIL: live semantic router flow failed"
+else
+  echo "SKIP: BARN_LIVE_TESTS is not true"
 fi
 ```
 
 ---
 
-## Phase 1: Forwards Page
+## Phase 6: Plugins Inside Wanaku Server
 
-**Route:** `#/forwards`
-**Page title:** "Forwards"
-**Page description contains:** "A list of forwards registered in the system"
+This phase installs both plugins in a Wanaku Server instance, as the operator and the Plugin Catalog do. Wanaku
+Server reads plugins from `<WANAKU_PERSIST_PATH>/plugins` at startup, so the plugins must be in place before the
+server starts.
 
-### Test 1.1: Forwards page loads with title and description
+### Step 6.1: Prepare the server data directory
 
-**Spec file:** `forwards.spec.ts`
+The configuration allows tool calls in the `default` namespace (step 2b of
+[common/start-server.md](common/start-server.md)) and maps the plugin service `wanaku-barn-api` to Barn.
 
-1. Navigate to `#/forwards` via `BasePage.navigateTo('/forwards')`.
-2. Wait for `Loading...` to disappear.
-3. Assert `h1.title` text is `"Forwards"`.
-4. Assert `p.description` text contains `"forwards registered"`.
-5. Assert the DataTable container is visible.
+```bash
+export WANAKU_SERVER_DATA_DIR="${WANAKU_SERVER_DATA_DIR:-$(mktemp -d)}"
+mkdir -p "${WANAKU_SERVER_DATA_DIR}/plugins/wanaku-barn" "${WANAKU_SERVER_DATA_DIR}/plugins/wanaku-debugger"
+cp -r "${WANAKU_REPO_ROOT}/apps/ui/admin/plugin-dist/." "${WANAKU_SERVER_DATA_DIR}/plugins/wanaku-barn/"
+cp -r "${WANAKU_REPO_ROOT}/apps/ui/debugger/plugin-dist/." "${WANAKU_SERVER_DATA_DIR}/plugins/wanaku-debugger/"
+echo "PASS: plugins copied to ${WANAKU_SERVER_DATA_DIR}/plugins"
+```
 
-### Test 1.2: Empty state is displayed when no forwards exist
+Run step 2b of [common/start-server.md](common/start-server.md) with `WANAKU_TEST_GOVERNED_NAMESPACES=default`. Then
+append the plugin service mapping to the same file. Do not use the `cat >` command of the optional section of
+[common/start-barn.md](common/start-barn.md) here, because it replaces the governance configuration.
 
-1. Navigate to `#/forwards`.
-2. If no forwards exist, assert empty state text `"Start by adding forwards"` is visible in the table body.
+```bash
+cat >> "${WANAKU_SERVER_CONFIG}" <<EOF
+plugins:
+  - id: wanaku-barn
+    services:
+      wanaku-barn-api:
+        target: ${WANAKU_BARN_URL}
+EOF
+grep -q "wanaku-barn-api" "${WANAKU_SERVER_CONFIG}" \
+  && echo "PASS: plugin service mapping added" || { echo "FAIL: mapping not added"; exit 1; }
+```
 
-### Test 1.3: Add a forward via modal
+### Step 6.2: Start Wanaku Server and the reference MCP server
 
-1. Navigate to `#/forwards`.
-2. Click the `"Add Forward"` toolbar button.
-3. Assert modal opens with heading `"Add a Forward"`.
-4. Fill `#forward-name` with a unique name (e.g., `e2e-forward-<timestamp>`).
-5. Fill `#forward-address` with `http://localhost:9090`.
-6. Optionally select a namespace from the `NamespaceSelect` dropdown.
-7. Assert primary button (`"Add"`) is enabled.
-8. Click the primary button to submit.
-9. Assert modal closes.
-10. Assert a table row containing the forward name appears.
+Follow [common/start-server.md](common/start-server.md) steps 1, 2 and 3 to 6. Keep the default ports. The Debugger
+derives the MCP, inference and A2A URLs from the page origin with the fixed ports `8081`, `8083` and `8084`.
 
-### Test 1.4: Edit a forward via modal
+Then follow [common/start-test-mcp-server.md](common/start-test-mcp-server.md). It registers the forward
+`everything` in the `default` namespace.
 
-1. Seed a forward via API (`POST /api/v1/forwards`).
-2. Navigate to `#/forwards`.
-3. Locate the row with the seeded forward name.
-4. Click the `"Edit"` icon button (ghost button with Edit icon) in that row.
-5. Assert modal opens with heading `"Edit forward"`.
-6. Assert `#forward-name` is pre-filled with the existing name.
-7. Assert `#forward-address` is pre-filled with the existing address.
-8. Change `#forward-address` to `http://localhost:9999`.
-9. Click the `"Save"` primary button.
-10. Assert modal closes.
-11. Assert the row now shows the updated address.
+### Test 6.3: Wanaku Server discovered both plugins
 
-### Test 1.5: Delete a forward
+```bash
+IDS=$(curl -s "${WANAKU_SERVER_URL}/api/v1/plugins" | jq -r '.data[].id' | sort | tr '\n' ' ')
+if [ "${IDS}" = "wanaku-barn wanaku-debugger " ]; then
+  echo "PASS: plugins discovered: ${IDS}"
+else
+  echo "FAIL: unexpected plugin list '${IDS}'"
+fi
+```
 
-1. Seed a forward via API.
-2. Navigate to `#/forwards`.
-3. Locate the row with the seeded forward name.
-4. Click the `"Delete"` icon button (ghost button with TrashCan icon) in that row.
-5. Assert the row with that forward name disappears from the table.
+### Test 6.4: Plugin files are served
 
-### Test 1.6: Refresh a forward
+```bash
+for PLUGIN in wanaku-barn wanaku-debugger; do
+  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${WANAKU_SERVER_URL}/plugins/${PLUGIN}/plugin.js")
+  [ "${HTTP_CODE}" = "200" ] && echo "PASS: ${PLUGIN}/plugin.js served" \
+    || echo "FAIL: ${PLUGIN}/plugin.js returned HTTP ${HTTP_CODE}"
+done
+HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${WANAKU_SERVER_URL}/plugins/no-such-plugin/plugin.js")
+[ "${HTTP_CODE}" = "404" ] && echo "PASS: unknown plugin file returns 404" \
+  || echo "FAIL: unknown plugin file returned HTTP ${HTTP_CODE}"
+```
 
-1. Seed a forward via API.
-2. Navigate to `#/forwards`.
-3. Locate the row with the seeded forward name.
-4. Click the `"Refresh"` icon button (ghost button with Renew icon) in that row.
-5. Assert no error notification appears.
-6. Assert the row is still present.
+### Test 6.5: The plugin proxy reaches Barn
 
-### Test 1.7: Primary button is disabled when required fields are empty
+Create a data store in Barn with the CLI. Then read it through the plugin proxy route that the Barn pages use.
 
-1. Navigate to `#/forwards`.
-2. Click `"Add Forward"`.
-3. Assert the primary button (`"Add"`) is disabled.
-4. Fill only `#forward-name` -- assert primary button is still disabled.
-5. Clear `#forward-name`, fill only `#forward-address` -- assert primary button is still disabled.
-6. Fill both fields -- assert primary button is enabled.
-7. Cancel the modal.
+```bash
+DS_NAME="${GROUP_PREFIX}ui-entry"
+DS_FILE="$(mktemp)"
+echo "ui-extended-pages" > "${DS_FILE}"
+java -jar "${CLI_JAR}" data-store add --host "${WANAKU_BARN_URL}" --no-auth \
+  --name "${DS_NAME}" --read-from-file "${DS_FILE}"
+[ $? -eq 0 ] && echo "PASS: data store ${DS_NAME} created in Barn" || echo "FAIL: data store not created"
 
-**Cleanup:** Each test must delete any forwards it created, either via `afterEach` API cleanup or inline deletion.
+COUNT=$(curl -s "${WANAKU_SERVER_URL}/api/plugins/wanaku-barn/wanaku-barn-api/api/v1/data-store" \
+  | jq --arg n "${DS_NAME}" '[.data[] | select(.name == $n)] | length')
+[ "${COUNT}" = "1" ] && echo "PASS: data store visible through the plugin proxy" \
+  || echo "FAIL: data store not visible through the plugin proxy (count ${COUNT})"
+```
 
----
+### Test 6.6: Unknown plugin service is rejected (negative)
 
-## Phase 2: Data Stores Page
+```bash
+RESPONSE=$(curl -s -w "\n%{http_code}" "${WANAKU_SERVER_URL}/api/plugins/wanaku-barn/no-such-service/api/v1/data-store")
+HTTP_CODE=$(echo "${RESPONSE}" | tail -1)
+ERROR=$(echo "${RESPONSE}" | head -1 | jq -r '.error')
+if [ "${HTTP_CODE}" = "404" ] && echo "${ERROR}" | grep -q "service no-such-service not found"; then
+  echo "PASS: unknown plugin service returns 404"
+else
+  echo "FAIL: expected 404, got HTTP ${HTTP_CODE} (${ERROR})"
+fi
+```
 
-**Route:** `#/data-stores`
-**Page title:** "Data Stores"
-**Page description contains:** "Manage stored data files"
+### Test 6.7: Barn pages in the host (browser)
 
-### Test 2.1: Data Stores page loads with title and description
+Open `${WANAKU_SERVER_URL}/admin/` in a browser. Do these steps manually or with a browser automation agent. Record
+PASS or FAIL for each row.
 
-**Spec file:** `data-stores.spec.ts`
+| Step | Action | Expected result |
+|------|--------|-----------------|
+| 1 | Look at the navigation | The entries Data Stores, Service Catalog, Semantic Routers, Kamelets and Change History are present |
+| 2 | Select Data Stores | The URL hash is `#/wanaku/data-stores`. The heading is "Data Stores". The row `${GROUP_PREFIX}ui-entry` is present. |
+| 3 | Select Service Catalog | The heading is "Service Catalog". The tabs "Service Catalogs" and "Service Templates" are present. |
+| 4 | Select the "Service Templates" tab | Template cards are present (Barn seeds the bundled templates, for example `echo-tool`), or the empty-state tile is shown |
+| 5 | Select Semantic Routers, Kamelets and Change History | Each page shows its heading. No error notification is shown. |
+| 6 | Reload the page on `#/wanaku/kamelets` | The Kamelets page loads again without a "Page not found." message |
 
-1. Navigate to `#/data-stores`.
-2. Wait for `Loading...` to disappear.
-3. Assert `h1.title` text is `"Data Stores"`.
-4. Assert `p.description` text contains `"Manage stored data files"`.
+### Test 6.8: Debugger page in the host (browser)
 
-### Test 2.2: Empty state message when no data stores exist
+| Step | Action | Expected result |
+|------|--------|-----------------|
+| 1 | Expand the Developer section of the navigation | The entry "Debugger" is present |
+| 2 | Select Debugger | The URL hash is `#/wanaku/debugger`. The tabs MCP, A2A, Inference and LLM Chat are present. |
+| 3 | On the MCP tab, select namespace `default` and tool `echo`. Set `message` to `hello`. Run the request. | The response contains `Echo: hello` |
+| 4 | Select a namespace that is not in `WANAKU_TEST_GOVERNED_NAMESPACES` (create one with `wanaku namespaces create`) and call a tool there (negative) | The Debugger explains the governance denial (`No governance policy permits this action.`) |
 
-1. Navigate to `#/data-stores`.
-2. If no data stores exist, assert the table body shows `"No data stores found"`.
+### Test 6.9: Barn pages report an unreachable Barn (negative)
 
-### Test 2.3: Add a data store via file upload modal
+Stop Barn (see the [Shutdown](common/start-barn.md#shutdown) section of
+[common/start-barn.md](common/start-barn.md)). The plugin proxy must return `502`.
 
-1. Navigate to `#/data-stores`.
-2. Click the `"Add Data Store"` toolbar button.
-3. Assert modal opens with heading `"Add Data Store"`.
-4. Assert `#datastore-name` input is present with placeholder `"e.g. config.yaml"`.
-5. Assert the file input (`#file-input`) is present.
-6. Use Playwright's `setInputFiles` on the file input to upload a small test file (e.g., a text file with content `"e2e-test-data"`).
-7. Assert the `"Selected: ..."` indicator appears showing the file name and size.
-8. Assert the name field auto-fills with the file name (if it was empty).
-9. Click `"Upload"` primary button.
-10. Assert modal closes.
-11. Assert a table row appears with the data store name.
-12. Assert the row shows columns: ID, Name, Data (Base64 truncated).
+```bash
+kill "${WANAKU_BARN_PID}" 2>/dev/null || true
+wait "${WANAKU_BARN_PID}" 2>/dev/null || true
+HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+  "${WANAKU_SERVER_URL}/api/plugins/wanaku-barn/wanaku-barn-api/api/v1/data-store")
+[ "${HTTP_CODE}" = "502" ] && echo "PASS: plugin proxy returns 502 when Barn is down" \
+  || echo "FAIL: plugin proxy returned HTTP ${HTTP_CODE}"
+```
 
-### Test 2.4: View a data store via modal
-
-1. Seed a data store via API.
-2. Navigate to `#/data-stores`.
-3. Click the `"View"` icon button for the seeded data store.
-4. Assert a passive modal opens with heading containing `"View Data Store:"` and the data store name.
-5. Assert the modal displays `ID`, `Name`, and `Contents` sections.
-6. Assert the decoded content is visible in a `<pre>` block.
-7. Close the modal.
-
-### Test 2.5: Delete a data store
-
-1. Seed a data store via API.
-2. Navigate to `#/data-stores`.
-3. Click the `"Delete"` icon button for the seeded data store.
-4. Assert the row disappears from the table.
-
-### Test 2.6: Submit without selecting a file shows error
-
-1. Navigate to `#/data-stores`.
-2. Click `"Add Data Store"`.
-3. Click `"Upload"` without selecting a file.
-4. Assert the error text `"Please select a file to upload"` appears inside the modal.
-5. Cancel the modal.
-
-**Cleanup:** Each test must delete any data stores it created via API in `afterEach`.
+In the browser, open Data Stores again. Expected result: the page shows an error notification. It does not show an
+empty table without an explanation.
 
 ---
 
-## Phase 3: Namespaces Page
+## Phase 7: Cleanup
 
-**Route:** `#/namespaces`
-**Page title:** "Namespaces"
-**Page description contains:** "Namespaces help organize and isolate tools and resources"
+All cleanup steps are idempotent.
 
-### Test 3.1: Namespaces page loads with title and description
+### Step 7.1: Remove the test data store
 
-**Spec file:** `namespaces.spec.ts`
+Barn is stopped after Test 6.9. Its home directory is removed in Step 7.3, so the data store is removed with it.
+When Test 6.9 did not run, remove the entry explicitly:
 
-1. Navigate to `#/namespaces`.
-2. Wait for `Loading...` to disappear.
-3. Assert `h1.title` text is `"Namespaces"`.
-4. Assert `p.description` text contains `"Namespaces help organize"`.
+```bash
+java -jar "${CLI_JAR}" data-store remove --host "${WANAKU_BARN_URL}" --no-auth \
+  --name "${GROUP_PREFIX}ui-entry" 2>/dev/null || true
+rm -f "${DS_FILE}" 2>/dev/null || true
+echo "PASS: test data store removed (or already absent)"
+```
 
-### Test 3.2: Default namespaces are present
+### Step 7.2: Stop the reference MCP server and Wanaku Server
 
-1. Navigate to `#/namespaces`.
-2. Assert the table has columns: ID, Name, Path, Status, Actions.
-3. Assert at least one row with path `"default"` exists.
-4. Assert rows with protected paths (`"default"`, `"public"`, `"wanaku-internal"`) have disabled Edit and Delete buttons.
+Follow the Shutdown sections of [common/start-test-mcp-server.md](common/start-test-mcp-server.md#shutdown) and
+[common/start-server.md](common/start-server.md#shutdown). The server shutdown removes `WANAKU_SERVER_DATA_DIR`,
+including the copied plugins.
 
-### Test 3.3: Create a namespace via modal
+### Step 7.3: Stop Barn
 
-1. Navigate to `#/namespaces`.
-2. Click the `"Create Namespace"` toolbar button.
-3. Assert modal opens with heading `"Create Namespace"`.
-4. Fill `#namespace-name` with a unique name (e.g., `e2e-ns-<timestamp>`).
-5. Fill `#namespace-path` with a unique path (e.g., `ns-e2e-<timestamp>`).
-6. Assert primary button (`"Create"`) is enabled.
-7. Click `"Create"`.
-8. Assert modal closes.
-9. Assert a table row with the namespace name and path appears.
-10. Assert the status column shows `"Allocated"` for the new namespace.
+Follow the [Shutdown](common/start-barn.md#shutdown) section of [common/start-barn.md](common/start-barn.md).
 
-### Test 3.4: Edit a namespace via modal
+### Step 7.4: Remove the Playwright artifacts (optional)
 
-1. Create a namespace via API or via the UI (from Test 3.3).
-2. Navigate to `#/namespaces`.
-3. Click the `"Edit"` icon button for the created namespace.
-4. Assert modal opens with heading `"Edit Namespace"`.
-5. Assert `#namespace-path` is disabled (path cannot be changed after creation).
-6. Change `#namespace-name` to a new value.
-7. Click `"Save"`.
-8. Assert modal closes.
-9. Assert the row now shows the updated name.
-
-### Test 3.5: Delete a namespace
-
-1. Create a namespace (non-protected).
-2. Navigate to `#/namespaces`.
-3. Click the `"Delete"` icon button for the created namespace.
-4. Assert the row disappears or reverts to `"Available"` status.
-
-### Test 3.6: Duplicate name validation
-
-1. Navigate to `#/namespaces`.
-2. Note the name of an existing allocated namespace.
-3. Click `"Create Namespace"`.
-4. Type the existing namespace name into `#namespace-name`.
-5. Assert the field shows invalid state with text containing `"already in use"`.
-6. Assert the primary button is disabled.
-7. Cancel the modal.
-
-### Test 3.7: Duplicate path validation
-
-1. Navigate to `#/namespaces`.
-2. Click `"Create Namespace"`.
-3. Type an existing path (e.g., `"default"`) into `#namespace-path`.
-4. Assert the field shows invalid state with text containing `"already in use"`.
-5. Assert the primary button is disabled.
-6. Cancel the modal.
-
-### Test 3.8: Expandable row shows labels
-
-1. If a namespace has labels, assert the expand chevron is present.
-2. Click the expand button.
-3. Assert the expanded row shows a `"Labels:"` heading and `<li>` items.
-
-**Cleanup:** Each test must delete any namespaces it created via API in `afterEach`.
-
----
-
-## Phase 4: Service Catalog Page
-
-**Route:** `#/service-catalog`
-**Page title:** "Service Catalog"
-**Page description contains:** "View and manage deployed service catalogs"
-
-### Test 4.1: Service Catalog page loads with tabs
-
-**Spec file:** `service-catalog.spec.ts`
-
-1. Navigate to `#/service-catalog`.
-2. Wait for `Loading...` to disappear.
-3. Assert `h1.title` text is `"Service Catalog"`.
-4. Assert `p.description` text contains `"View and manage"`.
-5. Assert two tabs are visible: `"Service Catalogs"`, `"Service Templates"`.
-6. Assert the `"Service Catalogs"` tab is active by default.
-
-### Test 4.2: Service Catalogs tab -- empty state
-
-1. Navigate to `#/service-catalog`.
-2. If no catalogs exist, assert the empty tile displays `"No service catalogs found"`.
-3. Assert the CLI hint `"wanaku service init"` is shown.
-
-### Test 4.3: Service Catalogs tab -- search bar present
-
-1. Navigate to `#/service-catalog`.
-2. Assert the search input with placeholder `"Search service catalogs..."` is visible.
-
-### Test 4.4: Service Catalogs tab -- catalog card structure (if catalogs exist)
-
-1. Navigate to `#/service-catalog`.
-2. If catalogs exist, assert each card tile shows:
-   - Catalog name in an `h4`.
-   - Description text.
-   - Service tags (blue `Tag` components).
-   - A `"Deploy"` button.
-   - A `"View details"` / `"Hide details"` toggle button.
-   - A delete icon button.
-
-### Test 4.5: Service Catalogs tab -- expand card details
-
-1. If a catalog exists, click `"View details"` on the first card.
-2. Assert the expanded section shows system details with routes and rules file names.
-3. Click `"Hide details"`.
-4. Assert the details section is hidden.
-
-### Test 4.6: Service Catalogs tab -- delete confirmation modal
-
-1. If a catalog exists, click the delete icon button on a card.
-2. Assert a danger modal opens with heading `"Delete Service Catalog"`.
-3. Assert the modal body contains the catalog name and `"cannot be undone"`.
-4. Click `"Cancel"`.
-5. Assert the modal closes and the card is still present.
-
-### Test 4.7: Service Catalogs tab -- deploy wizard
-
-1. If a catalog exists, click `"Deploy"` on a card.
-2. Assert the `ComposedModal` wizard opens with title containing `"Deploy:"`.
-3. Assert a `ProgressIndicator` shows two steps: `"Deployment Model"` and `"Instructions"`.
-4. Assert three radio buttons are shown: `"Local (java -jar)"`, `"Docker / Podman"`, `"Kubernetes / OpenShift"`.
-5. Assert `"Local (java -jar)"` is selected by default.
-6. Click `"Next"`.
-7. Wait for loading to finish.
-8. Assert step 2 shows deployment instructions with a `CodeSnippet`.
-9. Click `"Back"` and assert step 1 is shown again.
-10. Click `"Next"` again, then `"Done"`.
-11. Assert the wizard closes.
-
-### Test 4.8: Service Templates tab -- loads
-
-1. Navigate to `#/service-catalog`.
-2. Click the `"Service Templates"` tab.
-3. Wait for `Loading...` to disappear.
-4. Assert either template cards are visible or the empty tile shows `"No service templates found"`.
-
-### Test 4.9: Service Templates tab -- search bar present
-
-1. Click the `"Service Templates"` tab.
-2. Assert the search input with placeholder `"Search service templates..."` is visible.
-
-### Test 4.10: Service Templates tab -- template card structure (if templates exist)
-
-1. If templates exist, assert each card shows:
-   - Template name in an `h4`.
-   - Description text.
-   - Service tags (purple `Tag` components).
-   - A `"Parameterized"` green tag if `hasProperties` is true.
-   - A `"Create Service Catalog"` button.
-   - A `"View details"` toggle button.
-
-### Test 4.11: Service Templates tab -- instantiate wizard
-
-1. If a template exists, click `"Create Service Catalog"` on a card.
-2. Assert the `ComposedModal` wizard opens with title containing `"Create Service Catalog from Template"`.
-3. Assert `#service-name` and `#service-system` text inputs are present.
-4. If the template has properties, assert property input fields are rendered with labels.
-5. Click `"Cancel"`.
-6. Assert the wizard closes.
-
-**Note:** Tests 4.4-4.7 and 4.10-4.11 require pre-existing catalogs or templates. If the router has none, these tests should be skipped gracefully using `test.skip()` with a descriptive message.
-
----
-
-## Phase 6: Tool Call Debugger Page
-
-**Route:** `#/tool-calls`
-**Page title:** "Tool Call Debugger"
-**Page description contains:** "Real-time monitoring and debugging"
-
-### Test 6.1: Tool Call Debugger page loads with title and description
-
-**Spec file:** `tool-calls.spec.ts`
-
-1. Navigate to `#/tool-calls`.
-2. Assert `h1.title` text is `"Tool Call Debugger"`.
-3. Assert `p.description` text contains `"Real-time monitoring and debugging"`.
-
-### Test 6.2: Filter controls are present
-
-1. Navigate to `#/tool-calls`.
-2. Assert two `Search` inputs are visible:
-   - One with placeholder `"Filter by Connection ID"`.
-   - One with placeholder `"Filter by Tool Name"`.
-3. Assert a `<select>` dropdown for error category filtering is present with option `"All Error Categories"`.
-
-### Test 6.3: Action buttons are present
-
-1. Navigate to `#/tool-calls`.
-2. Assert the `"Clear Events"` button (danger style with TrashCan icon) is visible.
-3. Assert the `"Export to JSON"` button (tertiary style with Download icon) is visible.
-4. Assert the auto-scroll toggle is visible with label `"Auto-scroll to latest"`.
-
-### Test 6.4: Empty state when no events exist
-
-1. Navigate to `#/tool-calls`.
-2. Assert the empty message `"No tool call events yet"` is visible.
-3. Assert the event count text shows `"Showing 0 of 0 events"`.
-
-### Test 6.5: Clear events button works
-
-1. Navigate to `#/tool-calls`.
-2. Click `"Clear Events"`.
-3. Assert the empty state message is still visible (no crash, no error).
-
-### Test 6.6: Auto-scroll toggle works
-
-1. Navigate to `#/tool-calls`.
-2. Locate the toggle `#auto-scroll-toggle`.
-3. Assert it is toggled on by default.
-4. Click the toggle to turn it off.
-5. Assert it is now toggled off.
-6. Click again to re-enable.
-7. Assert it is toggled on.
-
-**Note:** Testing actual SSE event rendering requires a running tool invocation or SSE mock. This is out of scope for this plan. If SSE events are present, the accordion-based event detail view should be verified as a follow-up.
-
----
-
-## Phase 7: Navigation
-
-### Test 7.1: Sidebar links navigate to correct pages
-
-**Spec file:** `navigation.spec.ts`
-
-For each sidebar link, click it and verify the correct page loads:
-
-| Sidebar Label | Expected Route | Expected Page Title |
-|---------------|----------------|---------------------|
-| Home | `#/` | `Dashboard` |
-| Tools | `#/tools` | `Tools` |
-| Resources | `#/resources` | `Resources` |
-| Prompts | `#/prompts` | `Prompts` |
-| Namespaces | `#/namespaces` | `Namespaces` |
-| Forwards | `#/forwards` | `Forwards` |
-| Service Catalog | `#/service-catalog` | `Service Catalog` |
-
-Developer submenu items (require expanding the `"Developer"` menu first):
-
-| Sidebar Label | Expected Route | Expected Page Title |
-|---------------|----------------|---------------------|
-| Tool Call Debugger | `#/tool-calls` | `Tool Call Debugger` |
-| Data Stores | `#/data-stores` | `Data Stores` |
-
-1. For each entry above, click the sidebar link (expanding the Developer menu if needed).
-2. Wait for `Loading...` to disappear.
-3. Assert `h1.title` matches the expected page title.
-4. Assert the URL hash matches the expected route.
-
-### Test 7.2: Developer submenu expands and collapses
-
-1. Locate the `"Developer"` SideNavMenu item.
-2. Click to expand it.
-3. Assert subitems `"LLMChat"`, `"Code Execution"`, `"Tool Call Debugger"`, `"Data Stores"` are visible.
-4. Click to collapse it.
-5. Assert subitems are hidden.
-
----
-
-## Page Object and Helper Guidance
-
-### New page objects to create
-
-| Page Object | File | Base Class |
-|-------------|------|------------|
-| `ForwardsPage` | `pages/forwards.page.ts` | `BasePage` |
-| `DataStoresPage` | `pages/data-stores.page.ts` | `BasePage` |
-| `NamespacesPage` | `pages/namespaces.page.ts` | `BasePage` |
-| `ServiceCatalogPage` | `pages/service-catalog.page.ts` | `BasePage` |
-| `ToolCallsPage` | `pages/tool-calls.page.ts` | `BasePage` |
-
-### New API helpers to add
-
-Extend `ApiHelper` in `helpers/api-helpers.ts` with:
-
-- `addForward(forward)` -- `POST /api/v1/forwards`
-- `deleteForward(name)` -- `DELETE /api/v1/forwards/{name}`
-- `addDataStore(dataStore)` -- `POST /api/v1/data-stores`
-- `deleteDataStore(id)` -- `DELETE /api/v1/data-stores/{id}`
-- `createNamespace(namespace)` -- `POST /api/v1/namespaces`
-- `deleteNamespace(id)` -- `DELETE /api/v1/namespaces/{id}`
-
-### New test data helpers to add
-
-Extend `helpers/test-data.ts` with:
-
-- `forwardData()` -- returns `{ name, address }` with unique suffix
-- `dataStoreData()` -- returns `{ name }` with unique suffix
-- `namespaceData()` -- returns `{ name, path }` with unique suffix
+```bash
+cd "${WANAKU_REPO_ROOT}"
+rm -rf tests/e2e/ui/playwright-report tests/e2e/ui/test-results tests/e2e/ui/test-results-live \
+  tests/e2e/debugger/test-results 2>/dev/null || true
+echo "PASS: Playwright artifacts removed"
+```
 
 ---
 
@@ -538,45 +438,27 @@ Extend `helpers/test-data.ts` with:
 
 | Phase | Test ID | Test Name | Priority |
 |-------|---------|-----------|----------|
-| 0 | 0.1 | Router health check | Critical |
-| 0 | 0.2 | Install dependencies and browser | Critical |
-| 1 | 1.1 | Forwards page loads with title and description | High |
-| 1 | 1.2 | Empty state when no forwards exist | Medium |
-| 1 | 1.3 | Add a forward via modal | Critical |
-| 1 | 1.4 | Edit a forward via modal | Critical |
-| 1 | 1.5 | Delete a forward | Critical |
-| 1 | 1.6 | Refresh a forward | Medium |
-| 1 | 1.7 | Primary button disabled when fields empty | Medium |
-| 2 | 2.1 | Data Stores page loads with title and description | High |
-| 2 | 2.2 | Empty state when no data stores exist | Medium |
-| 2 | 2.3 | Add a data store via file upload | Critical |
-| 2 | 2.4 | View a data store via modal | High |
-| 2 | 2.5 | Delete a data store | Critical |
-| 2 | 2.6 | Submit without file shows error | Medium |
-| 3 | 3.1 | Namespaces page loads with title and description | High |
-| 3 | 3.2 | Default namespaces are present | High |
-| 3 | 3.3 | Create a namespace via modal | Critical |
-| 3 | 3.4 | Edit a namespace via modal | Critical |
-| 3 | 3.5 | Delete a namespace | Critical |
-| 3 | 3.6 | Duplicate name validation | Medium |
-| 3 | 3.7 | Duplicate path validation | Medium |
-| 3 | 3.8 | Expandable row shows labels | Medium |
-| 4 | 4.1 | Service Catalog page loads with tabs | High |
-| 4 | 4.2 | Service Catalogs tab -- empty state | Medium |
-| 4 | 4.3 | Service Catalogs tab -- search bar | Medium |
-| 4 | 4.4 | Service Catalogs tab -- card structure | High |
-| 4 | 4.5 | Service Catalogs tab -- expand details | Medium |
-| 4 | 4.6 | Service Catalogs tab -- delete confirmation | High |
-| 4 | 4.7 | Service Catalogs tab -- deploy wizard | High |
-| 4 | 4.8 | Service Templates tab -- loads | High |
-| 4 | 4.9 | Service Templates tab -- search bar | Medium |
-| 4 | 4.10 | Service Templates tab -- card structure | High |
-| 4 | 4.11 | Service Templates tab -- instantiate wizard | High |
-| 6 | 6.1 | Tool Call Debugger loads with title and description | High |
-| 6 | 6.2 | Filter controls are present | High |
-| 6 | 6.3 | Action buttons are present | Medium |
-| 6 | 6.4 | Empty state when no events | Medium |
-| 6 | 6.5 | Clear events button works | Medium |
-| 6 | 6.6 | Auto-scroll toggle works | Medium |
-| 7 | 7.1 | Sidebar links navigate to correct pages | Critical |
-| 7 | 7.2 | Developer submenu expands and collapses | Medium |
+| 1 | 1.1 | Start Wanaku Barn | Critical |
+| 1 | 1.2 | Barn serves its standalone admin UI | Critical |
+| 1 | 1.3 | Install the Node.js dependencies | Critical |
+| 1 | 1.4 | Build both plugins | Critical |
+| 2 | 2.1 | Barn plugin unit tests | High |
+| 2 | 2.2 | Debugger plugin unit tests | High |
+| 3 | 3.1 | Smoke test against the live Barn | Critical |
+| 3 | 3.2 | Complete Barn page suite | Critical |
+| 3 | 3.3 | Barn pages against the Vite preview build | Low |
+| 4 | 4.1 | Debugger suite | Critical |
+| 5 | 5.1 | Live semantic router flow | Medium |
+| 6 | 6.1 | Prepare the server data directory | Critical |
+| 6 | 6.2 | Start Wanaku Server and the reference MCP server | Critical |
+| 6 | 6.3 | Wanaku Server discovered both plugins | Critical |
+| 6 | 6.4 | Plugin files are served | High |
+| 6 | 6.5 | The plugin proxy reaches Barn | Critical |
+| 6 | 6.6 | Unknown plugin service is rejected (negative) | Medium |
+| 6 | 6.7 | Barn pages in the host (browser) | High |
+| 6 | 6.8 | Debugger page in the host (browser) | High |
+| 6 | 6.9 | Barn pages report an unreachable Barn (negative) | Medium |
+| 7 | 7.1 | Remove the test data store | Medium |
+| 7 | 7.2 | Stop the reference MCP server and Wanaku Server | Critical |
+| 7 | 7.3 | Stop Barn | Critical |
+| 7 | 7.4 | Remove the Playwright artifacts | Low |

@@ -30,6 +30,8 @@ register it as a forward (see [start-test-mcp-server.md](start-test-mcp-server.m
 
 The MCP listener port (`8081`) comes from the embedded pipeline configuration. It is not configurable with an
 environment variable. Do not run two local servers on the same host at the same time.
+A file passed with `--pipeline-config` replaces the embedded pipeline configuration completely. The environment
+overrides for the A2A listener, the CORS origin and the inference upstream then do not apply.
 
 ## Output variables
 
@@ -47,8 +49,8 @@ environment variable. Do not run two local servers on the same host at the same 
 
 Skip this step when `WANAKU_SERVER_BIN` points to a prebuilt binary.
 
-The full build embeds the admin UI and needs Node.js and Yarn. The headless build does not include the admin UI and is
-sufficient for CLI and MCP test plans. Use `make build` from the repository root for the full build.
+The default build embeds the admin UI. It builds the UI with Node.js and Yarn. To build without the admin UI (headless),
+add `--no-default-features`. The headless build is sufficient for CLI and MCP test plans.
 
 ```bash
 export WANAKU_SERVER_REPO_ROOT="${WANAKU_SERVER_REPO_ROOT:-../wanaku}"
