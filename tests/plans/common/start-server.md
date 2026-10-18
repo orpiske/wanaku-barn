@@ -117,6 +117,10 @@ echo "PASS: test governance configuration written to ${WANAKU_SERVER_CONFIG}"
 Explicit deny rules still apply in these namespaces. All other namespaces keep the fail-safe defaults, so a plan can
 also verify the default denial (for example in a namespace that is not in `WANAKU_TEST_GOVERNED_NAMESPACES`).
 
+Without `--wanaku-config`, the server reads `./wanaku.yaml` from the current directory if that file exists. A stray
+file there changes the governance and bootstrap configuration silently. Run the server from a directory without
+`wanaku.yaml`, or always set `WANAKU_SERVER_CONFIG`.
+
 When `WANAKU_SERVER_CONFIG` is set, step 3 passes it with `--wanaku-config`. A plan can append more sections (for
 example `forwards`, `plugins` or `action_policy`) to the same file before step 3.
 
@@ -124,6 +128,9 @@ example `forwards`, `plugins` or `action_policy`) to the same file before step 3
 
 Each run uses a new data directory. This keeps the run independent of `$HOME/.wanaku/server` and of earlier runs.
 Authentication is disabled by default in Wanaku Server, so no extra configuration is necessary.
+
+The server process inherits the exported environment. Export other variables before this step when the plan needs
+them, for example `RUST_LOG`, `PRAXIS_LOG_FORMAT=json` or `WANAKU_AUTH_ISSUER`.
 
 ```bash
 export WANAKU_SERVER_DATA_DIR="${WANAKU_SERVER_DATA_DIR:-$(mktemp -d)}"
