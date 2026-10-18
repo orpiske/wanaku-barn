@@ -4,6 +4,22 @@
 
 This test plan verifies the fix for [#1376](https://github.com/wanaku-ai/wanaku/issues/1376): the Helm chart template `validating-clusterrolebinding.yaml` uses `{{ .Chart.Name }}` for the ClusterRoleBinding name, producing a static cluster-scoped name (`wanaku-operator-crd-validating-role-binding`) that collides when the operator is installed in multiple namespaces. The fix changes the name prefix to `{{ .Release.Namespace }}`, matching the pattern used by all other ClusterRoleBindings and ClusterRoles in the chart.
 
+The chart is in `apps/wanaku-operator/deploy/helm/wanaku-operator` of this repository. It has four controllers, one per
+CRD: `WanakuRouter`, `WanakuServiceCatalog`, `WanakuSemanticRouter` and `WanakuIntegration`. For a release in namespace
+`<ns>`, the chart renders these cluster-scoped resources:
+
+| Kind | Names |
+|------|-------|
+| ClusterRole | `<ns>-wanaku-router-cluster-role`, `<ns>-wanaku-service-catalog-cluster-role`, `<ns>-wanaku-semantic-router-cluster-role`, `<ns>-wanaku-integration-cluster-role`, `<ns>-josdk-crd-validating-cluster-role` |
+| ClusterRoleBinding | `<ns>-crd-validating-role-binding`, `<ns>-wanaku-router-crd-validating-role-binding`, `<ns>-wanaku-service-catalog-crd-validating-role-binding`, `<ns>-wanaku-semantic-router-crd-validating-role-binding`, `<ns>-wanaku-integration-crd-validating-role-binding` |
+
+With the default `JOSDK_WATCH_CURRENT` setting, the chart grants the controller ClusterRoles through namespaced
+RoleBindings (`wanaku-router-role-binding`, `wanaku-service-catalog-role-binding`,
+`wanaku-semantic-router-role-binding`, `wanaku-integration-role-binding`, `wanaku-operator-view`).
+
+**Components under test:** the operator Helm chart and the operator Deployment only. The plan does not create
+custom resources, so it does not need Wanaku Server, Wanaku Barn or Keycloak.
+
 Every step is fully automatable.
 
 **Hard timeout rule:** Any single operation (oc wait, polling loop, port-forward setup, etc.) that takes longer than **3 minutes** MUST be considered broken. Mark the test as FAIL immediately and abort — do not wait longer. All `--timeout` values in this plan MUST NOT exceed `180s`.
@@ -56,16 +72,25 @@ echo "PASS: all prerequisites met"
 Set these before running the plan. All values have sensible defaults.
 
 ```bash
-# Two distinct namespaces for multi-namespace testing
-export WANAKU_NAMESPACE_A="${WANAKU_NAMESPACE_A:-wanaku-test-a}"
-export WANAKU_NAMESPACE_B="${WANAKU_NAMESPACE_B:-wanaku-test-b}"
+# Two distinct namespaces for multi-namespace testing, unique per run
+export WANAKU_TEST_RUN_ID="${WANAKU_TEST_RUN_ID:-$(date +%Y%m%d-%H%M%S)-$$}"
+export WANAKU_NAMESPACE_A="${WANAKU_NAMESPACE_A:-wanaku-crb-a-${WANAKU_TEST_RUN_ID}}"
+export WANAKU_NAMESPACE_B="${WANAKU_NAMESPACE_B:-wanaku-crb-b-${WANAKU_TEST_RUN_ID}}"
 
 # Repository root (for locating the Helm chart)
 export WANAKU_REPO_ROOT="${WANAKU_REPO_ROOT:-.}"
 
 # Helm chart path
 export WANAKU_CHART_DIR="${WANAKU_REPO_ROOT}/apps/wanaku-operator/deploy/helm/wanaku-operator"
+
+# Operator image
+export WANAKU_OPERATOR_IMAGE="${WANAKU_OPERATOR_IMAGE:-quay.io/wanaku/wanaku-operator:latest}"
+
+# The controller name fragments used in the chart resource names
+export WANAKU_CONTROLLERS="wanaku-router wanaku-service-catalog wanaku-semantic-router wanaku-integration"
 ```
+
+Phases 1 and 5 (except Test 5.3) use only `helm template`. They do not need a cluster.
 
 ---
 
@@ -111,8 +136,8 @@ fi
 CRB_FILE="${WANAKU_CHART_DIR}/templates/clusterrolebinding.yaml"
 
 # Extract name patterns from clusterrolebinding.yaml (the known-good file)
-GOOD_NAMES=$(grep '^\s*name:' "${CRB_FILE}" | grep -c '\.Release\.Namespace')
-TOTAL_NAMES=$(grep '^\s*name:' "${CRB_FILE}" | grep -c 'role-binding')
+GOOD_NAMES=$(grep '^[[:space:]]*name:' "${CRB_FILE}" | grep 'role-binding' | grep -c '\.Release\.Namespace')
+TOTAL_NAMES=$(grep '^[[:space:]]*name:' "${CRB_FILE}" | grep -c 'role-binding')
 
 echo "clusterrolebinding.yaml: ${GOOD_NAMES} of ${TOTAL_NAMES} ClusterRoleBinding names use .Release.Namespace"
 
@@ -160,13 +185,13 @@ fi
 NAME_ALPHA=$(helm template test-release "${WANAKU_CHART_DIR}" \
   --namespace alpha \
   --show-only templates/validating-clusterrolebinding.yaml 2>/dev/null \
-  | grep '^\s*name:' | head -1 | awk '{print $2}')
+  | grep '^[[:space:]]*name:' | head -1 | awk '{print $2}')
 
 # Render for namespace "beta"
 NAME_BETA=$(helm template test-release "${WANAKU_CHART_DIR}" \
   --namespace beta \
   --show-only templates/validating-clusterrolebinding.yaml 2>/dev/null \
-  | grep '^\s*name:' | head -1 | awk '{print $2}')
+  | grep '^[[:space:]]*name:' | head -1 | awk '{print $2}')
 
 echo "namespace=alpha -> name=${NAME_ALPHA}"
 echo "namespace=beta  -> name=${NAME_BETA}"
@@ -197,11 +222,10 @@ echo "${NAME_BETA}" | grep -q "^beta-" && \
 **Description:** Render the full chart and verify that no two ClusterRoleBindings share the same name.
 
 ```bash
+# Print metadata.name only: roleRef.name has the same indentation, so track the top-level section
 ALL_CRB_NAMES=$(helm template test-release "${WANAKU_CHART_DIR}" \
   --namespace testns 2>/dev/null \
-  | grep -A1 'kind: ClusterRoleBinding' \
-  | grep '^\s*name:' \
-  | awk '{print $2}' \
+  | awk '/^kind:/{kind=$2} /^[^ ]/{sec=$1} kind=="ClusterRoleBinding" && sec=="metadata:" && /^  name:/{print $2}' \
   | sort)
 
 UNIQUE_CRB_NAMES=$(echo "${ALL_CRB_NAMES}" | sort -u)
@@ -211,6 +235,12 @@ UNIQUE=$(echo "${UNIQUE_CRB_NAMES}" | wc -l | tr -d ' ')
 
 echo "total ClusterRoleBinding names: ${TOTAL}"
 echo "unique ClusterRoleBinding names: ${UNIQUE}"
+
+if [ "${TOTAL}" -ne 5 ]; then
+  echo "FAIL: expected 5 ClusterRoleBindings, found ${TOTAL}"
+  echo "${ALL_CRB_NAMES}"
+  exit 1
+fi
 
 if [ "${TOTAL}" -ne "${UNIQUE}" ]; then
   echo "FAIL: duplicate ClusterRoleBinding names detected"
@@ -258,6 +288,32 @@ fi
 echo "PASS: subject references the correct namespace"
 ```
 
+### Test 1.8: Verify the rendered ClusterRoles match the controllers
+
+**Description:** The chart renders one ClusterRole per controller and the CRD validation ClusterRole, each with the
+namespace prefix. No ClusterRole for a removed CRD (`WanakuCapability`, `WanakuCamelRoute`,
+`WanakuCamelCodeExecutionEngine`) is rendered.
+
+```bash
+ROLES=$(helm template test-release "${WANAKU_CHART_DIR}" --namespace testns 2>/dev/null \
+  | awk '/^kind:/{kind=$2} /^[^ ]/{sec=$1} kind=="ClusterRole" && sec=="metadata:" && /^  name:/{print $2}' | sort)
+echo "${ROLES}"
+
+EXPECTED=$(for C in ${WANAKU_CONTROLLERS}; do echo "testns-${C}-cluster-role"; done; echo "testns-josdk-crd-validating-cluster-role")
+EXPECTED=$(echo "${EXPECTED}" | sort)
+
+if [ "${ROLES}" = "${EXPECTED}" ]; then
+  echo "PASS: the chart renders exactly the 5 expected ClusterRoles"
+else
+  echo "FAIL: rendered ClusterRoles differ from the expected list"
+  echo "expected:"; echo "${EXPECTED}"
+  exit 1
+fi
+
+echo "${ROLES}" | grep -E "capability|camel" && { echo "FAIL: ClusterRole for a removed CRD"; exit 1; } \
+  || echo "PASS: no ClusterRole for a removed CRD"
+```
+
 ---
 
 ## Phase 2: Multi-Namespace Installation Test
@@ -293,7 +349,7 @@ done
 ```bash
 helm install wanaku-operator-a "${WANAKU_CHART_DIR}" \
   --namespace "${WANAKU_NAMESPACE_A}" \
-  --set operatorNamespace="${WANAKU_NAMESPACE_A}" \
+  --set app.image="${WANAKU_OPERATOR_IMAGE}" \
   --set app.imagePullPolicy=Always
 ```
 
@@ -318,7 +374,7 @@ fi
 ```bash
 helm install wanaku-operator-b "${WANAKU_CHART_DIR}" \
   --namespace "${WANAKU_NAMESPACE_B}" \
-  --set operatorNamespace="${WANAKU_NAMESPACE_B}" \
+  --set app.image="${WANAKU_OPERATOR_IMAGE}" \
   --set app.imagePullPolicy=Always
 
 INSTALL_EXIT=$?
@@ -434,12 +490,12 @@ echo "PASS: old static name does not exist"
 
 ### Test 2.8: Verify all other ClusterRoleBindings from both installs are non-conflicting
 
-**Description:** The three ClusterRoleBindings in `clusterrolebinding.yaml` (capability, router, service-catalog) should also exist in pairs with namespace prefixes.
+**Description:** The four ClusterRoleBindings in `clusterrolebinding.yaml` (router, service-catalog, semantic-router, integration) should also exist in pairs with namespace prefixes. The namespaced RoleBindings must exist in each namespace.
 
 ```bash
 FAIL=0
 
-for SUFFIX in wanaku-capability-crd-validating-role-binding wanaku-router-crd-validating-role-binding wanaku-service-catalog-crd-validating-role-binding; do
+for SUFFIX in $(for C in ${WANAKU_CONTROLLERS}; do echo "${C}-crd-validating-role-binding"; done); do
   for NS in "${WANAKU_NAMESPACE_A}" "${WANAKU_NAMESPACE_B}"; do
     CRB_NAME="${NS}-${SUFFIX}"
     oc get clusterrolebinding "${CRB_NAME}" > /dev/null 2>&1
@@ -447,6 +503,17 @@ for SUFFIX in wanaku-capability-crd-validating-role-binding wanaku-router-crd-va
       echo "PASS: ${CRB_NAME} exists"
     else
       echo "FAIL: ${CRB_NAME} not found"
+      FAIL=1
+    fi
+  done
+done
+
+for RB in wanaku-operator-view $(for C in ${WANAKU_CONTROLLERS}; do echo "${C}-role-binding"; done); do
+  for NS in "${WANAKU_NAMESPACE_A}" "${WANAKU_NAMESPACE_B}"; do
+    if oc get rolebinding "${RB}" -n "${NS}" > /dev/null 2>&1; then
+      echo "PASS: RoleBinding ${RB} exists in ${NS}"
+    else
+      echo "FAIL: RoleBinding ${RB} not found in ${NS}"
       FAIL=1
     fi
   done
@@ -484,35 +551,31 @@ done
 
 ### Test 3.2: Verify operator health endpoints in both namespaces
 
+**Description:** The operator Deployment uses the Quarkus health endpoints (`/q/health/live`, `/q/health/ready`,
+`/q/health/started`) on port 8081 as probes. A Ready pod proves that the readiness probe succeeds. Each operator must
+have the RBAC to start, so a missing binding shows up as a pod that does not become Ready.
+
 ```bash
 for NS in "${WANAKU_NAMESPACE_A}" "${WANAKU_NAMESPACE_B}"; do
-  OPERATOR_POD=$(oc get pods -l app.kubernetes.io/name=wanaku-operator \
-    -n "${NS}" -o jsonpath='{.items[0].metadata.name}')
-
-  oc exec "${OPERATOR_POD}" -n "${NS}" -- \
-    curl -sf http://localhost:8081/q/health/live > /dev/null 2>&1
-  if [ $? -eq 0 ]; then
-    echo "PASS: operator in ${NS} liveness probe OK"
+  if oc wait pod -l app.kubernetes.io/name=wanaku-operator --for=condition=Ready --timeout=180s -n "${NS}"; then
+    echo "PASS: operator in ${NS} is Ready (readiness probe /q/health/ready succeeds)"
   else
-    echo "FAIL: operator in ${NS} liveness probe failed"
+    echo "FAIL: operator in ${NS} is not Ready"
+    oc logs -l app.kubernetes.io/name=wanaku-operator -n "${NS}" --tail=30 | grep -iE "forbidden|error" || true
     exit 1
   fi
 
-  oc exec "${OPERATOR_POD}" -n "${NS}" -- \
-    curl -sf http://localhost:8081/q/health/ready > /dev/null 2>&1
-  if [ $? -eq 0 ]; then
-    echo "PASS: operator in ${NS} readiness probe OK"
-  else
-    echo "FAIL: operator in ${NS} readiness probe failed"
-    exit 1
-  fi
+  RESTARTS=$(oc get pods -l app.kubernetes.io/name=wanaku-operator -n "${NS}" \
+    -o jsonpath='{.items[0].status.containerStatuses[0].restartCount}')
+  [ "${RESTARTS}" = "0" ] && echo "PASS: operator in ${NS} has zero restarts" \
+    || echo "WARN: operator in ${NS} restarted ${RESTARTS} time(s)"
 done
 ```
 
 ### Test 3.3: Verify CRDs are installed (cluster-scoped, shared)
 
 ```bash
-for CRD in wanakurouters.wanaku.ai wanakucapabilities.wanaku.ai wanakuservicecatalogs.wanaku.ai wanakucamelcodeexecutionengines.wanaku.ai; do
+for CRD in wanakurouters.wanaku.ai wanakuservicecatalogs.wanaku.ai wanakusemanticrouters.wanaku.ai wanakuintegrations.wanaku.ai; do
   oc get crd "${CRD}" > /dev/null 2>&1
   if [ $? -eq 0 ]; then
     echo "PASS: CRD ${CRD} exists"
@@ -602,7 +665,7 @@ fi
 RENDERED_NAME=$(helm template test-release "${WANAKU_CHART_DIR}" \
   --namespace "my-long-hyphenated-namespace" \
   --show-only templates/validating-clusterrolebinding.yaml 2>/dev/null \
-  | grep '^\s*name:' | head -1 | awk '{print $2}')
+  | grep '^[[:space:]]*name:' | head -1 | awk '{print $2}')
 
 echo "hyphenated-namespace-name=${RENDERED_NAME}"
 
@@ -616,14 +679,14 @@ fi
 
 ### Test 5.2: Verify naming consistency across all ClusterRoleBinding templates
 
-**Description:** After the fix, the naming pattern for the validating ClusterRoleBinding should be `<namespace>-crd-validating-role-binding`, following the same `<namespace>-<description>` pattern as the other three: `<namespace>-wanaku-capability-crd-validating-role-binding`, `<namespace>-wanaku-router-crd-validating-role-binding`, `<namespace>-wanaku-service-catalog-crd-validating-role-binding`.
+**Description:** After the fix, the naming pattern for the validating ClusterRoleBinding should be `<namespace>-crd-validating-role-binding`, following the same `<namespace>-<description>` pattern as the other four: `<namespace>-wanaku-router-crd-validating-role-binding`, `<namespace>-wanaku-service-catalog-crd-validating-role-binding`, `<namespace>-wanaku-semantic-router-crd-validating-role-binding`, `<namespace>-wanaku-integration-crd-validating-role-binding`.
 
 ```bash
 RENDERED=$(helm template test-release "${WANAKU_CHART_DIR}" --namespace testns 2>/dev/null)
 
 # Extract all ClusterRoleBinding names
 CRB_NAMES=$(echo "${RENDERED}" \
-  | awk '/kind: ClusterRoleBinding/{found=1} found && /^\s*name:/{print $2; found=0}')
+  | awk '/^kind:/{kind=$2} /^[^ ]/{sec=$1} kind=="ClusterRoleBinding" && sec=="metadata:" && /^  name:/{print $2}')
 
 echo "All ClusterRoleBinding names:"
 echo "${CRB_NAMES}"
@@ -659,7 +722,7 @@ oc delete clusterrolebinding "${WANAKU_NAMESPACE_B}-crd-validating-role-binding"
 # Re-install
 helm install wanaku-operator-b "${WANAKU_CHART_DIR}" \
   --namespace "${WANAKU_NAMESPACE_B}" \
-  --set operatorNamespace="${WANAKU_NAMESPACE_B}" \
+  --set app.image="${WANAKU_OPERATOR_IMAGE}" \
   --set app.imagePullPolicy=Always
 
 if [ $? -eq 0 ]; then
@@ -679,6 +742,42 @@ else
 fi
 ```
 
+### Test 5.4: Verify ClusterRoleBinding names with JOSDK_ALL_NAMESPACES
+
+**Description:** When a controller watches all namespaces (`JOSDK_ALL_NAMESPACES`), the chart grants its ClusterRole
+with a ClusterRoleBinding instead of a RoleBinding. That ClusterRoleBinding is cluster-scoped, so its name must also
+have the namespace prefix. Otherwise a second release collides in the same way as in issue #1376.
+
+```bash
+RENDER_ARGS=""
+for C in ROUTER SERVICE_CATALOG SEMANTIC_ROUTER INTEGRATION; do
+  RENDER_ARGS="${RENDER_ARGS} --set app.envs.QUARKUS_OPERATOR_SDK_CONTROLLERS_WANAKU_${C}_NAMESPACES=JOSDK_ALL_NAMESPACES"
+done
+
+# RENDER_ARGS is not quoted on purpose: it holds several --set options
+CRB_NAMES=$(helm template test-release "${WANAKU_CHART_DIR}" --namespace testns ${RENDER_ARGS} 2>/dev/null \
+  | awk '/^kind:/{kind=$2} /^[^ ]/{sec=$1} kind=="ClusterRoleBinding" && sec=="metadata:" && /^  name:/{print $2}')
+echo "${CRB_NAMES}"
+
+TOTAL=$(echo "${CRB_NAMES}" | wc -l | tr -d ' ')
+[ "${TOTAL}" -eq 9 ] && echo "PASS: 9 ClusterRoleBindings rendered (5 validating + 4 controller)" \
+  || echo "FAIL: expected 9 ClusterRoleBindings, found ${TOTAL}"
+
+UNPREFIXED=$(echo "${CRB_NAMES}" | grep -v "^testns-")
+if [ -z "${UNPREFIXED}" ]; then
+  echo "PASS: all ClusterRoleBinding names have the namespace prefix"
+else
+  echo "FAIL: ClusterRoleBinding names without the namespace prefix:"
+  echo "${UNPREFIXED}"
+fi
+```
+
+> [!WARNING]
+> **Known issue:** at the time of writing, the four `templates/wanaku-*-crd-role-binding.yaml` templates render the
+> static names `wanaku-router-role-binding`, `wanaku-service-catalog-role-binding`,
+> `wanaku-semantic-router-role-binding` and `wanaku-integration-role-binding` for the `JOSDK_ALL_NAMESPACES`
+> ClusterRoleBinding. This test then reports FAIL. Record the result and report the issue if it is still open.
+
 ---
 
 ## Phase 6: Cleanup
@@ -697,11 +796,11 @@ echo "PASS: release B uninstalled (or already removed)"
 
 ```bash
 for NS in "${WANAKU_NAMESPACE_A}" "${WANAKU_NAMESPACE_B}"; do
-  for SUFFIX in crd-validating-role-binding wanaku-capability-crd-validating-role-binding wanaku-router-crd-validating-role-binding wanaku-service-catalog-crd-validating-role-binding; do
+  for SUFFIX in crd-validating-role-binding $(for C in ${WANAKU_CONTROLLERS}; do echo "${C}-crd-validating-role-binding"; done); do
     oc delete clusterrolebinding "${NS}-${SUFFIX}" --ignore-not-found=true 2>/dev/null || true
   done
 
-  for SUFFIX in wanaku-capability-cluster-role wanaku-router-cluster-role wanaku-service-catalog-cluster-role wanaku-camel-route-cluster-role josdk-crd-validating-cluster-role; do
+  for SUFFIX in josdk-crd-validating-cluster-role $(for C in ${WANAKU_CONTROLLERS}; do echo "${C}-cluster-role"; done); do
     oc delete clusterrole "${NS}-${SUFFIX}" --ignore-not-found=true 2>/dev/null || true
   done
 done
@@ -753,6 +852,7 @@ helm list --namespace "${WANAKU_NAMESPACE_B}" 2>/dev/null || echo "(namespace ma
 | 1 | 1.5 | All ClusterRoleBinding names unique within chart | High |
 | 1 | 1.6 | roleRef points to correct ClusterRole | Critical |
 | 1 | 1.7 | Subjects reference correct namespace | Critical |
+| 1 | 1.8 | Rendered ClusterRoles match the four controllers | High |
 | 2 | 2.1 | Create two namespaces | Critical |
 | 2 | 2.2 | Install operator in namespace A | Critical |
 | 2 | 2.3 | Install operator in namespace B (collision test) | Critical |
@@ -771,4 +871,5 @@ helm list --namespace "${WANAKU_NAMESPACE_B}" 2>/dev/null || echo "(namespace ma
 | 5 | 5.1 | Hyphenated namespace names render correctly | Medium |
 | 5 | 5.2 | Naming consistency across all CRB templates | High |
 | 5 | 5.3 | Re-installation after uninstall works cleanly | Medium |
+| 5 | 5.4 | ClusterRoleBinding names with `JOSDK_ALL_NAMESPACES` (known issue) | Medium |
 | 6 | 6.1-6.4 | Cleanup | Critical |

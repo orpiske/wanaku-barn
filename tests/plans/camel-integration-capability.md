@@ -2,13 +2,56 @@
 
 ## Overview
 
-This test plan verifies the Camel Integration Capability (CIC) deployed on OpenShift. The CIC loads Apache Camel routes from YAML and exposes them as MCP tools and resources. It registers with a Wanaku MCP Router for AI agent discovery.
+This test plan verifies the Camel Integration Capability (CIC) on OpenShift with Wanaku Server. The CIC loads Apache
+Camel routes, serves the `ai-tool:` routes as MCP tools, and is registered with Wanaku Server as an MCP forward.
+Wanaku Server discovers the tools from the forward and serves them to MCP clients at `/<namespace>/mcp`.
 
-The CIC is deployed as a regular `Deployment` and registered with the router using `wanaku forwards add`; packaged catalogs can be deployed through the `WanakuServiceCatalog` CRD. The operator only manages `WanakuRouter` and `WanakuServiceCatalog` (see #151).
+The plan covers the three supported ways to run a CIC on OpenShift:
+
+1. **`WanakuIntegration` with routes from a ConfigMap** (Phases 4 to 6). The operator creates the `<name>-cic`
+   Deployment and Service. The runtime registers itself as a forward (self-registration) and removes the forward when
+   it stops.
+2. **`WanakuServiceCatalog` + `WanakuIntegration` with a service catalog source** (Phase 7). The operator deploys the
+   packaged catalog to Wanaku Barn. The runtime downloads the catalog from Barn.
+3. **A plain `Deployment` registered with `wanaku forwards add`** (Phase 8), as described in `docs/operator.md`
+   ("Registering Capability Services").
+
+The removed `WanakuCamelRoute` and `WanakuCapability` CRDs are not tested. `WanakuIntegration` replaces them.
+
+**Components under test:**
+
+| Component | How the plan uses it |
+|-----------|----------------------|
+| Wanaku operator | Reconciles `WanakuRouter`, `WanakuServiceCatalog` and `WanakuIntegration` |
+| Wanaku Server | Deployment `<router>-server`. Management API through the `<router>` Route, MCP through the `<router>-mcp` Route. The runtimes register with `http://server-<router>:8080`. |
+| Wanaku Barn | Required: `spec.barn.enabled: true`. Stores the service catalog. The runtimes use `http://barn-<router>:8080` (`REGISTRATION_URL`). |
+| CIC runtime | Image `quay.io/wanaku/camel-integration-capability`. MCP and health endpoints on port 9090. |
+
+Authentication is disabled in this plan. [operator-basic-functionality.md](operator-basic-functionality.md) covers
+oauth2-proxy. The runtimes call the internal `server-<router>` Service, which oauth2-proxy does not protect, so
+registration works the same way when authentication is enabled.
+
+> [!IMPORTANT]
+> **Governance.** Wanaku Server is fail-safe. It denies every `tools/call`, `resources/read` and `prompts/get` request
+> that no action policy and no evaluator explicitly allows. The error is
+> `No governance policy permits this action.` (`governance_no_match`) from the action-policy filter, or
+> `evaluator: no_match` from the evaluator filter. Listing requests are not governed.
+>
+> The governance posture is startup configuration in `wanaku.yaml`. The `WanakuRouter` CRD has no field for it, and no
+> environment variable sets it. The operator mounts the `<router>-server-config` ConfigMap as
+> `/etc/wanaku/wanaku.yaml` when Barn is enabled, and writes only the `plugins` section. Phase 5 adds a test
+> `governance` section to that ConfigMap and restarts the Server. **This is a test-only workaround, not a supported
+> operator API.** The operator writes the ConfigMap again when its own content changes (for example when Barn is
+> disabled and enabled), and the governance section is then lost.
 
 Every step is fully automatable.
 
 **Hard timeout rule:** Any single operation (oc wait, polling loop, port-forward setup, etc.) that takes longer than **3 minutes** MUST be considered broken. Mark the test as FAIL immediately and abort — do not wait longer. All `--timeout` values in this plan MUST NOT exceed `180s`.
+
+> [!NOTE]
+> The CIC startup probe allows 10 minutes, because a runtime resolves Maven dependencies at startup. The routes in
+> this plan need no extra dependencies, so a runtime starts in less than 3 minutes on a normal cluster. A slow first
+> image pull is an environment problem. Pre-pull `${CIC_IMAGE}` if necessary.
 
 ## Prerequisites
 
@@ -18,163 +61,102 @@ Every step is fully automatable.
 |------|-----------------|----------------|
 | `oc` | 4.12+ | `oc version --client` |
 | `helm` | 3.x | `helm version --short` |
-| `curl` | any (health checks via `oc exec`) | `curl --version` |
+| `curl` | any (HTTP-level checks only) | `curl --version` |
 | `jq` | 1.6+ | `jq --version` |
-| `base64` | any (coreutils) | `base64 --version 2>/dev/null \|\| echo "available"` |
-| `wanaku` | build from source | `wanaku --version` |
-| `zip` | any | `zip --version` |
+| `wanaku` CLI | build from source | `${WANAKU_CLI} --version` |
 
 ### Prerequisite check script
 
 ```bash
-#!/bin/bash
-set -e
-
 FAIL=0
-
-for CMD in oc helm curl jq base64 wanaku zip; do
+for CMD in oc helm curl jq; do
   if ! command -v "${CMD}" > /dev/null 2>&1; then
     echo "FAIL: ${CMD} is not installed"
     FAIL=1
   else
-    echo "PASS: ${CMD} found at $(command -v ${CMD})"
+    echo "PASS: ${CMD} found at $(command -v "${CMD}")"
   fi
 done
-
-# Verify oc client version
-OC_VERSION=$(oc version --client -o json 2>/dev/null | jq -r '.clientVersion.gitVersion // empty' || echo "unknown")
-echo "  oc client version: ${OC_VERSION}"
-
-# Verify helm version
-HELM_VERSION=$(helm version --short 2>/dev/null || echo "unknown")
-echo "  helm version: ${HELM_VERSION}"
-
-if [ "${FAIL}" -ne 0 ]; then
-  echo ""
-  echo "FAIL: one or more prerequisites missing"
-  exit 1
-fi
-
-echo ""
-echo "PASS: all prerequisites met"
+${WANAKU_CLI:-wanaku} --help > /dev/null 2>&1 && echo "PASS: the Wanaku CLI runs" || { echo "FAIL: the Wanaku CLI does not run"; FAIL=1; }
+[ "${FAIL}" -eq 0 ] && echo "PASS: all prerequisites met" || { echo "FAIL: one or more prerequisites missing"; exit 1; }
 ```
 
 ### Environment variables
 
-Set these before running the plan. All image tags default to `latest` but can be overridden to test specific versions.
+First follow step 1 of [common/namespace-setup.md](common/namespace-setup.md) to derive a unique `WANAKU_NAMESPACE`
+for this run. Then set these variables. All image tags default to `latest` and can be overridden.
 
 ```bash
 export WANAKU_REPO_ROOT="${WANAKU_REPO_ROOT:-.}"
-export WANAKU_ROUTER_IMAGE="${WANAKU_ROUTER_IMAGE:-quay.io/wanaku/wanaku-barn-backend:latest}"
+export WANAKU_SERVER_IMAGE="${WANAKU_SERVER_IMAGE:-quay.io/wanaku/wanaku-server:latest}"
+export WANAKU_BARN_IMAGE="${WANAKU_BARN_IMAGE:-quay.io/wanaku/wanaku-barn-backend:latest}"
 export CIC_IMAGE="${CIC_IMAGE:-quay.io/wanaku/camel-integration-capability:latest}"
-# OIDC client secret for CIC-to-router authentication (defaults to "mypasswd")
-export WANAKU_OIDC_CLIENT_SECRET="${WANAKU_OIDC_CLIENT_SECRET:-mypasswd}"
-# Isolate credentials per test run to avoid contention (see #1697)
-export WANAKU_CREDENTIALS="${WANAKU_CREDENTIALS:-/tmp/wanaku-creds-${WANAKU_NAMESPACE}}"
+export WANAKU_ROUTER_NAME="${WANAKU_ROUTER_NAME:-wanaku-test-router}"
+# Wanaku namespace for the catalog-based runtime (Phase 7). The ConfigMap runtime uses "default".
+export CIC_CATALOG_NAMESPACE="${CIC_CATALOG_NAMESPACE:-cic-catalog-ns}"
+# Wanaku namespaces that the test governance configuration allows (Phase 5)
+export CIC_GOVERNED_NAMESPACES="${CIC_GOVERNED_NAMESPACES:-default,${CIC_CATALOG_NAMESPACE}}"
+# Wanaku CLI: an installed binary, or "java -jar ${WANAKU_REPO_ROOT}/apps/wanaku-cli/target/quarkus-app/quarkus-run.jar"
+export WANAKU_CLI="${WANAKU_CLI:-wanaku}"
+# The operator creates edge-terminated Routes. Set these to empty values when the ingress certificate is trusted.
+export WANAKU_CLI_TLS_OPTS="${WANAKU_CLI_TLS_OPTS---insecure}"
+export CURL_TLS_OPTS="${CURL_TLS_OPTS--k}"
 ```
 
-Follow [common/namespace-setup.md](common/namespace-setup.md) before Phase 1 to derive a unique `WANAKU_NAMESPACE` for this run.
+`WANAKU_CLI_TLS_OPTS` and `CURL_TLS_OPTS` are not quoted in the commands below on purpose: each holds zero or one
+option.
 
 ### Helper: wait for resource deletion
 
 Follow [common/wait-for-deletion.md](common/wait-for-deletion.md) to define the `wait_for_deletion` function.
 
-### Helper: obtain a Bearer token from the CLI
-
-For direct REST API queries against the router (bypassing the `wanaku` CLI), retrieve the Bearer token stored by `wanaku auth login` (performed in Phase 3, Test 3.4 via [common/oidc-login-verification.md](common/oidc-login-verification.md)).
-
-The `wanaku auth token --get` command automatically refreshes expired tokens using the stored refresh token. If the refresh token has also expired, `ensure_valid_token` re-authenticates from scratch.
+### Helper: wait for a condition of a custom resource
 
 ```bash
-get_router_token() {
-  wanaku auth token --get --unmask --plain 2>/dev/null
+wait_cr_condition() {
+  # $1 = kind, $2 = name, $3 = condition type, $4 = expected status, $5 = expected reason (optional)
+  WCC_END=$(( $(date +%s) + 180 ))
+  while [ "$(date +%s)" -lt "${WCC_END}" ]; do
+    WCC_STATUS=$(oc get "$1" "$2" -n "${WANAKU_NAMESPACE}" \
+      -o jsonpath="{.status.conditions[?(@.type==\"$3\")].status}" 2>/dev/null)
+    WCC_REASON=$(oc get "$1" "$2" -n "${WANAKU_NAMESPACE}" \
+      -o jsonpath="{.status.conditions[?(@.type==\"$3\")].reason}" 2>/dev/null)
+    if [ "${WCC_STATUS}" = "$4" ] && { [ -z "$5" ] || [ "${WCC_REASON}" = "$5" ]; }; then
+      echo "PASS: $1/$2 condition $3=${WCC_STATUS} (reason ${WCC_REASON})"
+      return 0
+    fi
+    sleep 3
+  done
+  echo "FAIL: $1/$2 condition $3 is '${WCC_STATUS}' (reason '${WCC_REASON}'), expected '$4' ${5:+(reason $5)}"
+  oc get "$1" "$2" -n "${WANAKU_NAMESPACE}" -o jsonpath='{.status.conditions}'; echo
+  return 1
+}
+
+# Compares a value with the expected value. Sets FAIL=1 on a mismatch. Each test resets FAIL=0 first.
+check() { # $1 = description, $2 = actual, $3 = expected
+  if [ "$2" = "$3" ]; then echo "PASS: $1 = $2"; else echo "FAIL: $1 = '$2', expected '$3'"; FAIL=1; fi
 }
 ```
 
-### Helper: ensure a valid OIDC token is available
+### Helper: wait for a tool in Wanaku Server
 
-Call this before phases that use `get_router_token()` or `wanaku` CLI commands to prevent 401 errors from expired tokens. The `wanaku auth token --get` command auto-refreshes, but if the refresh token itself has expired, a full re-login is performed.
-
-```bash
-ensure_valid_token() {
-  local TOKEN
-  TOKEN=$(get_router_token)
-  if [ -n "${TOKEN}" ] && [ "${TOKEN}" != "null" ]; then
-    return 0
-  fi
-
-  echo "INFO: token refresh failed, performing full re-login"
-  echo "${WANAKU_TEST_PASS}" | ${WANAKU_CLI:-wanaku} auth login \
-    --auth-server "${KEYCLOAK_URL}" \
-    --realm wanaku \
-    --client-secret "${WANAKU_CLIENT_SECRET}" \
-    --username "${WANAKU_TEST_USER}" \
-    --password \
-    --plain 2>&1
-
-  TOKEN=$(get_router_token)
-  if [ -z "${TOKEN}" ] || [ "${TOKEN}" = "null" ]; then
-    echo "FAIL: unable to obtain a valid token after re-login"
-    return 1
-  fi
-  return 0
-}
-```
-
-### Helper: query router REST API via oc exec
-
-Uses `oc exec` into the router pod with a Bearer token obtained from Keycloak.
+Wanaku Server discovers the tools when the forward is registered. The function polls the tool list of the management
+API.
 
 ```bash
-query_router_api() {
-  local ENDPOINT="$1"
-  local ROUTER_POD
-  ROUTER_POD=$(oc get pods -l app=wanaku-test-router-barn \
-    -n "${WANAKU_NAMESPACE}" -o jsonpath='{.items[0].metadata.name}')
-
-  local TOKEN
-  TOKEN=$(get_router_token)
-  if [ -z "${TOKEN}" ] || [ "${TOKEN}" = "null" ]; then
-    echo "ERROR: failed to obtain Bearer token from Keycloak" >&2
-    return 1
-  fi
-
-  oc exec "${ROUTER_POD}" -n "${WANAKU_NAMESPACE}" -- \
-    curl -sf -H "Authorization: Bearer ${TOKEN}" "http://localhost:8080${ENDPOINT}"
+wait_for_tool() {
+  # $1 = tool name
+  for i in $(seq 1 40); do
+    if ${WANAKU_CLI} tools list --host "${WANAKU_ROUTER_URL}" ${WANAKU_CLI_TLS_OPTS} --no-auth --plain 2>/dev/null \
+        | grep -q "$1"; then
+      echo "PASS: tool $1 is registered in Wanaku Server (attempt ${i})"
+      return 0
+    fi
+    sleep 3
+  done
+  echo "FAIL: tool $1 not registered in Wanaku Server"
+  return 1
 }
-```
-
-### Helper: port-forward for wanaku CLI access
-
-All `wanaku` CLI commands (`tools list`, `resources list`, `mcp tool`, etc.) require port-forwarding to reach the router inside the cluster.
-
-```bash
-start_port_forward() {
-  local ROUTER_POD
-  ROUTER_POD=$(oc get pods -l app=wanaku-test-router-barn \
-    -n "${WANAKU_NAMESPACE}" -o jsonpath='{.items[0].metadata.name}')
-
-  oc port-forward "${ROUTER_POD}" 18080:8080 -n "${WANAKU_NAMESPACE}" > /dev/null 2>&1 &
-  PORT_FWD_PID=$!
-  sleep 3
-
-  if ! kill -0 "${PORT_FWD_PID}" 2>/dev/null; then
-    echo "FAIL: port-forward process died"
-    return 1
-  fi
-  echo "PASS: port-forward started (PID ${PORT_FWD_PID})"
-}
-
-stop_port_forward() {
-  if [ -n "${PORT_FWD_PID}" ]; then
-    kill "${PORT_FWD_PID}" 2>/dev/null
-    wait "${PORT_FWD_PID}" 2>/dev/null
-    unset PORT_FWD_PID
-  fi
-}
-
-WANAKU_HOST="http://localhost:18080"
-MCP_URI="http://localhost:18080/public/mcp"
 ```
 
 ---
@@ -187,24 +169,8 @@ Follow [common/openshift-login.md](common/openshift-login.md) to log in to the t
 
 ## Phase 1: Environment Setup
 
-### Step 1.1: Create namespace
-
-Follow [common/namespace-setup.md](common/namespace-setup.md) to create and verify the namespace. Use the unique `WANAKU_NAMESPACE` value from the environment variables above, or override it if you need a specific namespace.
-
-### Step 1.2: Deploy Keycloak
-
-Follow [common/keycloak-setup.md](common/keycloak-setup.md). After completion, verify these variables are set:
-
-```bash
-for VAR_NAME in KEYCLOAK_HOST KEYCLOAK_URL WANAKU_OIDC_SECRET; do
-  eval "VAL=\${${VAR_NAME}}"
-  if [ -z "${VAL}" ]; then
-    echo "FAIL: ${VAR_NAME} is not set"
-    exit 1
-  fi
-  echo "PASS: ${VAR_NAME} is set"
-done
-```
+Follow [common/namespace-setup.md](common/namespace-setup.md) to create and verify the namespace. This plan does not
+need Keycloak.
 
 ---
 
@@ -212,1376 +178,925 @@ done
 
 Follow [common/operator-deployment.md](common/operator-deployment.md) to install the operator via Helm and verify CRDs, RBAC, and health endpoints.
 
+---
+
 ## Phase 3: WanakuRouter Setup
 
-### Test 3.1: Create a WanakuRouter with Keycloak authentication
-
-**Description:** Create a WanakuRouter CR that all CIC tests reference. Wait for Ready.
+### Test 3.1: Create a WanakuRouter with Wanaku Barn
 
 ```bash
 cat <<EOF | oc apply -n "${WANAKU_NAMESPACE}" -f -
 apiVersion: "wanaku.ai/v1alpha1"
 kind: WanakuRouter
 metadata:
-  name: wanaku-test-router
+  name: ${WANAKU_ROUTER_NAME}
 spec:
-  auth:
-    authServer: "http://keycloak:8080"
-    authProxy: "auto"
-  router:
-    image: ${WANAKU_ROUTER_IMAGE}
-    imagePullPolicy: Always
+  imagePullPolicy: Always
+  server:
+    image: ${WANAKU_SERVER_IMAGE}
+  barn:
+    enabled: true
+    image: ${WANAKU_BARN_IMAGE}
+    storage:
+      size: 1Gi
 EOF
-```
 
-**Verification - Wait for pod to schedule and start (fail fast if stuck):**
-
-```bash
-# Wait for the pod to exist
-sleep 5
-ROUTER_POD=$(oc get pods -l app=wanaku-test-router-barn \
-  -n "${WANAKU_NAMESPACE}" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
-
-if [ -z "${ROUTER_POD}" ]; then
-  echo "FAIL: no router pod found after 5s — operator may not have created the deployment"
-  exit 1
-fi
-
-# Fail fast if pod is stuck in Pending/ContainerCreating for more than 60s
-oc wait pod "${ROUTER_POD}" --for=condition=ContainersReady --timeout=60s -n "${WANAKU_NAMESPACE}" 2>/dev/null || {
-  POD_PHASE=$(oc get pod "${ROUTER_POD}" -n "${WANAKU_NAMESPACE}" -o jsonpath='{.status.phase}')
-  CONTAINER_STATE=$(oc get pod "${ROUTER_POD}" -n "${WANAKU_NAMESPACE}" \
-    -o jsonpath='{.status.containerStatuses[0].state}' 2>/dev/null || echo "unknown")
-  echo "FAIL: router pod not ready after 60s (phase=${POD_PHASE}, state=${CONTAINER_STATE})"
-  echo "This usually indicates a cluster-level problem (image pull, PVC, scheduling)."
-  oc describe pod "${ROUTER_POD}" -n "${WANAKU_NAMESPACE}" | tail -20
-  exit 1
-}
-echo "PASS: router pod containers are ready"
-```
-
-**Wait for Ready condition on the CR:**
-
-```bash
-oc wait wanakurouter/wanaku-test-router \
-  --for=condition=Ready \
-  --timeout=60s \
-  -n "${WANAKU_NAMESPACE}"
+oc wait "wanakurouter/${WANAKU_ROUTER_NAME}" --for=condition=Ready --timeout=180s -n "${WANAKU_NAMESPACE}"
 # Expected output: wanakurouter.wanaku.ai/wanaku-test-router condition met
+wait_cr_condition wanakurouter "${WANAKU_ROUTER_NAME}" BarnAvailable True Available || exit 1
 ```
 
-### Test 3.2: Verify router deployment is available
+### Test 3.2: Read the Route URLs and verify the Server is reachable
 
 ```bash
-oc wait deployment/wanaku-test-router-barn \
-  --for=condition=Available \
-  --timeout=60s \
-  -n "${WANAKU_NAMESPACE}"
-echo "router-deployment-available=$?"
-# Expected: router-deployment-available=0
+export WANAKU_ROUTER_URL="https://$(oc get route "${WANAKU_ROUTER_NAME}" -n "${WANAKU_NAMESPACE}" -o jsonpath='{.spec.host}')"
+export WANAKU_ROUTER_MCP_URL="https://$(oc get route "${WANAKU_ROUTER_NAME}-mcp" -n "${WANAKU_NAMESPACE}" -o jsonpath='{.spec.host}')"
+echo "management: ${WANAKU_ROUTER_URL}"
+echo "mcp:        ${WANAKU_ROUTER_MCP_URL}"
+
+# curl: HTTP-level reachability check before the CLI connects
+CODE=$(curl -s ${CURL_TLS_OPTS} -o /dev/null -w '%{http_code}' "${WANAKU_ROUTER_URL}/health")
+[ "${CODE}" = "200" ] && echo "PASS: Wanaku Server /health returns 200" || { echo "FAIL: /health returned HTTP ${CODE}"; exit 1; }
+
+${WANAKU_CLI} forwards list --host "${WANAKU_ROUTER_URL}" ${WANAKU_CLI_TLS_OPTS} --no-auth --plain
+[ $? -eq 0 ] && echo "PASS: the CLI reaches the management API" || { echo "FAIL: forwards list failed"; exit 1; }
 ```
-
-### Test 3.3: Verify router REST API is reachable
-
-```bash
-ROUTER_POD=$(oc get pods -l app=wanaku-test-router-barn \
-  -n "${WANAKU_NAMESPACE}" -o jsonpath='{.items[0].metadata.name}')
-
-MAX_RETRIES=12
-RETRY_INTERVAL=5
-for i in $(seq 1 ${MAX_RETRIES}); do
-  HTTP_CODE=$(oc exec "${ROUTER_POD}" -n "${WANAKU_NAMESPACE}" -- \
-    curl -sf -o /dev/null -w "%{http_code}" http://localhost:8080/q/health/ready 2>/dev/null || echo "000")
-  if [ "${HTTP_CODE}" = "200" ]; then
-    echo "PASS: router REST API is reachable (attempt ${i})"
-    break
-  fi
-  if [ "${i}" -eq "${MAX_RETRIES}" ]; then
-    echo "FAIL: router REST API not reachable after ${MAX_RETRIES} attempts (last HTTP ${HTTP_CODE})"
-    exit 1
-  fi
-  echo "Waiting for router REST API... (attempt ${i}, HTTP ${HTTP_CODE})"
-  sleep ${RETRY_INTERVAL}
-done
-```
-
-### Test 3.4: Verify OIDC login via router
-
-Follow [common/oidc-login-verification.md](common/oidc-login-verification.md) to verify end-to-end OIDC authentication through the router.
 
 ---
 
-## Phase 4: Deploy CIC via WanakuCamelRoute (Hello World)
+## Phase 4: WanakuIntegration With Routes From a ConfigMap
 
-### Test 4.1: Create a WanakuCamelRoute with a hello-world tool
+### Test 4.1: Create the route ConfigMap
 
-**Description:** Create a WanakuCamelRoute CR with a simple direct-to-log route and a single tool. The operator packages the route into a service catalog ZIP, deploys it to the router, and creates a CIC Deployment and Service automatically.
+**Description:** The ConfigMap holds two `ai-tool:` routes. `cic-echo` has the tag `wanaku`. `cic-hidden` has the tag
+`other`. The runtime serves only the routes whose tags match `spec.mcp.tags`.
 
 ```bash
 cat <<'EOF' | oc apply -n "${WANAKU_NAMESPACE}" -f -
-apiVersion: wanaku.ai/v1alpha1
-kind: WanakuCamelRoute
+apiVersion: v1
+kind: ConfigMap
 metadata:
-  name: cic-hello-world
-spec:
-  routerRef: wanaku-test-router
-  route:
+  name: cic-echo-routes
+  labels:
+    wanaku-test: "true"
+data:
+  cic-echo.camel.yaml: |
     - route:
-        id: route-3104
+        id: cic-echo
         from:
-          id: from-1702
-          uri: direct
+          uri: ai-tool:cic-echo
           parameters:
-            name: wanaku
+            tags: wanaku
+            description: "Echo back the input message duplicated with a separator"
+            parameter.message: string
+            parameter.message.description: "The message to echo back"
           steps:
-            - log:
-                id: log-2526
-                message: Hello ${body}
             - setBody:
-                simple: Hello ${body} from ${routeId}
-  mcp:
-    tools:
-      - name: sends-greeting
-        routeId: route-3104
-        description: "Sends a greeting message to show that the application is working"
-        properties:
-          - name: wanaku_body
-            type: string
-            description: The greeting message to send
-            required: true
+                expression:
+                  simple:
+                    expression: "${header.message}-${header.message}"
+    - route:
+        id: cic-hidden
+        from:
+          uri: ai-tool:cic-hidden
+          parameters:
+            tags: other
+            description: "A tool that the tag filter must hide"
+          steps:
+            - setBody:
+                constant: "hidden"
 EOF
+
+oc get configmap cic-echo-routes -n "${WANAKU_NAMESPACE}" -o jsonpath='{.data}' | jq -r 'keys[]' | grep -q "^cic-echo.camel.yaml$"
+echo "configmap-has-routes=$?"
+# Expected: configmap-has-routes=0
 ```
 
-**Verification - CR accepted:**
+### Test 4.2: Create the WanakuIntegration
 
 ```bash
-oc get wanakucamelroute cic-hello-world -n "${WANAKU_NAMESPACE}" -o name
-echo "hello-world-cr-exists=$?"
-# Expected: hello-world-cr-exists=0
+cat <<EOF | oc apply -n "${WANAKU_NAMESPACE}" -f -
+apiVersion: "wanaku.ai/v1alpha1"
+kind: WanakuIntegration
+metadata:
+  name: cic-echo
+spec:
+  routerRef: ${WANAKU_ROUTER_NAME}
+  image: ${CIC_IMAGE}
+  imagePullPolicy: Always
+  routes:
+    configMapRef:
+      name: cic-echo-routes
+      main: cic-echo.camel.yaml
+  mcp:
+    port: 9090
+    tags: wanaku
+  registration:
+    enabled: true
+    namespace: default
+EOF
+
+oc get wanakuintegration cic-echo -n "${WANAKU_NAMESPACE}" -o name
+echo "integration-cr-exists=$?"
+# Expected: integration-cr-exists=0
 ```
 
-### Test 4.2: Verify WanakuCamelRoute reaches Ready condition
+### Test 4.3: Verify the WanakuIntegration becomes Ready
+
+**Description:** `Ready` requires `Reconciled`, `Available` (the runtime pod is ready) and `Registered` (Wanaku
+Server has an available forward named `cic-echo` with the `cic.instance` label of the runtime).
 
 ```bash
-oc wait wanakucamelroute/cic-hello-world \
-  --for=condition=Ready \
-  --timeout=120s \
-  -n "${WANAKU_NAMESPACE}"
-# Expected output: wanakucamelroute.wanaku.ai/cic-hello-world condition met
-```
-
-### Test 4.3: Verify status fields - deployedCatalogName
-
-```bash
-CATALOG_NAME=$(oc get wanakucamelroute cic-hello-world -n "${WANAKU_NAMESPACE}" \
-  -o jsonpath='{.status.deployedCatalogName}')
-echo "deployedCatalogName=${CATALOG_NAME}"
-
-if [ "${CATALOG_NAME}" != "cic-hello-world" ]; then
-  echo "FAIL: deployedCatalogName is '${CATALOG_NAME}', expected 'cic-hello-world'"
-  exit 1
-fi
-echo "PASS: deployedCatalogName is correct"
-```
-
-### Test 4.4: Verify status fields - registeredTools
-
-```bash
-TOOLS=$(oc get wanakucamelroute cic-hello-world -n "${WANAKU_NAMESPACE}" \
-  -o jsonpath='{.status.registeredTools[*]}')
-echo "registeredTools=${TOOLS}"
-
-if ! echo "${TOOLS}" | grep -q "sends-greeting"; then
-  echo "FAIL: sends-greeting not found in registeredTools"
-  exit 1
-fi
-echo "PASS: sends-greeting is in registeredTools"
-```
-
-### Test 4.5: Verify status fields - registeredResources is empty
-
-```bash
-RESOURCES=$(oc get wanakucamelroute cic-hello-world -n "${WANAKU_NAMESPACE}" \
-  -o jsonpath='{.status.registeredResources[*]}')
-echo "registeredResources=${RESOURCES}"
-
-if [ -n "${RESOURCES}" ]; then
-  echo "FAIL: registeredResources should be empty for a tool-only CR, got '${RESOURCES}'"
-  exit 1
-fi
-echo "PASS: registeredResources is empty"
-```
-
-### Test 4.6: Verify CIC Deployment created by operator
-
-**Description:** The operator creates a Deployment named `<cr-name>-cic` automatically. No manual Deployment creation is needed.
-
-```bash
-oc wait deployment/cic-hello-world-cic \
-  --for=condition=Available \
-  --timeout=120s \
-  -n "${WANAKU_NAMESPACE}"
-echo "cic-deployment-available=$?"
-# Expected: cic-deployment-available=0
-```
-
-### Test 4.7: Verify CIC Service created by operator
-
-**Description:** The operator creates a ClusterIP Service named `<cr-name>-cic` for the MCP port (9190).
-
-```bash
-oc get service cic-hello-world-cic -n "${WANAKU_NAMESPACE}" -o name
-echo "cic-service-exists=$?"
-# Expected: cic-service-exists=0
-
-SVC_PORT=$(oc get service cic-hello-world-cic -n "${WANAKU_NAMESPACE}" \
-  -o jsonpath='{.spec.ports[0].port}')
-echo "cic-service-port=${SVC_PORT}"
-# Expected: 9190
-```
-
-### Test 4.8: Verify CIC pod is running
-
-```bash
-CIC_POD=$(oc get pods -l component=cic-hello-world-cic \
-  -n "${WANAKU_NAMESPACE}" -o jsonpath='{.items[0].metadata.name}')
-
-if [ -z "${CIC_POD}" ]; then
-  echo "FAIL: no CIC pod found"
-  exit 1
-fi
-
-POD_PHASE=$(oc get pod "${CIC_POD}" -n "${WANAKU_NAMESPACE}" -o jsonpath='{.status.phase}')
-if [ "${POD_PHASE}" != "Running" ]; then
-  echo "FAIL: CIC pod phase is '${POD_PHASE}', expected 'Running'"
-  oc describe pod "${CIC_POD}" -n "${WANAKU_NAMESPACE}" | tail -20
-  exit 1
-fi
-echo "PASS: CIC pod is Running"
-```
-
-### Test 4.9: Verify CIC startup logs
-
-```bash
-CIC_POD=$(oc get pods -l component=cic-hello-world-cic \
-  -n "${WANAKU_NAMESPACE}" -o jsonpath='{.items[0].metadata.name}')
-
 FAIL=0
-
-oc logs "${CIC_POD}" -n "${WANAKU_NAMESPACE}" | grep -q "Camel Integration Capability" && \
-  echo "PASS: startup banner found in CIC logs" || { echo "FAIL: startup banner not found"; FAIL=1; }
-
-oc logs "${CIC_POD}" -n "${WANAKU_NAMESPACE}" | grep -q "Using data directory" && \
-  echo "PASS: data directory log message found" || { echo "FAIL: data directory log not found"; FAIL=1; }
-
-if [ "${FAIL}" -ne 0 ]; then
-  echo "CIC logs (last 30 lines):"
-  oc logs "${CIC_POD}" -n "${WANAKU_NAMESPACE}" --tail=30
-fi
+wait_cr_condition wanakuintegration cic-echo Reconciled True ReconcileSucceeded || FAIL=1
+wait_cr_condition wanakuintegration cic-echo Available True Available || FAIL=1
+wait_cr_condition wanakuintegration cic-echo Registered True Registered || FAIL=1
+wait_cr_condition wanakuintegration cic-echo Ready True || FAIL=1
+[ "${FAIL}" -eq 0 ] || { oc logs deployment/cic-echo-cic -n "${WANAKU_NAMESPACE}" --tail=30; exit 1; }
 ```
 
-### Test 4.10: Verify catalog exists in router
+### Test 4.4: Verify the runtime Deployment
+
+**Description:** The operator creates the `<name>-cic` Deployment. It passes the routes, the tags and the
+registration settings to the runtime as environment variables.
 
 ```bash
-ensure_valid_token
+FAIL=0
+cic_jsonpath() { oc get deployment cic-echo-cic -n "${WANAKU_NAMESPACE}" -o jsonpath="$1"; }
+cic_env() { cic_jsonpath "{.spec.template.spec.containers[0].env[?(@.name==\"$1\")].value}"; }
 
-CATALOG_RESPONSE=$(query_router_api /api/v1/service-catalog)
-
-if echo "${CATALOG_RESPONSE}" | jq -e '.data' > /dev/null 2>&1; then
-  if echo "${CATALOG_RESPONSE}" | jq -e '.data[] | select(.name == "cic-hello-world")' > /dev/null 2>&1; then
-    echo "PASS: cic-hello-world catalog found in router"
-  else
-    echo "FAIL: cic-hello-world catalog not found in router response"
-    echo "Response: ${CATALOG_RESPONSE}"
-    exit 1
-  fi
-else
-  echo "FAIL: unexpected catalog response format"
-  echo "Response: ${CATALOG_RESPONSE}"
-  exit 1
-fi
+check "image" "$(cic_jsonpath '{.spec.template.spec.containers[0].image}')" "${CIC_IMAGE}"
+check "REGISTRATION_URL (Barn)" "$(cic_env REGISTRATION_URL)" "http://barn-${WANAKU_ROUTER_NAME}:8080"
+check "SERVICE_NAME" "$(cic_env SERVICE_NAME)" "cic-echo"
+check "ROUTES_PATH" "$(cic_env ROUTES_PATH)" "file:///opt/cic/routes/cic-echo.camel.yaml"
+check "MCP_PORT" "$(cic_env MCP_PORT)" "9090"
+check "MCP_TAGS" "$(cic_env MCP_TAGS)" "wanaku"
+check "WANAKU_REGISTER" "$(cic_env WANAKU_REGISTER)" "true"
+check "WANAKU_URL" "$(cic_env WANAKU_URL)" "http://server-${WANAKU_ROUTER_NAME}:8080"
+check "WANAKU_NAMESPACE" "$(cic_env WANAKU_NAMESPACE)" "default"
+check "MCP_ADDRESS" "$(cic_env MCP_ADDRESS)" "http://cic-echo-cic.${WANAKU_NAMESPACE}.svc:9090/mcp"
+check "readiness probe" "$(cic_jsonpath '{.spec.template.spec.containers[0].readinessProbe.httpGet.path}')" "/observe/health/ready"
+check "liveness probe" "$(cic_jsonpath '{.spec.template.spec.containers[0].livenessProbe.httpGet.path}')" "/observe/health/live"
+check "strategy" "$(cic_jsonpath '{.spec.strategy.type}')" "RollingUpdate"
+check "maxUnavailable" "$(cic_jsonpath '{.spec.strategy.rollingUpdate.maxUnavailable}')" "0"
+check "routes volume" "$(cic_jsonpath '{.spec.template.spec.volumes[?(@.name=="routes")].configMap.name}')" "cic-echo-routes"
+[ "${FAIL}" -eq 0 ] || exit 1
 ```
 
-### Test 4.11: Verify tool registered via wanaku CLI
+### Test 4.5: Verify the runtime Service and the status
 
-**Description:** After the operator deploys the catalog and starts the CIC, the sends-greeting tool should appear in the router's tool list.
+**Description:** The `<name>-cic` Service publishes the addresses of pods that are not ready, because Wanaku Server
+discovers the tools while the runtime registers, before the pod is ready.
 
 ```bash
-ensure_valid_token
-start_port_forward
+FAIL=0
+check "Service port" "$(oc get service cic-echo-cic -n "${WANAKU_NAMESPACE}" -o jsonpath='{.spec.ports[0].port}')" "9090"
+check "Service port name" "$(oc get service cic-echo-cic -n "${WANAKU_NAMESPACE}" -o jsonpath='{.spec.ports[0].name}')" "mcp"
+check "publishNotReadyAddresses" "$(oc get service cic-echo-cic -n "${WANAKU_NAMESPACE}" -o jsonpath='{.spec.publishNotReadyAddresses}')" "true"
 
-MAX_RETRIES=12
-RETRY_INTERVAL=5
-for i in $(seq 1 ${MAX_RETRIES}); do
-  TOOLS_OUTPUT=$(wanaku tools list --host "${WANAKU_HOST}" --plain 2>&1)
+int_jsonpath() { oc get wanakuintegration cic-echo -n "${WANAKU_NAMESPACE}" -o jsonpath="$1"; }
+check "status.forwardName" "$(int_jsonpath '{.status.forwardName}')" "cic-echo"
+check "status.mcpAddress" "$(int_jsonpath '{.status.mcpAddress}')" "http://cic-echo-cic.${WANAKU_NAMESPACE}.svc:9090/mcp"
+echo "status.wanakuEndpoint=$(int_jsonpath '{.status.wanakuEndpoint}')"
+[ "${FAIL}" -eq 0 ] || exit 1
+```
 
-  if echo "${TOOLS_OUTPUT}" | grep -q "sends-greeting"; then
-    echo "PASS: sends-greeting tool registered in router (attempt ${i})"
-    break
-  fi
+> [!WARNING]
+> **Known issue:** for the `default` namespace, `status.wanakuEndpoint` is the router `status.endpoints.mcp` value
+> (`https://<mcp-host>/mcp`). Wanaku Server rejects the bare `/mcp` path. MCP clients must use
+> `${WANAKU_ROUTER_MCP_URL}/default/mcp`. Report the issue if it is still open.
 
-  if [ "${i}" -eq "${MAX_RETRIES}" ]; then
-    echo "FAIL: sends-greeting tool not found in router after ${MAX_RETRIES} attempts"
-    echo "Output: ${TOOLS_OUTPUT}"
-    stop_port_forward
-    exit 1
-  fi
-  echo "Waiting for CIC registration... (attempt ${i})"
-  sleep ${RETRY_INTERVAL}
+### Test 4.6: Verify the forward in Wanaku Server
+
+**Description:** The runtime registered the forward `cic-echo` in the namespace `default`, with the `cic.instance`,
+`cic.version` and `cic.routes-digest` labels. The CLI does not print forward labels, so `curl` reads
+`GET /api/v1/forwards/{name}`.
+
+```bash
+OUTPUT=$(${WANAKU_CLI} forwards list --host "${WANAKU_ROUTER_URL}" ${WANAKU_CLI_TLS_OPTS} --no-auth --plain 2>&1)
+echo "${OUTPUT}"
+echo "${OUTPUT}" | grep -q "^cic-echo[[:space:]]*http://cic-echo-cic.${WANAKU_NAMESPACE}.svc:9090/mcp" \
+  && echo "PASS: forward cic-echo is listed with the runtime address" \
+  || { echo "FAIL: forward cic-echo not listed"; exit 1; }
+
+FORWARD=$(curl -s ${CURL_TLS_OPTS} "${WANAKU_ROUTER_URL}/api/v1/forwards/cic-echo")
+echo "${FORWARD}" | jq '.data | {name, namespace, available, labels}'
+FAIL=0
+check "forward namespace" "$(echo "${FORWARD}" | jq -r '.data.namespace')" "default"
+check "forward available" "$(echo "${FORWARD}" | jq -r '.data.available')" "true"
+for LABEL in cic.instance cic.version cic.routes-digest; do
+  [ "$(echo "${FORWARD}" | jq -r --arg L "${LABEL}" '.data.labels[$L] // empty')" != "" ] \
+    && echo "PASS: forward label ${LABEL} is set" || { echo "FAIL: forward label ${LABEL} missing"; FAIL=1; }
 done
-
-stop_port_forward
+export CIC_ECHO_INSTANCE=$(echo "${FORWARD}" | jq -r '.data.labels["cic.instance"]')
+[ "${FAIL}" -eq 0 ] || exit 1
 ```
 
-### Test 4.12: Verify operator logs show successful reconciliation
+### Test 4.7: Verify the discovered tools and the tag filter
 
 ```bash
-OPERATOR_POD=$(oc get pods -l app.kubernetes.io/name=wanaku-operator \
-  -n "${WANAKU_NAMESPACE}" -o jsonpath='{.items[0].metadata.name}')
+wait_for_tool cic-echo || exit 1
 
-oc logs "${OPERATOR_POD}" -n "${WANAKU_NAMESPACE}" | grep -q "Starting camel route reconciliation for" && \
-  echo "PASS: reconciliation start logged" || \
-  echo "FAIL: reconciliation start not found in operator logs"
+OUTPUT=$(${WANAKU_CLI} tools list --host "${WANAKU_ROUTER_URL}" ${WANAKU_CLI_TLS_OPTS} --no-auth --plain 2>&1)
+echo "${OUTPUT}" | grep -q "cic-hidden" \
+  && { echo "FAIL: cic-hidden is registered although its tag does not match spec.mcp.tags"; exit 1; } \
+  || echo "PASS: the tag filter hides cic-hidden"
 
-oc logs "${OPERATOR_POD}" -n "${WANAKU_NAMESPACE}" | grep -q "Successfully deployed camel route 'cic-hello-world'" && \
-  echo "PASS: successful deployment logged" || \
-  echo "FAIL: successful deployment not found in operator logs"
+OUTPUT=$(${WANAKU_CLI} mcp tool list --uri "${WANAKU_ROUTER_MCP_URL}/default/mcp" ${WANAKU_CLI_TLS_OPTS} --no-auth --plain 2>&1)
+echo "${OUTPUT}"
+echo "${OUTPUT}" | grep -q "cic-echo" && echo "PASS: cic-echo is listed at /default/mcp" \
+  || { echo "FAIL: cic-echo not listed at /default/mcp"; exit 1; }
+
+# Namespace isolation: the tool is not served in another namespace
+OUTPUT=$(${WANAKU_CLI} mcp tool list --uri "${WANAKU_ROUTER_MCP_URL}/${CIC_CATALOG_NAMESPACE}/mcp" ${WANAKU_CLI_TLS_OPTS} --no-auth --plain 2>&1)
+echo "${OUTPUT}" | grep -q "cic-echo" \
+  && { echo "FAIL: cic-echo is served in ${CIC_CATALOG_NAMESPACE}"; exit 1; } \
+  || echo "PASS: cic-echo is not served in ${CIC_CATALOG_NAMESPACE}"
 ```
 
 ---
 
-## Phase 5: Tool Invocation
+## Phase 5: Governance and Tool Invocation
 
-### Test 5.1: Verify tool is listed via wanaku CLI
+### Test 5.1: Verify the fail-safe default denies the tool call
 
-**Description:** Use the `wanaku tools list` command to confirm the sends-greeting tool is registered.
-
-```bash
-ensure_valid_token
-start_port_forward
-
-TOOLS_OUTPUT=$(wanaku tools list --host "${WANAKU_HOST}" --plain 2>&1)
-echo "Tools list output:"
-echo "${TOOLS_OUTPUT}"
-
-if echo "${TOOLS_OUTPUT}" | grep -q "sends-greeting"; then
-  echo "PASS: sends-greeting tool found via wanaku CLI"
-else
-  echo "FAIL: sends-greeting tool not found"
-  stop_port_forward
-  exit 1
-fi
-
-stop_port_forward
-```
-
-### Test 5.2: List tools via MCP endpoint
+**Description:** Without a governance configuration, Wanaku Server denies `tools/call`. The CLI prints the denial and
+exits with a non-zero code.
 
 ```bash
-start_port_forward
-
-TOOL_LIST=$(wanaku mcp tool list --uri "${MCP_URI}" 2>&1)
-echo "MCP tool list output:"
-echo "${TOOL_LIST}"
-
-if ! echo "${TOOL_LIST}" | grep -q "sends-greeting"; then
-  echo "FAIL: sends-greeting tool not found in MCP tool list"
-  stop_port_forward
-  exit 1
-fi
-echo "PASS: sends-greeting tool visible via MCP"
-
-stop_port_forward
-```
-
-### Test 5.3: Invoke tool via MCP endpoint
-
-**Description:** Call the sends-greeting tool with a body parameter and verify the response contains the expected greeting.
-
-```bash
-start_port_forward
-
-TOOL_RESPONSE=$(wanaku mcp tool --uri "${MCP_URI}" --name sends-greeting --param wanaku_body=World 2>&1)
-echo "Tool response: ${TOOL_RESPONSE}"
-
-if echo "${TOOL_RESPONSE}" | grep -qi "Hello\|World"; then
-  echo "PASS: sends-greeting tool returned expected greeting content"
-else
-  echo "FAIL: sends-greeting tool response does not contain expected content"
-  stop_port_forward
-  exit 1
-fi
-
-stop_port_forward
-```
-
-### Test 5.4: Invoke non-existent tool should fail
-
-```bash
-start_port_forward
-
-TOOL_RESPONSE=$(wanaku mcp tool --uri "${MCP_URI}" --name "non-existent-tool-99999" --param key=value 2>&1)
+OUTPUT=$(${WANAKU_CLI} mcp tool --uri "${WANAKU_ROUTER_MCP_URL}/default/mcp" ${WANAKU_CLI_TLS_OPTS} --no-auth \
+  --name cic-echo --param message=hello 2>&1)
 EXIT_CODE=$?
-
-if [ "${EXIT_CODE}" -ne 0 ]; then
-  echo "PASS: non-existent tool invocation failed as expected (exit code ${EXIT_CODE})"
+echo "${OUTPUT}"
+if echo "${OUTPUT}" | grep -qE "No governance policy permits this action|evaluator: no_match"; then
+  echo "PASS: the tool call is denied by the fail-safe governance default (exit code ${EXIT_CODE})"
 else
-  echo "FAIL: non-existent tool invocation should have failed"
-fi
-
-stop_port_forward
-```
-
----
-
-## Phase 6: Deploy with Promote-Employee Routes (Tools + Resources)
-
-### Test 6.1: Delete the hello-world WanakuCamelRoute CR
-
-**Description:** Remove the hello-world CamelRoute CR. The operator handles cleanup of the CIC Deployment, Service, and PVC via ownerReferences.
-
-```bash
-oc delete wanakucamelroute cic-hello-world -n "${WANAKU_NAMESPACE}"
-wait_for_deletion wanakucamelroute cic-hello-world "${WANAKU_NAMESPACE}" 60
-
-# Verify operator cleaned up managed resources
-wait_for_deletion deployment cic-hello-world-cic "${WANAKU_NAMESPACE}" 60
-wait_for_deletion service cic-hello-world-cic "${WANAKU_NAMESPACE}" 30
-echo "PASS: hello-world CamelRoute CR and managed resources deleted"
-```
-
-### Test 6.2: Create a WanakuCamelRoute with promote-employee routes (tools + resources)
-
-**Description:** Create a CamelRoute CR with multiple routes exposing two tools and one resource. This tests the operator's ability to handle combined tools and resources in a single CR.
-
-```bash
-cat <<'EOF' | oc apply -n "${WANAKU_NAMESPACE}" -f -
-apiVersion: wanaku.ai/v1alpha1
-kind: WanakuCamelRoute
-metadata:
-  name: cic-promote-employee
-spec:
-  routerRef: wanaku-test-router
-  route:
-    - route:
-        id: route-3103
-        from:
-          id: from-4035
-          uri: direct
-          parameters:
-            name: initiate-promotion
-          steps:
-            - log:
-                id: log-2526
-                message: Initiating promotion process for employee ${header.EMPLOYEE}
-            - setBody:
-                simple:
-                  expression: Promotion process for employee ${header.EMPLOYEE} has started.
-    - route:
-        id: route-3104
-        from:
-          id: from-4035-1797
-          uri: direct
-          parameters:
-            name: confirm-promotion
-          steps:
-            - log:
-                id: log-2526-2688
-                message: Confirming promotion process for employee ${header.EMPLOYEE}
-            - setBody:
-                simple:
-                  expression: Promotion process for employee ${header.EMPLOYEE} has completed. You can now send an email and congratulate him.
-    - route:
-        id: route-3105
-        autoStartup: false
-        from:
-          id: from-9762
-          uri: direct
-          parameters:
-            name: employee-history
-          steps:
-            - log:
-                id: log-2526-2688-1609
-                message: Obtaining the history for employee
-            - setBody:
-                id: setBody-1229
-                simple:
-                  expression: ${body}
-  mcp:
-    tools:
-      - name: initiate-employee-promotion
-        routeId: route-3103
-        description: "Initiate the promotion process for an employee"
-        properties:
-          - name: employee
-            type: string
-            description: The employee to confirm the promotion
-            required: true
-      - name: confirm-employee-promotion
-        routeId: route-3104
-        description: "Confirm the promotion of an employee"
-        properties:
-          - name: employee
-            type: string
-            description: The employee to confirm the promotion
-            required: true
-    resources:
-      - name: employee-performance-history
-        routeId: route-3105
-        description: "Obtain the employee performance history"
-        uri: "wanaku://employee/performance-history"
-        mimeType: "application/json"
-EOF
-```
-
-**Verification - CR accepted:**
-
-```bash
-oc get wanakucamelroute cic-promote-employee -n "${WANAKU_NAMESPACE}" -o name
-echo "promote-employee-cr-exists=$?"
-# Expected: promote-employee-cr-exists=0
-```
-
-### Test 6.3: Verify promote-employee CR reaches Ready condition
-
-```bash
-oc wait wanakucamelroute/cic-promote-employee \
-  --for=condition=Ready \
-  --timeout=120s \
-  -n "${WANAKU_NAMESPACE}"
-# Expected output: wanakucamelroute.wanaku.ai/cic-promote-employee condition met
-```
-
-### Test 6.4: Verify status fields show tools and resources
-
-```bash
-CATALOG_NAME=$(oc get wanakucamelroute cic-promote-employee -n "${WANAKU_NAMESPACE}" \
-  -o jsonpath='{.status.deployedCatalogName}')
-TOOLS=$(oc get wanakucamelroute cic-promote-employee -n "${WANAKU_NAMESPACE}" \
-  -o jsonpath='{.status.registeredTools[*]}')
-RESOURCES=$(oc get wanakucamelroute cic-promote-employee -n "${WANAKU_NAMESPACE}" \
-  -o jsonpath='{.status.registeredResources[*]}')
-
-echo "deployedCatalogName=${CATALOG_NAME}"
-echo "registeredTools=${TOOLS}"
-echo "registeredResources=${RESOURCES}"
-
-[ "${CATALOG_NAME}" = "cic-promote-employee" ] && echo "PASS: deployedCatalogName is correct" || { echo "FAIL: unexpected deployedCatalogName '${CATALOG_NAME}'"; exit 1; }
-
-echo "${TOOLS}" | grep -q "initiate-employee-promotion" && echo "PASS: initiate-employee-promotion in registeredTools" || { echo "FAIL: initiate-employee-promotion not in registeredTools"; exit 1; }
-
-echo "${TOOLS}" | grep -q "confirm-employee-promotion" && echo "PASS: confirm-employee-promotion in registeredTools" || { echo "FAIL: confirm-employee-promotion not in registeredTools"; exit 1; }
-
-echo "${RESOURCES}" | grep -q "employee-performance-history" && echo "PASS: employee-performance-history in registeredResources" || { echo "FAIL: employee-performance-history not in registeredResources"; exit 1; }
-```
-
-### Test 6.5: Verify CIC Deployment and Service for promote-employee
-
-```bash
-oc wait deployment/cic-promote-employee-cic \
-  --for=condition=Available \
-  --timeout=120s \
-  -n "${WANAKU_NAMESPACE}"
-echo "promote-cic-deployment-available=$?"
-# Expected: promote-cic-deployment-available=0
-
-oc get service cic-promote-employee-cic -n "${WANAKU_NAMESPACE}" -o name
-echo "promote-cic-service-exists=$?"
-# Expected: promote-cic-service-exists=0
-```
-
-### Test 6.6: Verify both tools are registered in router
-
-```bash
-ensure_valid_token
-start_port_forward
-
-MAX_RETRIES=12
-RETRY_INTERVAL=5
-for i in $(seq 1 ${MAX_RETRIES}); do
-  TOOLS_OUTPUT=$(wanaku tools list --host "${WANAKU_HOST}" --plain 2>&1)
-
-  INITIATE_FOUND=$(echo "${TOOLS_OUTPUT}" | grep -q "initiate-employee-promotion" && echo "yes" || echo "no")
-  CONFIRM_FOUND=$(echo "${TOOLS_OUTPUT}" | grep -q "confirm-employee-promotion" && echo "yes" || echo "no")
-
-  if [ "${INITIATE_FOUND}" = "yes" ] && [ "${CONFIRM_FOUND}" = "yes" ]; then
-    echo "PASS: both promote-employee tools registered in router (attempt ${i})"
-    break
-  fi
-
-  if [ "${i}" -eq "${MAX_RETRIES}" ]; then
-    echo "FAIL: promote-employee tools not registered after ${MAX_RETRIES} attempts"
-    echo "initiate-employee-promotion: ${INITIATE_FOUND}, confirm-employee-promotion: ${CONFIRM_FOUND}"
-    echo "Output: ${TOOLS_OUTPUT}"
-    stop_port_forward
-    exit 1
-  fi
-  echo "Waiting for CIC registration... (attempt ${i})"
-  sleep ${RETRY_INTERVAL}
-done
-
-stop_port_forward
-```
-
-### Test 6.7: Verify resource is registered in router
-
-```bash
-ensure_valid_token
-
-RESOURCES_RESPONSE=$(query_router_api /api/v1/resources)
-echo "Router resources:"
-echo "${RESOURCES_RESPONSE}"
-
-if echo "${RESOURCES_RESPONSE}" | jq -e '.data[] | select(.name == "employee-performance-history")' > /dev/null 2>&1; then
-  echo "PASS: employee-performance-history resource registered in router"
-else
-  echo "WARN: employee-performance-history resource not found — resource registration may depend on route autoStartup setting"
+  echo "FAIL: the tool call was not denied"
+  exit 1
 fi
 ```
 
-### Test 6.8: List resources via MCP endpoint
+### Test 5.2: Apply the test governance configuration (test-only workaround)
+
+**Description:** Add a `governance` section to the operator-generated `wanaku.yaml` that allows unmatched actions only
+in `${CIC_GOVERNED_NAMESPACES}`. The `plugins` section stays. The ConfigMap is mounted with `subPath`, so the running
+pod does not see the change: restart the Server. The registry (forwards and tools) is on the PVC, so it survives the
+restart.
 
 ```bash
-start_port_forward
+CM="${WANAKU_ROUTER_NAME}-server-config"
+GOV_FILE=$(mktemp)
+oc get configmap "${CM}" -n "${WANAKU_NAMESPACE}" -o jsonpath='{.data.wanaku\.yaml}' > "${GOV_FILE}"
+echo "" >> "${GOV_FILE}"
+if ! grep -q "^governance:" "${GOV_FILE}"; then
+  {
+    echo "governance:"
+    echo "  default:"
+    echo "    mode: enforce"
+    echo "    no_match: deny"
+    echo "    on_failure: deny"
+    echo "  namespaces:"
+    for NS in $(echo "${CIC_GOVERNED_NAMESPACES}" | tr ',' ' '); do
+      echo "    ${NS}:"
+      echo "      no_match: allow"
+    done
+  } >> "${GOV_FILE}"
+fi
+cat "${GOV_FILE}"
 
-RESOURCE_LIST=$(wanaku mcp resource list --uri "${MCP_URI}" 2>&1)
+oc set data "configmap/${CM}" -n "${WANAKU_NAMESPACE}" --from-file=wanaku.yaml="${GOV_FILE}"
+rm -f "${GOV_FILE}"
+
+oc get configmap "${CM}" -n "${WANAKU_NAMESPACE}" -o jsonpath='{.data.wanaku\.yaml}' | grep -q "^governance:" \
+  && echo "PASS: governance section added" || { echo "FAIL: governance section missing"; exit 1; }
+oc get configmap "${CM}" -n "${WANAKU_NAMESPACE}" -o jsonpath='{.data.wanaku\.yaml}' | grep -q "wanaku-barn-api" \
+  && echo "PASS: plugins section kept" || { echo "FAIL: plugins section lost"; exit 1; }
+
+oc rollout restart "deployment/${WANAKU_ROUTER_NAME}-server" -n "${WANAKU_NAMESPACE}"
+oc rollout status "deployment/${WANAKU_ROUTER_NAME}-server" --timeout=180s -n "${WANAKU_NAMESPACE}"
+oc wait "wanakurouter/${WANAKU_ROUTER_NAME}" --for=condition=Ready --timeout=180s -n "${WANAKU_NAMESPACE}"
+
+# An invalid governance section stops the Server at startup, so a Ready Server also validates the YAML
+wait_for_tool cic-echo || exit 1
+```
+
+### Test 5.3: Invoke the tool through the MCP Route
+
+**Description:** The route returns the message twice with a `-` separator.
+
+```bash
+OUTPUT=$(${WANAKU_CLI} mcp tool --uri "${WANAKU_ROUTER_MCP_URL}/default/mcp" ${WANAKU_CLI_TLS_OPTS} --no-auth \
+  --name cic-echo --param message=hello 2>&1)
 EXIT_CODE=$?
-echo "MCP resource list output:"
-echo "${RESOURCE_LIST}"
-
-if [ "${EXIT_CODE}" -ne 0 ]; then
-  echo "WARN: wanaku mcp resource list failed (exit code ${EXIT_CODE}) — may be affected by native build issue #1406"
+echo "${OUTPUT}"
+if [ "${EXIT_CODE}" -eq 0 ] && echo "${OUTPUT}" | grep -q "hello-hello"; then
+  echo "PASS: cic-echo returned hello-hello"
 else
-  echo "PASS: resource list succeeded"
+  echo "FAIL: unexpected tool result (exit code ${EXIT_CODE})"
+  exit 1
 fi
+```
 
-stop_port_forward
+### Test 5.4: Negative test - invoke a tool that does not exist
+
+```bash
+OUTPUT=$(${WANAKU_CLI} mcp tool --uri "${WANAKU_ROUTER_MCP_URL}/default/mcp" ${WANAKU_CLI_TLS_OPTS} --no-auth \
+  --name non-existent-tool-99999 --param key=value 2>&1)
+EXIT_CODE=$?
+echo "${OUTPUT}"
+if [ "${EXIT_CODE}" -ne 0 ]; then
+  echo "PASS: invocation of a non-existent tool failed (exit code ${EXIT_CODE})"
+else
+  echo "FAIL: invocation of a non-existent tool succeeded"
+  exit 1
+fi
+```
+
+### Test 5.5: Verify the audit trail records the governance decisions
+
+**Description:** Wanaku Server records each governance decision in the audit trail. The denied call of Test 5.1 has
+`decision` `block` and `reason_code` `governance_no_match`. The CLI has no audit command, so `curl` reads
+`GET /api/v1/audit/events`. The response is `{"data":{"events":[...],"limit":..,"offset":..,"total":..},"error":null}`.
+
+```bash
+# The list endpoint filters by target; one page holds up to 100 events by default
+EVENTS=$(curl -s ${CURL_TLS_OPTS} "${WANAKU_ROUTER_URL}/api/v1/audit/events?target=cic-echo")
+echo "${EVENTS}" | jq -e '.data.events' > /dev/null 2>&1 && echo "PASS: audit events endpoint returns events" \
+  || { echo "FAIL: unexpected audit response: ${EVENTS}"; exit 1; }
+
+BLOCKED=$(echo "${EVENTS}" | jq '[.data.events[] | select(.operation=="tools/call" and .target=="cic-echo"
+  and .decision=="block" and .reason_code=="governance_no_match")] | length')
+[ "${BLOCKED}" -ge 1 ] && echo "PASS: the denied cic-echo call is in the audit trail (${BLOCKED} event(s))" \
+  || echo "FAIL: no blocked tools/call event for cic-echo"
+
+echo "${EVENTS}" | jq -c '[.data.events[] | select(.target=="cic-echo") | {operation, decision, reason_code, namespace}]'
 ```
 
 ---
 
-## Phase 7: Service Catalog and Capability CRD Modes
+## Phase 6: Runtime Replacement and Forward Ownership
 
-### Test 7.1: Delete promote-employee CamelRoute CR
+### Test 6.1: Replace the runtime pod
+
+**Description:** A new pod registers the forward again with a new `cic.instance` label. The old pod does not remove
+the forward at shutdown, because the label no longer matches its own identifier.
 
 ```bash
-oc delete wanakucamelroute cic-promote-employee -n "${WANAKU_NAMESPACE}"
-wait_for_deletion wanakucamelroute cic-promote-employee "${WANAKU_NAMESPACE}" 60
-wait_for_deletion deployment cic-promote-employee-cic "${WANAKU_NAMESPACE}" 60
-echo "PASS: promote-employee CamelRoute CR and managed resources deleted"
+OLD_POD=$(oc get pods -l app=cic-echo-cic -n "${WANAKU_NAMESPACE}" -o jsonpath='{.items[0].metadata.name}')
+oc rollout restart deployment/cic-echo-cic -n "${WANAKU_NAMESPACE}"
+oc rollout status deployment/cic-echo-cic --timeout=180s -n "${WANAKU_NAMESPACE}"
+wait_for_deletion pod "${OLD_POD}" "${WANAKU_NAMESPACE}" 120 || exit 1
+
+wait_cr_condition wanakuintegration cic-echo Registered True Registered || exit 1
+
+NEW_INSTANCE=$(curl -s ${CURL_TLS_OPTS} "${WANAKU_ROUTER_URL}/api/v1/forwards/cic-echo" | jq -r '.data.labels["cic.instance"]')
+if [ -n "${NEW_INSTANCE}" ] && [ "${NEW_INSTANCE}" != "${CIC_ECHO_INSTANCE}" ]; then
+  echo "PASS: the new runtime owns the forward (cic.instance ${CIC_ECHO_INSTANCE} -> ${NEW_INSTANCE})"
+else
+  echo "FAIL: cic.instance did not change ('${CIC_ECHO_INSTANCE}' -> '${NEW_INSTANCE}')"
+  exit 1
+fi
+
+OUTPUT=$(${WANAKU_CLI} mcp tool --uri "${WANAKU_ROUTER_MCP_URL}/default/mcp" ${WANAKU_CLI_TLS_OPTS} --no-auth \
+  --name cic-echo --param message=again 2>&1)
+echo "${OUTPUT}" | grep -q "again-again" && echo "PASS: the tool works after the replacement" \
+  || { echo "FAIL: the tool does not work after the replacement: ${OUTPUT}"; exit 1; }
 ```
 
-### Test 7.2: Create a WanakuServiceCatalog with a hello-world catalog
+---
 
-**Description:** Use the WanakuServiceCatalog CRD to deploy a service catalog from a ConfigMap containing base64-encoded ZIP data. This tests the operator's ability to deploy catalogs without using `wanaku service deploy` CLI.
+## Phase 7: Service Catalog Mode
+
+### Test 7.1: Package the catalog and deploy it with WanakuServiceCatalog
 
 ```bash
-# Create a minimal test catalog ZIP
+export CIC_CATALOG="${CIC_CATALOG:-cic-hello-catalog}"
+export CIC_CATALOG_SYSTEM="${CIC_CATALOG_SYSTEM:-cic-hello}"
 TEMP_DIR=$(mktemp -d)
-mkdir -p "${TEMP_DIR}/hello-system"
-
-cat > "${TEMP_DIR}/index.properties" <<'PROPS'
-catalog.name = hello-system
-catalog.description = Minimal hello-world catalog for CIC operator verification
-catalog.services = hello-system
-catalog.routes.hello-system = hello-system/hello-system.camel.yaml
-catalog.rules.hello-system = hello-system/hello-system.wanaku-rules.yaml
+mkdir -p "${TEMP_DIR}/catalog/${CIC_CATALOG_SYSTEM}"
+cat > "${TEMP_DIR}/catalog/index.properties" <<PROPS
+catalog.name=${CIC_CATALOG}
+catalog.description=Hello catalog for the CIC test plan
+catalog.services=${CIC_CATALOG_SYSTEM}
+catalog.routes.${CIC_CATALOG_SYSTEM}=${CIC_CATALOG_SYSTEM}/routes.camel.yaml
 PROPS
-
-cat > "${TEMP_DIR}/hello-system/hello-system.camel.yaml" <<'ROUTES'
+cat > "${TEMP_DIR}/catalog/${CIC_CATALOG_SYSTEM}/routes.camel.yaml" <<'ROUTES'
 - route:
-    id: route-3104
+    id: cic-catalog-greet
     from:
-      id: from-1702
-      uri: direct
+      uri: ai-tool:cic-catalog-greet
       parameters:
-        name: wanaku
+        description: "Greets a person by name"
+        parameter.name: string
+        parameter.name.description: "The name of the person to greet"
       steps:
-        - log:
-            id: log-2526
-            message: Hello ${body}
         - setBody:
-            simple: Hello ${body} from ${routeId}
+            expression:
+              simple:
+                expression: "Hello ${header.name} from the catalog"
 ROUTES
 
-cat > "${TEMP_DIR}/hello-system/hello-system.wanaku-rules.yaml" <<'RULES'
-mcp:
-  tools:
-    - sends-greeting:
-        route:
-          id: "route-3104"
-        description: "Sends a greeting message to show that the application is working"
-        properties:
-          - name: wanaku_body
-            type: string
-            description: The greeting message to send
-            required: true
-RULES
+${WANAKU_CLI} service package --path="${TEMP_DIR}/catalog" -o "${TEMP_DIR}/catalog.b64"
+[ -s "${TEMP_DIR}/catalog.b64" ] && echo "PASS: catalog packaged" || { echo "FAIL: catalog not packaged"; exit 1; }
 
-# Package as base64-encoded ZIP
-(cd "${TEMP_DIR}" && zip -r catalog.zip . 2>/dev/null)
-base64 < "${TEMP_DIR}/catalog.zip" | tr -d '\n' > "${TEMP_DIR}/catalog.b64"
-
-# Create the ConfigMap
-oc create configmap cic-hello-catalog-data \
-  --from-file=catalog.zip="${TEMP_DIR}/catalog.b64" \
-  -n "${WANAKU_NAMESPACE}"
-oc label configmap cic-hello-catalog-data wanaku-test=true -n "${WANAKU_NAMESPACE}"
-
+oc create configmap cic-hello-catalog-data --from-file=catalog.zip="${TEMP_DIR}/catalog.b64" \
+  --dry-run=client -o yaml | oc apply -n "${WANAKU_NAMESPACE}" -f -
+oc label configmap cic-hello-catalog-data wanaku-test=true --overwrite -n "${WANAKU_NAMESPACE}"
 rm -rf "${TEMP_DIR}"
 
-echo "PASS: test ConfigMap created"
-```
-
-**Verification - ConfigMap has catalog.zip key:**
-
-```bash
-oc get configmap cic-hello-catalog-data -n "${WANAKU_NAMESPACE}" -o jsonpath='{.data}' | jq -r 'keys[]' | grep -q "catalog.zip"
-echo "configmap-has-catalog-zip=$?"
-# Expected: configmap-has-catalog-zip=0
-```
-
-### Test 7.3: Create WanakuServiceCatalog CR
-
-```bash
-cat <<'EOF' | oc apply -n "${WANAKU_NAMESPACE}" -f -
+cat <<EOF | oc apply -n "${WANAKU_NAMESPACE}" -f -
 apiVersion: "wanaku.ai/v1alpha1"
 kind: WanakuServiceCatalog
 metadata:
   name: cic-test-service-catalogs
 spec:
-  routerRef: wanaku-test-router
+  routerRef: ${WANAKU_ROUTER_NAME}
   catalogs:
-    - name: hello-system
+    - name: ${CIC_CATALOG}
       configMapRef: cic-hello-catalog-data
 EOF
+
+wait_cr_condition wanakuservicecatalog cic-test-service-catalogs Ready True ReconciliationSucceeded || exit 1
+oc get wanakuservicecatalog cic-test-service-catalogs -n "${WANAKU_NAMESPACE}" -o jsonpath='{.status.deployedCatalogs[*]}' \
+  | grep -qw "${CIC_CATALOG}" && echo "PASS: ${CIC_CATALOG} deployed to Barn" || { echo "FAIL: ${CIC_CATALOG} not deployed"; exit 1; }
 ```
 
-### Test 7.4: Verify WanakuServiceCatalog reaches Ready
+### Test 7.2: Create a WanakuIntegration with the service catalog source
 
-```bash
-oc wait wanakuservicecatalog/cic-test-service-catalogs \
-  --for=condition=Ready \
-  --timeout=120s \
-  -n "${WANAKU_NAMESPACE}" 2>/dev/null
-
-SC_READY=$(oc get wanakuservicecatalog cic-test-service-catalogs -n "${WANAKU_NAMESPACE}" \
-  -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "unknown")
-echo "service-catalog-ready=${SC_READY}"
-
-if [ "${SC_READY}" = "True" ]; then
-  DEPLOYED=$(oc get wanakuservicecatalog cic-test-service-catalogs -n "${WANAKU_NAMESPACE}" \
-    -o jsonpath='{.status.deployedCatalogs[*]}')
-  echo "deployed-catalogs=${DEPLOYED}"
-  if echo "${DEPLOYED}" | grep -q "hello-system"; then
-    echo "PASS: hello-system listed in deployedCatalogs"
-  else
-    echo "FAIL: hello-system not found in deployedCatalogs"
-  fi
-else
-  echo "FAIL: WanakuServiceCatalog did not reach Ready"
-fi
-```
-
-### Test 7.5: Verify catalog deployed to router via REST API
-
-```bash
-ensure_valid_token
-
-CATALOG_RESPONSE=$(query_router_api /api/v1/service-catalog)
-
-if echo "${CATALOG_RESPONSE}" | jq -e '.data[] | select(.name == "hello-system")' > /dev/null 2>&1; then
-  echo "PASS: hello-system catalog found in router"
-else
-  echo "FAIL: hello-system catalog not found in router response"
-  echo "Response: ${CATALOG_RESPONSE}"
-fi
-```
-
-### Test 7.6: Deploy CIC via WanakuCapability with service catalog
-
-**Description:** Use the WanakuCapability CRD with `type: "camel-integration-capability"` to deploy a CIC that picks up the hello-system catalog deployed in Tests 7.2-7.5.
+**Description:** The runtime downloads the catalog from Barn and registers its forward in the Wanaku namespace
+`${CIC_CATALOG_NAMESPACE}`. The forward name is `cic-catalog-fwd` (`spec.registration.name`).
 
 ```bash
 cat <<EOF | oc apply -n "${WANAKU_NAMESPACE}" -f -
 apiVersion: "wanaku.ai/v1alpha1"
-kind: WanakuCapability
+kind: WanakuIntegration
 metadata:
-  name: cic-catalog-capability
+  name: cic-catalog
 spec:
-  auth:
-    authServer: "http://keycloak:8080"
-    authProxy: "auto"
-  secrets:
-    oidcCredentialsSecret: "${WANAKU_OIDC_CLIENT_SECRET}"
-  routerRef: wanaku-test-router
-  capabilities:
-    - name: cic-catalog-test
-      image: ${CIC_IMAGE}
-      type: "camel-integration-capability"
-      serviceCatalog: "hello-system"
-      serviceCatalogSystem: "hello-system"
-      imagePullPolicy: Always
+  routerRef: ${WANAKU_ROUTER_NAME}
+  image: ${CIC_IMAGE}
+  imagePullPolicy: Always
+  routes:
+    serviceCatalog:
+      name: ${CIC_CATALOG}
+      system: ${CIC_CATALOG_SYSTEM}
+  registration:
+    name: cic-catalog-fwd
+    namespace: ${CIC_CATALOG_NAMESPACE}
 EOF
+
+FAIL=0
+wait_cr_condition wanakuintegration cic-catalog Registered True Registered || FAIL=1
+wait_cr_condition wanakuintegration cic-catalog Ready True || FAIL=1
+[ "${FAIL}" -eq 0 ] || { oc logs deployment/cic-catalog-cic -n "${WANAKU_NAMESPACE}" --tail=30; exit 1; }
 ```
 
-### Test 7.7: Verify WanakuCapability reaches Ready
+### Test 7.3: Verify the catalog environment and the status
 
 ```bash
-oc wait wanakucapability/cic-catalog-capability \
-  --for=condition=Ready \
-  --timeout=120s \
-  -n "${WANAKU_NAMESPACE}"
-# Expected output: wanakucapability.wanaku.ai/cic-catalog-capability condition met
+FAIL=0
+cic_env() { oc get deployment cic-catalog-cic -n "${WANAKU_NAMESPACE}" \
+  -o jsonpath="{.spec.template.spec.containers[0].env[?(@.name==\"$1\")].value}"; }
+check "SERVICE_CATALOG" "$(cic_env SERVICE_CATALOG)" "${CIC_CATALOG}"
+check "SERVICE_CATALOG_SYSTEM" "$(cic_env SERVICE_CATALOG_SYSTEM)" "${CIC_CATALOG_SYSTEM}"
+check "SERVICE_NAME" "$(cic_env SERVICE_NAME)" "cic-catalog-fwd"
+check "WANAKU_NAMESPACE" "$(cic_env WANAKU_NAMESPACE)" "${CIC_CATALOG_NAMESPACE}"
+[ -z "$(cic_env ROUTES_PATH)" ] && echo "PASS: no ROUTES_PATH in catalog mode" || { echo "FAIL: ROUTES_PATH is set"; FAIL=1; }
+
+check "status.forwardName" "$(oc get wanakuintegration cic-catalog -n "${WANAKU_NAMESPACE}" -o jsonpath='{.status.forwardName}')" "cic-catalog-fwd"
+ENDPOINT=$(oc get wanakuintegration cic-catalog -n "${WANAKU_NAMESPACE}" -o jsonpath='{.status.wanakuEndpoint}')
+check "status.wanakuEndpoint" "${ENDPOINT}" "${WANAKU_ROUTER_MCP_URL}/${CIC_CATALOG_NAMESPACE}/mcp"
+[ "${FAIL}" -eq 0 ] || exit 1
 ```
 
-### Test 7.8: Verify CIC capability deployment
+### Test 7.4: Verify the catalog tool is served only in its namespace, and invoke it
 
 ```bash
-oc wait deployment/cic-catalog-test \
-  --for=condition=Available \
-  --timeout=120s \
-  -n "${WANAKU_NAMESPACE}"
-echo "cic-catalog-deployment-available=$?"
-# Expected: cic-catalog-deployment-available=0
+wait_for_tool cic-catalog-greet || exit 1
 
-# Verify the container image
-CAP_IMAGE=$(oc get deployment cic-catalog-test -n "${WANAKU_NAMESPACE}" \
-  -o jsonpath='{.spec.template.spec.containers[0].image}')
-echo "capability-image=${CAP_IMAGE}"
-if [ "${CAP_IMAGE}" != "${CIC_IMAGE}" ]; then
-  echo "FAIL: unexpected capability image"
-  exit 1
-fi
-echo "PASS: capability image matches"
-```
+OUTPUT=$(${WANAKU_CLI} mcp tool list --uri "${WANAKU_ROUTER_MCP_URL}/${CIC_CATALOG_NAMESPACE}/mcp" ${WANAKU_CLI_TLS_OPTS} --no-auth --plain 2>&1)
+echo "${OUTPUT}" | grep -q "cic-catalog-greet" && echo "PASS: cic-catalog-greet listed in ${CIC_CATALOG_NAMESPACE}" \
+  || { echo "FAIL: cic-catalog-greet not listed in ${CIC_CATALOG_NAMESPACE}"; exit 1; }
 
-### Test 7.9: Verify CIC capability has correct environment variables
+OUTPUT=$(${WANAKU_CLI} mcp tool list --uri "${WANAKU_ROUTER_MCP_URL}/default/mcp" ${WANAKU_CLI_TLS_OPTS} --no-auth --plain 2>&1)
+echo "${OUTPUT}" | grep -q "cic-catalog-greet" \
+  && { echo "FAIL: cic-catalog-greet is also served in default"; exit 1; } \
+  || echo "PASS: cic-catalog-greet is not served in default"
 
-```bash
-# Check SERVICE_CATALOG env var
-SERVICE_CAT=$(oc get deployment cic-catalog-test -n "${WANAKU_NAMESPACE}" \
-  -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="SERVICE_CATALOG")].value}')
-echo "SERVICE_CATALOG=${SERVICE_CAT}"
-if [ "${SERVICE_CAT}" != "hello-system" ]; then
-  echo "FAIL: SERVICE_CATALOG is '${SERVICE_CAT}', expected 'hello-system'"
-  exit 1
-fi
-echo "PASS: SERVICE_CATALOG is correct"
-
-# Check SERVICE_CATALOG_SYSTEM env var
-SERVICE_CAT_SYS=$(oc get deployment cic-catalog-test -n "${WANAKU_NAMESPACE}" \
-  -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="SERVICE_CATALOG_SYSTEM")].value}')
-echo "SERVICE_CATALOG_SYSTEM=${SERVICE_CAT_SYS}"
-if [ "${SERVICE_CAT_SYS}" != "hello-system" ]; then
-  echo "FAIL: SERVICE_CATALOG_SYSTEM is '${SERVICE_CAT_SYS}', expected 'hello-system'"
-  exit 1
-fi
-echo "PASS: SERVICE_CATALOG_SYSTEM is correct"
-
-# Check REGISTRATION_URL points to internal router
-REG_URL=$(oc get deployment cic-catalog-test -n "${WANAKU_NAMESPACE}" \
-  -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="REGISTRATION_URL")].value}')
-echo "REGISTRATION_URL=${REG_URL}"
-if ! echo "${REG_URL}" | grep -q "barn-wanaku-test-router"; then
-  echo "FAIL: REGISTRATION_URL does not reference the internal router service"
-  exit 1
-fi
-echo "PASS: REGISTRATION_URL is correct"
-```
-
-### Test 7.10: Verify CIC capability pod is running in catalog mode
-
-```bash
-CIC_CAP_POD=$(oc get pods -l app=cic-catalog-test \
-  -n "${WANAKU_NAMESPACE}" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
-
-if [ -z "${CIC_CAP_POD}" ]; then
-  echo "FAIL: no CIC capability pod found"
-  exit 1
-fi
-
-POD_PHASE=$(oc get pod "${CIC_CAP_POD}" -n "${WANAKU_NAMESPACE}" -o jsonpath='{.status.phase}')
-if [ "${POD_PHASE}" != "Running" ]; then
-  echo "FAIL: CIC capability pod phase is '${POD_PHASE}', expected 'Running'"
-  oc describe pod "${CIC_CAP_POD}" -n "${WANAKU_NAMESPACE}" | tail -20
-  exit 1
-fi
-echo "PASS: CIC capability pod is Running"
-
-# Verify logs reference the service catalog
-oc logs "${CIC_CAP_POD}" -n "${WANAKU_NAMESPACE}" | grep -qi "catalog\|hello-system" && \
-  echo "PASS: service catalog reference found in CIC logs" || \
-  echo "INFO: service catalog reference not found in CIC logs"
-```
-
-### Test 7.11: Delete service catalog mode resources
-
-```bash
-oc delete wanakucapability cic-catalog-capability -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
-oc delete wanakuservicecatalog cic-test-service-catalogs -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
-
-wait_for_deletion deployment cic-catalog-test "${WANAKU_NAMESPACE}" 60
-echo "PASS: service catalog mode resources deleted"
+OUTPUT=$(${WANAKU_CLI} mcp tool --uri "${WANAKU_ROUTER_MCP_URL}/${CIC_CATALOG_NAMESPACE}/mcp" ${WANAKU_CLI_TLS_OPTS} --no-auth \
+  --name cic-catalog-greet --param name=Alice 2>&1)
+echo "${OUTPUT}"
+echo "${OUTPUT}" | grep -q "Hello Alice from the catalog" && echo "PASS: cic-catalog-greet returned the greeting" \
+  || { echo "FAIL: unexpected result"; exit 1; }
 ```
 
 ---
 
-## Phase 8: Error Handling and Negative Tests
+## Phase 8: Plain Deployment Registered With `wanaku forwards add`
 
-### Test 8.1: Missing routerRef
+### Test 8.1: Deploy a CIC runtime without the operator
 
-**Description:** A WanakuCamelRoute without `routerRef` should not become Ready.
+**Description:** The runtime does not register itself (`WANAKU_REGISTER` is not set). Its route serves the tool
+`cic-manual-echo`. Wanaku Server stores tools by name, not by namespace and name: a second forward that serves a tool
+with the same name replaces the first entry, and removing that forward removes the tool. Use a tool name that no other
+forward serves.
 
 ```bash
-cat <<'EOF' | oc apply -n "${WANAKU_NAMESPACE}" -f -
-apiVersion: wanaku.ai/v1alpha1
-kind: WanakuCamelRoute
+cat <<EOF | oc apply -n "${WANAKU_NAMESPACE}" -f -
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cic-manual-routes
+  labels:
+    wanaku-test: "true"
+data:
+  cic-manual.camel.yaml: |
+    - route:
+        id: cic-manual-echo
+        from:
+          uri: ai-tool:cic-manual-echo
+          parameters:
+            description: "Echo back the input message duplicated with a separator"
+            parameter.message: string
+            parameter.message.description: "The message to echo back"
+          steps:
+            - setBody:
+                expression:
+                  simple:
+                    expression: "\${header.message}-\${header.message}"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cic-manual
+  labels:
+    wanaku-test: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cic-manual
+  template:
+    metadata:
+      labels:
+        app: cic-manual
+    spec:
+      containers:
+        - name: cic
+          image: ${CIC_IMAGE}
+          imagePullPolicy: Always
+          env:
+            - name: REGISTRATION_URL
+              value: http://barn-${WANAKU_ROUTER_NAME}:8080
+            - name: SERVICE_NAME
+              value: cic-manual
+            - name: ROUTES_PATH
+              value: file:///routes/cic-manual.camel.yaml
+            - name: MCP_PORT
+              value: "9090"
+            - name: DATA_DIR
+              value: /data
+          ports:
+            - name: mcp
+              containerPort: 9090
+          readinessProbe:
+            httpGet:
+              path: /observe/health/ready
+              port: mcp
+            periodSeconds: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: routes
+              mountPath: /routes
+              readOnly: true
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: routes
+          configMap:
+            name: cic-manual-routes
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cic-manual
+  labels:
+    wanaku-test: "true"
+spec:
+  selector:
+    app: cic-manual
+  ports:
+    - name: mcp
+      port: 9090
+      targetPort: mcp
+EOF
+
+oc wait deployment/cic-manual --for=condition=Available --timeout=180s -n "${WANAKU_NAMESPACE}"
+echo "cic-manual-available=$?"
+# Expected: cic-manual-available=0
+```
+
+### Test 8.2: Register the runtime as a forward and verify discovery
+
+**Description:** `forwards add` requires `--name`, `--service` and `--namespace`. The command prints nothing on
+success. Wanaku Server discovers the tools while it creates the forward.
+
+```bash
+${WANAKU_CLI} forwards add --host "${WANAKU_ROUTER_URL}" ${WANAKU_CLI_TLS_OPTS} --no-auth \
+  --name cic-manual --service "http://cic-manual.${WANAKU_NAMESPACE}.svc:9090/mcp" --namespace "${CIC_CATALOG_NAMESPACE}"
+[ $? -eq 0 ] && echo "PASS: forward cic-manual added" || { echo "FAIL: forwards add failed"; exit 1; }
+
+FORWARD=$(curl -s ${CURL_TLS_OPTS} "${WANAKU_ROUTER_URL}/api/v1/forwards/cic-manual")
+FAIL=0
+check "cic-manual available" "$(echo "${FORWARD}" | jq -r '.data.available')" "true"
+[ "${FAIL}" -eq 0 ] || { echo "${FORWARD}" | jq -r '.data.statusMessage'; exit 1; }
+
+OUTPUT=$(${WANAKU_CLI} mcp tool --uri "${WANAKU_ROUTER_MCP_URL}/${CIC_CATALOG_NAMESPACE}/mcp" ${WANAKU_CLI_TLS_OPTS} --no-auth \
+  --name cic-manual-echo --param message=manual 2>&1)
+echo "${OUTPUT}" | grep -q "manual-manual" && echo "PASS: the manually registered tool works" \
+  || { echo "FAIL: unexpected result: ${OUTPUT}"; exit 1; }
+```
+
+### Test 8.3: Negative test - forward to an unreachable address
+
+**Description:** Wanaku Server stores a forward whose upstream is unreachable, but marks it unavailable with a status
+message. It discovers no tools for it.
+
+```bash
+${WANAKU_CLI} forwards add --host "${WANAKU_ROUTER_URL}" ${WANAKU_CLI_TLS_OPTS} --no-auth \
+  --name cic-unreachable --service "http://cic-does-not-exist.${WANAKU_NAMESPACE}.svc:9090/mcp" --namespace "${CIC_CATALOG_NAMESPACE}"
+
+FORWARD=$(curl -s ${CURL_TLS_OPTS} "${WANAKU_ROUTER_URL}/api/v1/forwards/cic-unreachable")
+FAIL=0
+check "cic-unreachable available" "$(echo "${FORWARD}" | jq -r '.data.available')" "false"
+[ -n "$(echo "${FORWARD}" | jq -r '.data.statusMessage // empty')" ] && echo "PASS: statusMessage explains the failure" \
+  || { echo "FAIL: no statusMessage"; FAIL=1; }
+
+${WANAKU_CLI} forwards remove --host "${WANAKU_ROUTER_URL}" ${WANAKU_CLI_TLS_OPTS} --no-auth --name cic-unreachable
+[ "${FAIL}" -eq 0 ] || exit 1
+```
+
+### Test 8.4: Remove the forward and verify its tools are removed
+
+```bash
+${WANAKU_CLI} forwards remove --host "${WANAKU_ROUTER_URL}" ${WANAKU_CLI_TLS_OPTS} --no-auth --name cic-manual
+[ $? -eq 0 ] && echo "PASS: forward cic-manual removed" || { echo "FAIL: forwards remove failed"; exit 1; }
+
+OUTPUT=$(${WANAKU_CLI} mcp tool list --uri "${WANAKU_ROUTER_MCP_URL}/${CIC_CATALOG_NAMESPACE}/mcp" ${WANAKU_CLI_TLS_OPTS} --no-auth --plain 2>&1)
+echo "${OUTPUT}" | grep -q "cic-manual-echo" \
+  && { echo "FAIL: cic-manual-echo is still served in ${CIC_CATALOG_NAMESPACE}"; exit 1; } \
+  || echo "PASS: the tools of the removed forward are gone"
+
+# The other forwards keep their tools
+wait_for_tool cic-echo || exit 1
+
+oc delete deployment cic-manual -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
+oc delete service cic-manual -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
+```
+
+---
+
+## Phase 9: WanakuIntegration Negative Tests
+
+Each test creates an invalid resource, verifies `Reconciled=False` with the reason `ValidationError` and the expected
+message, verifies that no Deployment is created, and deletes the resource.
+
+### Helper: run one negative test
+
+```bash
+expect_integration_invalid() {
+  # $1 = resource name, $2 = text expected in the Reconciled message. The manifest is read from stdin.
+  oc apply -n "${WANAKU_NAMESPACE}" -f -
+  EII_RESULT=0
+  wait_cr_condition wanakuintegration "$1" Reconciled False ValidationError || EII_RESULT=1
+  oc get wanakuintegration "$1" -n "${WANAKU_NAMESPACE}" \
+    -o jsonpath='{.status.conditions[?(@.type=="Reconciled")].message}' | grep -q "$2" \
+    && echo "PASS: message contains '$2'" || { echo "FAIL: message does not contain '$2'"; EII_RESULT=1; }
+  if oc get deployment "$1-cic" -n "${WANAKU_NAMESPACE}" > /dev/null 2>&1; then
+    echo "FAIL: Deployment $1-cic was created for an invalid resource"
+    EII_RESULT=1
+  fi
+  oc delete wanakuintegration "$1" -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
+  return ${EII_RESULT}
+}
+```
+
+### Test 9.1: Missing routerRef
+
+```bash
+expect_integration_invalid bad-no-router-ref "spec.routerRef is required" <<'EOF'
+apiVersion: "wanaku.ai/v1alpha1"
+kind: WanakuIntegration
 metadata:
   name: bad-no-router-ref
 spec:
-  route:
-    - route:
-        id: bad-route
-        from:
-          uri: direct:bad
-          steps:
-            - log:
-                message: "Should not deploy"
-  mcp:
-    tools:
-      - name: bad-tool
-        routeId: bad-route
-        description: "A tool that should fail"
+  routes:
+    routesRef: datastore://orders.camel.yaml
 EOF
-
-# Poll until the CR has a status or timeout
-END=$((SECONDS + 30))
-while [ $SECONDS -lt $END ]; do
-  STATUS=$(oc get wanakucamelroute bad-no-router-ref -n "${WANAKU_NAMESPACE}" \
-    -o jsonpath='{.status}' 2>/dev/null || echo "")
-  [ -n "${STATUS}" ] && break
-  sleep 3
-done
-
-READY_STATUS=$(oc get wanakucamelroute bad-no-router-ref -n "${WANAKU_NAMESPACE}" \
-  -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")
-if [ "${READY_STATUS}" = "True" ]; then
-  echo "FAIL: CamelRoute without routerRef should not become Ready"
-  exit 1
-fi
-echo "PASS: CamelRoute without routerRef is not Ready"
-
-# Verify operator logged the error
-OPERATOR_POD=$(oc get pods -l app.kubernetes.io/name=wanaku-operator \
-  -n "${WANAKU_NAMESPACE}" -o jsonpath='{.items[0].metadata.name}')
-oc logs "${OPERATOR_POD}" -n "${WANAKU_NAMESPACE}" --tail=30 | grep -q "routerRef must be specified" && \
-  echo "PASS: operator logged routerRef validation error" || \
-  echo "INFO: routerRef validation error not in recent logs"
-
-# Cleanup
-oc delete wanakucamelroute bad-no-router-ref -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
 ```
 
-### Test 8.2: Missing route
-
-**Description:** A WanakuCamelRoute without `route` should not become Ready.
+### Test 9.2: Non-existent routerRef
 
 ```bash
-cat <<'EOF' | oc apply -n "${WANAKU_NAMESPACE}" -f -
-apiVersion: wanaku.ai/v1alpha1
-kind: WanakuCamelRoute
-metadata:
-  name: bad-no-route
-spec:
-  routerRef: wanaku-test-router
-  mcp:
-    tools:
-      - name: bad-tool
-        routeId: missing-route
-        description: "A tool with no route"
-EOF
-
-END=$((SECONDS + 30))
-while [ $SECONDS -lt $END ]; do
-  STATUS=$(oc get wanakucamelroute bad-no-route -n "${WANAKU_NAMESPACE}" \
-    -o jsonpath='{.status}' 2>/dev/null || echo "")
-  [ -n "${STATUS}" ] && break
-  sleep 3
-done
-
-READY_STATUS=$(oc get wanakucamelroute bad-no-route -n "${WANAKU_NAMESPACE}" \
-  -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")
-if [ "${READY_STATUS}" = "True" ]; then
-  echo "FAIL: CamelRoute without route should not become Ready"
-  exit 1
-fi
-echo "PASS: CamelRoute without route is not Ready"
-
-OPERATOR_POD=$(oc get pods -l app.kubernetes.io/name=wanaku-operator \
-  -n "${WANAKU_NAMESPACE}" -o jsonpath='{.items[0].metadata.name}')
-oc logs "${OPERATOR_POD}" -n "${WANAKU_NAMESPACE}" --tail=30 | grep -q "route must be specified" && \
-  echo "PASS: operator logged route validation error" || \
-  echo "INFO: route validation error not in recent logs"
-
-oc delete wanakucamelroute bad-no-route -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
-```
-
-### Test 8.3: Missing mcp
-
-**Description:** A WanakuCamelRoute without `mcp` should not become Ready.
-
-```bash
-cat <<'EOF' | oc apply -n "${WANAKU_NAMESPACE}" -f -
-apiVersion: wanaku.ai/v1alpha1
-kind: WanakuCamelRoute
-metadata:
-  name: bad-no-mcp
-spec:
-  routerRef: wanaku-test-router
-  route:
-    - route:
-        id: orphan-route
-        from:
-          uri: direct:orphan
-          steps:
-            - log:
-                message: "No MCP"
-EOF
-
-END=$((SECONDS + 30))
-while [ $SECONDS -lt $END ]; do
-  STATUS=$(oc get wanakucamelroute bad-no-mcp -n "${WANAKU_NAMESPACE}" \
-    -o jsonpath='{.status}' 2>/dev/null || echo "")
-  [ -n "${STATUS}" ] && break
-  sleep 3
-done
-
-READY_STATUS=$(oc get wanakucamelroute bad-no-mcp -n "${WANAKU_NAMESPACE}" \
-  -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")
-if [ "${READY_STATUS}" = "True" ]; then
-  echo "FAIL: CamelRoute without mcp should not become Ready"
-  exit 1
-fi
-echo "PASS: CamelRoute without mcp is not Ready"
-
-OPERATOR_POD=$(oc get pods -l app.kubernetes.io/name=wanaku-operator \
-  -n "${WANAKU_NAMESPACE}" -o jsonpath='{.items[0].metadata.name}')
-oc logs "${OPERATOR_POD}" -n "${WANAKU_NAMESPACE}" --tail=30 | grep -q "mcp must define at least one tool or resource" && \
-  echo "PASS: operator logged mcp validation error" || \
-  echo "INFO: mcp validation error not in recent logs"
-
-oc delete wanakucamelroute bad-no-mcp -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
-```
-
-### Test 8.4: Empty mcp (tools and resources both empty)
-
-**Description:** A WanakuCamelRoute with empty tools and resources lists should not become Ready.
-
-```bash
-cat <<'EOF' | oc apply -n "${WANAKU_NAMESPACE}" -f -
-apiVersion: wanaku.ai/v1alpha1
-kind: WanakuCamelRoute
-metadata:
-  name: bad-empty-mcp
-spec:
-  routerRef: wanaku-test-router
-  route:
-    - route:
-        id: empty-mcp-route
-        from:
-          uri: direct:empty
-          steps:
-            - log:
-                message: "Empty MCP"
-  mcp:
-    tools: []
-    resources: []
-EOF
-
-END=$((SECONDS + 30))
-while [ $SECONDS -lt $END ]; do
-  STATUS=$(oc get wanakucamelroute bad-empty-mcp -n "${WANAKU_NAMESPACE}" \
-    -o jsonpath='{.status}' 2>/dev/null || echo "")
-  [ -n "${STATUS}" ] && break
-  sleep 3
-done
-
-READY_STATUS=$(oc get wanakucamelroute bad-empty-mcp -n "${WANAKU_NAMESPACE}" \
-  -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")
-if [ "${READY_STATUS}" = "True" ]; then
-  echo "FAIL: CamelRoute with empty mcp should not become Ready"
-  exit 1
-fi
-echo "PASS: CamelRoute with empty mcp is not Ready"
-
-OPERATOR_POD=$(oc get pods -l app.kubernetes.io/name=wanaku-operator \
-  -n "${WANAKU_NAMESPACE}" -o jsonpath='{.items[0].metadata.name}')
-oc logs "${OPERATOR_POD}" -n "${WANAKU_NAMESPACE}" --tail=30 | grep -q "mcp must define at least one tool or resource" && \
-  echo "PASS: operator logged empty mcp validation error" || \
-  echo "INFO: empty mcp validation error not in recent logs"
-
-oc delete wanakucamelroute bad-empty-mcp -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
-```
-
-### Test 8.5: Non-existent routerRef
-
-**Description:** A WanakuCamelRoute referencing a WanakuRouter that does not exist should not become Ready.
-
-```bash
-cat <<'EOF' | oc apply -n "${WANAKU_NAMESPACE}" -f -
-apiVersion: wanaku.ai/v1alpha1
-kind: WanakuCamelRoute
+expect_integration_invalid bad-missing-router "does not exist" <<'EOF'
+apiVersion: "wanaku.ai/v1alpha1"
+kind: WanakuIntegration
 metadata:
   name: bad-missing-router
 spec:
   routerRef: non-existent-router
-  route:
-    - route:
-        id: missing-router-route
-        from:
-          uri: direct:missing
-          steps:
-            - log:
-                message: "Router does not exist"
-  mcp:
-    tools:
-      - name: missing-router-tool
-        routeId: missing-router-route
-        description: "A tool referencing a non-existent router"
+  routes:
+    routesRef: datastore://orders.camel.yaml
 EOF
-
-END=$((SECONDS + 30))
-while [ $SECONDS -lt $END ]; do
-  STATUS=$(oc get wanakucamelroute bad-missing-router -n "${WANAKU_NAMESPACE}" \
-    -o jsonpath='{.status}' 2>/dev/null || echo "")
-  [ -n "${STATUS}" ] && break
-  sleep 3
-done
-
-READY_STATUS=$(oc get wanakucamelroute bad-missing-router -n "${WANAKU_NAMESPACE}" \
-  -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")
-if [ "${READY_STATUS}" = "True" ]; then
-  echo "FAIL: CamelRoute with non-existent routerRef should not become Ready"
-  exit 1
-fi
-echo "PASS: CamelRoute with non-existent routerRef is not Ready"
-
-OPERATOR_POD=$(oc get pods -l app.kubernetes.io/name=wanaku-operator \
-  -n "${WANAKU_NAMESPACE}" -o jsonpath='{.items[0].metadata.name}')
-oc logs "${OPERATOR_POD}" -n "${WANAKU_NAMESPACE}" --tail=30 | grep -q "non-existent-router" && \
-  echo "PASS: operator logged missing router error" || \
-  echo "INFO: missing router error not in recent logs"
-
-oc delete wanakucamelroute bad-missing-router -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
 ```
 
-### Test 8.6: WanakuServiceCatalog with missing ConfigMap
-
-**Description:** A WanakuServiceCatalog referencing a non-existent ConfigMap should not become Ready.
+### Test 9.3: No routes source, and two routes sources
 
 ```bash
-cat <<'EOF' | oc apply -n "${WANAKU_NAMESPACE}" -f -
+expect_integration_invalid bad-no-routes "Set exactly one of" <<EOF
 apiVersion: "wanaku.ai/v1alpha1"
-kind: WanakuServiceCatalog
+kind: WanakuIntegration
+metadata:
+  name: bad-no-routes
+spec:
+  routerRef: ${WANAKU_ROUTER_NAME}
+EOF
+
+expect_integration_invalid bad-two-routes "Set exactly one of" <<EOF
+apiVersion: "wanaku.ai/v1alpha1"
+kind: WanakuIntegration
+metadata:
+  name: bad-two-routes
+spec:
+  routerRef: ${WANAKU_ROUTER_NAME}
+  routes:
+    routesRef: datastore://orders.camel.yaml
+    serviceCatalog:
+      name: ${CIC_CATALOG}
+      system: ${CIC_CATALOG_SYSTEM}
+EOF
+```
+
+### Test 9.4: Route ConfigMap does not exist, and configMapRef without main
+
+```bash
+expect_integration_invalid bad-missing-configmap "ConfigMap this-configmap-does-not-exist does not exist" <<EOF
+apiVersion: "wanaku.ai/v1alpha1"
+kind: WanakuIntegration
 metadata:
   name: bad-missing-configmap
 spec:
-  routerRef: wanaku-test-router
-  catalogs:
-    - name: missing-catalog
-      configMapRef: this-configmap-does-not-exist
+  routerRef: ${WANAKU_ROUTER_NAME}
+  routes:
+    configMapRef:
+      name: this-configmap-does-not-exist
+      main: routes.camel.yaml
 EOF
 
-END=$((SECONDS + 30))
-while [ $SECONDS -lt $END ]; do
-  STATUS=$(oc get wanakuservicecatalog bad-missing-configmap -n "${WANAKU_NAMESPACE}" \
-    -o jsonpath='{.status}' 2>/dev/null || echo "")
-  [ -n "${STATUS}" ] && break
-  sleep 3
-done
-
-BAD_SC_READY=$(oc get wanakuservicecatalog bad-missing-configmap -n "${WANAKU_NAMESPACE}" \
-  -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")
-if [ "${BAD_SC_READY}" = "True" ]; then
-  echo "FAIL: service catalog with missing ConfigMap should not become Ready"
-  exit 1
-fi
-echo "PASS: service catalog with missing ConfigMap is not Ready"
-
-oc delete wanakuservicecatalog bad-missing-configmap -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
-```
-
-### Test 8.7: WanakuCapability with missing routerRef
-
-**Description:** A WanakuCapability without `routerRef` should not become Ready.
-
-```bash
-cat <<EOF | oc apply -n "${WANAKU_NAMESPACE}" -f -
+expect_integration_invalid bad-configmap-no-main "requires name and main" <<EOF
 apiVersion: "wanaku.ai/v1alpha1"
-kind: WanakuCapability
+kind: WanakuIntegration
 metadata:
-  name: bad-capability-no-ref
+  name: bad-configmap-no-main
 spec:
-  capabilities:
-    - name: bad-capability
-      image: ${CIC_IMAGE}
-      type: "camel-integration-capability"
+  routerRef: ${WANAKU_ROUTER_NAME}
+  routes:
+    configMapRef:
+      name: cic-echo-routes
+EOF
+```
+
+### Test 9.5: Service catalog without system, invalid port, and missing token Secret
+
+```bash
+expect_integration_invalid bad-catalog-no-system "requires name and system" <<EOF
+apiVersion: "wanaku.ai/v1alpha1"
+kind: WanakuIntegration
+metadata:
+  name: bad-catalog-no-system
+spec:
+  routerRef: ${WANAKU_ROUTER_NAME}
+  routes:
+    serviceCatalog:
+      name: ${CIC_CATALOG}
 EOF
 
-END=$((SECONDS + 30))
-while [ $SECONDS -lt $END ]; do
-  STATUS=$(oc get wanakucapability bad-capability-no-ref -n "${WANAKU_NAMESPACE}" \
-    -o jsonpath='{.status}' 2>/dev/null || echo "")
-  [ -n "${STATUS}" ] && break
-  sleep 3
+expect_integration_invalid bad-port "spec.mcp.port must be between 1 and 65535" <<EOF
+apiVersion: "wanaku.ai/v1alpha1"
+kind: WanakuIntegration
+metadata:
+  name: bad-port
+spec:
+  routerRef: ${WANAKU_ROUTER_NAME}
+  routes:
+    routesRef: datastore://orders.camel.yaml
+  mcp:
+    port: 70000
+EOF
+
+expect_integration_invalid bad-token-secret "Secret missing-token-secret does not exist" <<EOF
+apiVersion: "wanaku.ai/v1alpha1"
+kind: WanakuIntegration
+metadata:
+  name: bad-token-secret
+spec:
+  routerRef: ${WANAKU_ROUTER_NAME}
+  routes:
+    routesRef: datastore://orders.camel.yaml
+  registration:
+    tokenSecretRef:
+      name: missing-token-secret
+EOF
+```
+
+---
+
+## Phase 10: Deletion
+
+### Test 10.1: Delete the WanakuIntegrations and verify the forwards are removed
+
+**Description:** Kubernetes deletes the runtime Deployment and Service through the owner reference. The runtime
+removes its own forward at shutdown, so Wanaku Server no longer serves the tools.
+
+```bash
+oc delete wanakuintegration cic-echo cic-catalog -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
+
+FAIL=0
+for NAME in cic-echo cic-catalog; do
+  wait_for_deletion deployment "${NAME}-cic" "${WANAKU_NAMESPACE}" 120 || FAIL=1
+  wait_for_deletion service "${NAME}-cic" "${WANAKU_NAMESPACE}" 60 || FAIL=1
 done
 
-READY_STATUS=$(oc get wanakucapability bad-capability-no-ref -n "${WANAKU_NAMESPACE}" \
-  -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")
-if [ "${READY_STATUS}" = "True" ]; then
-  echo "FAIL: capability without routerRef should not become Ready"
-  exit 1
-fi
-echo "PASS: capability without routerRef is not Ready"
+for FWD in cic-echo cic-catalog-fwd; do
+  GONE=false
+  for i in $(seq 1 30); do
+    if ! ${WANAKU_CLI} forwards list --host "${WANAKU_ROUTER_URL}" ${WANAKU_CLI_TLS_OPTS} --no-auth --plain 2>/dev/null \
+        | grep -q "^${FWD}[[:space:]]"; then
+      GONE=true
+      break
+    fi
+    sleep 3
+  done
+  [ "${GONE}" = "true" ] && echo "PASS: forward ${FWD} removed by the runtime at shutdown" \
+    || { echo "FAIL: forward ${FWD} is still registered"; FAIL=1; }
+done
 
-oc delete wanakucapability bad-capability-no-ref -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
+OUTPUT=$(${WANAKU_CLI} tools list --host "${WANAKU_ROUTER_URL}" ${WANAKU_CLI_TLS_OPTS} --no-auth --plain 2>&1)
+echo "${OUTPUT}" | grep -qE "cic-echo|cic-catalog-greet" \
+  && { echo "FAIL: CIC tools are still registered"; FAIL=1; } \
+  || echo "PASS: no CIC tools remain"
+[ "${FAIL}" -eq 0 ] || exit 1
 ```
 
-### Test 8.8: Clean up negative test leftovers
+### Test 10.2: Delete the WanakuServiceCatalog
 
 ```bash
-# Belt-and-suspenders cleanup of any leftover negative-test CRs
-oc delete wanakucamelroute bad-no-router-ref bad-no-route bad-no-mcp bad-empty-mcp bad-missing-router \
-  -n "${WANAKU_NAMESPACE}" --ignore-not-found=true 2>/dev/null
-oc delete wanakuservicecatalog bad-missing-configmap \
-  -n "${WANAKU_NAMESPACE}" --ignore-not-found=true 2>/dev/null
-oc delete wanakucapability bad-capability-no-ref \
-  -n "${WANAKU_NAMESPACE}" --ignore-not-found=true 2>/dev/null
-
-echo "PASS: negative test resources cleaned up"
+oc delete wanakuservicecatalog cic-test-service-catalogs -n "${WANAKU_NAMESPACE}" --timeout=120s --ignore-not-found=true
+wait_for_deletion wanakuservicecatalog cic-test-service-catalogs "${WANAKU_NAMESPACE}" 60
 ```
 
 ---
 
-## Phase 9: Post-Test Verification
+## Phase 11: Post-Test Verification
 
-### Test 9.1: Verify operator pod is still running with no unexpected restarts
-
-```bash
-OPERATOR_POD=$(oc get pods -l app.kubernetes.io/name=wanaku-operator \
-  -n "${WANAKU_NAMESPACE}" -o jsonpath='{.items[0].metadata.name}')
-
-POD_STATUS=$(oc get pod "${OPERATOR_POD}" -n "${WANAKU_NAMESPACE}" \
-  -o jsonpath='{.status.phase}')
-RESTART_COUNT=$(oc get pod "${OPERATOR_POD}" -n "${WANAKU_NAMESPACE}" \
-  -o jsonpath='{.status.containerStatuses[0].restartCount}')
-
-echo "operator-pod-status=${POD_STATUS}"
-echo "operator-restart-count=${RESTART_COUNT}"
-
-if [ "${POD_STATUS}" != "Running" ]; then
-  echo "FAIL: operator pod is not Running (status: ${POD_STATUS})"
-  exit 1
-fi
-echo "PASS: operator pod is Running"
-
-if [ "${RESTART_COUNT}" -gt 0 ]; then
-  echo "WARN: operator restarted ${RESTART_COUNT} time(s) — investigate"
-else
-  echo "PASS: operator has zero restarts"
-fi
-```
-
-### Test 9.2: Verify no WanakuCamelRoute resources remain
+### Test 11.1: Verify the operator pod is healthy and the logs have no unexpected errors
 
 ```bash
-REMAINING=$(oc get wanakucamelroute -n "${WANAKU_NAMESPACE}" --no-headers 2>/dev/null | wc -l | tr -d ' ')
-echo "remaining-camelroutes=${REMAINING}"
+OPERATOR_POD=$(oc get pods -l app.kubernetes.io/name=wanaku-operator -n "${WANAKU_NAMESPACE}" -o jsonpath='{.items[0].metadata.name}')
+RESTARTS=$(oc get pod "${OPERATOR_POD}" -n "${WANAKU_NAMESPACE}" -o jsonpath='{.status.containerStatuses[0].restartCount}')
+[ "${RESTARTS}" = "0" ] && echo "PASS: operator has zero restarts" || echo "WARN: operator restarted ${RESTARTS} time(s)"
 
-if [ "${REMAINING}" != "0" ]; then
-  echo "FAIL: ${REMAINING} WanakuCamelRoute resource(s) still exist"
-  oc get wanakucamelroute -n "${WANAKU_NAMESPACE}"
-  exit 1
-fi
-echo "PASS: no WanakuCamelRoute resources remain"
-```
-
-### Test 9.3: Verify operator logs have no unexpected errors
-
-**Description:** Filter operator logs for errors, excluding expected validation errors from Phase 8 negative tests.
-
-```bash
-OPERATOR_POD=$(oc get pods -l app.kubernetes.io/name=wanaku-operator \
-  -n "${WANAKU_NAMESPACE}" -o jsonpath='{.items[0].metadata.name}')
-
-UNEXPECTED_ERRORS=$(oc logs "${OPERATOR_POD}" -n "${WANAKU_NAMESPACE}" \
-  | grep -i "error\|exception" \
-  | grep -iv "routerRef must be specified" \
-  | grep -iv "route must be specified" \
-  | grep -iv "mcp must define at least one tool or resource" \
-  | grep -iv "not found in namespace" \
-  | grep -iv "non-existent-router" \
+# Exclude the expected validation errors from Phase 9
+UNEXPECTED=$(oc logs "${OPERATOR_POD}" -n "${WANAKU_NAMESPACE}" \
+  | grep -iE "error|exception" \
+  | grep -v "ValidationError" \
   | grep -iv "Failed to remove service catalog" \
-  | grep -iv "this-configmap-does-not-exist" \
-  | grep -v "\-XX:" \
-  | wc -l | tr -d ' ')
-
-echo "unexpected-error-count=${UNEXPECTED_ERRORS}"
-
-if [ "${UNEXPECTED_ERRORS}" -gt 0 ]; then
-  echo "WARN: ${UNEXPECTED_ERRORS} unexpected error(s) in operator logs — review below:"
-  oc logs "${OPERATOR_POD}" -n "${WANAKU_NAMESPACE}" \
-    | grep -i "error\|exception" \
-    | grep -iv "routerRef must be specified" \
-    | grep -iv "route must be specified" \
-    | grep -iv "mcp must define at least one tool or resource" \
-    | grep -iv "not found in namespace" \
-    | grep -iv "non-existent-router" \
-    | grep -iv "Failed to remove service catalog" \
-    | grep -iv "this-configmap-does-not-exist" \
-    | grep -v "\-XX:" \
-    | tail -10
+  | grep -v "\-XX:")
+if [ -n "${UNEXPECTED}" ]; then
+  echo "WARN: unexpected errors in the operator log — review:"
+  echo "${UNEXPECTED}" | tail -10
 else
-  echo "PASS: no unexpected errors in operator logs"
+  echo "PASS: no unexpected errors in the operator log"
 fi
 ```
 
 ---
 
-## Phase 10: Cleanup
+## Phase 12: Cleanup
 
-### Step 10.1: Delete remaining CIC CRDs
-
-Delete any leftover CamelRoute, ServiceCatalog, and Capability CRs before the common cleanup.
+Delete the leftover resources of this plan, then follow [common/cleanup.md](common/cleanup.md) for full teardown.
 
 ```bash
-oc delete wanakucamelroute --all -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
-oc delete wanakuservicecatalog --all -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
-oc delete wanakucapability --all -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
-
-echo "PASS: CIC CRDs deleted"
-```
-
-### Step 10.2: Delete the WanakuRouter CR
-
-```bash
-oc delete wanakurouter wanaku-test-router -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
-
-wait_for_deletion deployment wanaku-test-router-barn "${WANAKU_NAMESPACE}" 60
-wait_for_deletion service barn-wanaku-test-router "${WANAKU_NAMESPACE}" 30
-wait_for_deletion route wanaku-test-router "${WANAKU_NAMESPACE}" 30
-```
-
-### Step 10.3: Full teardown
-
-Follow [common/cleanup.md](common/cleanup.md) for full teardown.
-
-### Step 10.4: Delete namespace
-
-```bash
-oc delete project "${WANAKU_NAMESPACE}" --ignore-not-found=true
-echo "PASS: namespace ${WANAKU_NAMESPACE} deleted"
+oc delete deployment,service cic-manual -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
+oc delete wanakuintegration --all -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
+oc delete wanakuservicecatalog --all -n "${WANAKU_NAMESPACE}" --ignore-not-found=true --timeout=120s
+oc delete configmap -l wanaku-test=true -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
+echo "PASS: CIC test resources deleted"
 ```
 
 ---
@@ -1590,53 +1105,25 @@ echo "PASS: namespace ${WANAKU_NAMESPACE} deleted"
 
 | Phase | Test ID | Test Name | Priority |
 |-------|---------|-----------|----------|
-| 0 | -- | OpenShift login | Critical |
-| 1 | 1.1-1.2 | Environment setup (namespace, Keycloak) | Critical |
-| 2 | 2.1 | Operator installation + WanakuCamelRoute CRD | Critical |
-| 3 | 3.1 | Create WanakuRouter with Keycloak auth | Critical |
-| 3 | 3.2 | Verify router deployment is available | Critical |
-| 3 | 3.3 | Verify router REST API is reachable | Critical |
-| 3 | 3.4 | Authenticate with Keycloak via wanaku CLI | Critical |
-| 4 | 4.1 | Create WanakuCamelRoute (hello-world tool) | Critical |
-| 4 | 4.2 | WanakuCamelRoute reaches Ready | Critical |
-| 4 | 4.3 | Status: deployedCatalogName correct | Critical |
-| 4 | 4.4 | Status: registeredTools contains sends-greeting | Critical |
-| 4 | 4.5 | Status: registeredResources is empty | Medium |
-| 4 | 4.6 | CIC Deployment created by operator | Critical |
-| 4 | 4.7 | CIC Service created by operator (port 9190) | Critical |
-| 4 | 4.8 | CIC pod is Running | Critical |
-| 4 | 4.9 | CIC startup logs | Medium |
-| 4 | 4.10 | Catalog exists in router REST API | Critical |
-| 4 | 4.11 | Tool registered via wanaku CLI | Critical |
-| 4 | 4.12 | Operator reconciliation logs | Medium |
-| 5 | 5.1 | Tool listed via wanaku CLI | Critical |
-| 5 | 5.2 | Tool listed via MCP endpoint | Critical |
-| 5 | 5.3 | Tool invoked via MCP endpoint | Critical |
-| 5 | 5.4 | Non-existent tool invocation fails | High |
-| 6 | 6.1 | Delete hello-world CamelRoute (cascade cleanup) | High |
-| 6 | 6.2 | Create promote-employee CamelRoute (tools + resources) | High |
-| 6 | 6.3 | Promote-employee CR reaches Ready | High |
-| 6 | 6.4 | Status shows tools and resources | High |
-| 6 | 6.5 | CIC Deployment and Service for promote-employee | High |
-| 6 | 6.6 | Both tools registered in router | High |
-| 6 | 6.7 | Resource registered in router (REST API) | High |
-| 6 | 6.8 | Resource listed via MCP endpoint | High |
-| 7 | 7.1 | Delete promote-employee CamelRoute | High |
-| 7 | 7.2-7.3 | WanakuServiceCatalog with ConfigMap ZIP | High |
-| 7 | 7.4-7.5 | ServiceCatalog reaches Ready, catalog in router | High |
-| 7 | 7.6-7.7 | WanakuCapability with CIC type + service catalog | High |
-| 7 | 7.8-7.9 | CIC capability deployment + env vars | High |
-| 7 | 7.10 | CIC capability pod running in catalog mode | High |
-| 7 | 7.11 | Delete service catalog mode resources | High |
-| 8 | 8.1 | Missing routerRef validation | High |
-| 8 | 8.2 | Missing route validation | High |
-| 8 | 8.3 | Missing mcp validation | High |
-| 8 | 8.4 | Empty mcp validation | High |
-| 8 | 8.5 | Non-existent routerRef validation | High |
-| 8 | 8.6 | ServiceCatalog missing ConfigMap | High |
-| 8 | 8.7 | Capability missing routerRef | High |
-| 8 | 8.8 | Clean up negative test leftovers | Medium |
-| 9 | 9.1 | Operator pod healthy, zero restarts | Medium |
-| 9 | 9.2 | No WanakuCamelRoute resources remain | Medium |
-| 9 | 9.3 | No unexpected errors in operator logs | Medium |
-| 10 | 10.1-10.4 | Full cleanup (CRDs, router, operator, namespace) | Critical |
+| 0 | — | OpenShift login | Critical |
+| 1 | — | Namespace setup | Critical |
+| 2 | — | Operator installation | Critical |
+| 3 | 3.1-3.2 | WanakuRouter with Barn, Routes reachable | Critical |
+| 4 | 4.1-4.3 | WanakuIntegration from a ConfigMap becomes Ready (Registered) | Critical |
+| 4 | 4.4-4.5 | Runtime Deployment, Service and status | High |
+| 4 | 4.6 | Self-registered forward with `cic.*` labels | Critical |
+| 4 | 4.7 | Tool discovery, tag filter, namespace isolation | Critical |
+| 5 | 5.1 | Fail-safe governance denies the tool call | Critical |
+| 5 | 5.2 | Test governance configuration (test-only workaround) | Critical |
+| 5 | 5.3-5.4 | Tool invocation through the MCP Route, unknown tool fails | Critical |
+| 5 | 5.5 | Audit trail | Medium |
+| 6 | 6.1 | Runtime replacement keeps the forward (ownership label) | High |
+| 7 | 7.1 | WanakuServiceCatalog deploys the catalog to Barn | High |
+| 7 | 7.2-7.4 | WanakuIntegration with a service catalog source in a custom namespace | High |
+| 8 | 8.1-8.2 | Plain Deployment registered with `wanaku forwards add` | High |
+| 8 | 8.3 | Unreachable forward marked unavailable | Medium |
+| 8 | 8.4 | Forward removal removes its tools | High |
+| 9 | 9.1-9.5 | WanakuIntegration validation errors | High |
+| 10 | 10.1-10.2 | Deletion removes the runtimes and their forwards | Critical |
+| 11 | 11.1 | Operator health and logs | Medium |
+| 12 | — | Cleanup | Critical |

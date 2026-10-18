@@ -33,7 +33,7 @@ oc new-project "${WANAKU_NAMESPACE}" --display-name="Wanaku Operator Test" 2>/de
 **Verification:**
 
 ```bash
-oc project -q | grep -q "${WANAKU_NAMESPACE}"
+[ "$(oc project -q)" = "${WANAKU_NAMESPACE}" ]
 echo "exit_code=$?"
 # Expected: exit_code=0
 ```
@@ -64,5 +64,18 @@ echo "can-create-pvcs=$?"
 oc auth can-i create routes -n "${WANAKU_NAMESPACE}" | grep -q "yes"
 echo "can-create-routes=$?"
 
+oc auth can-i create configmaps -n "${WANAKU_NAMESPACE}" | grep -q "yes"
+echo "can-create-configmaps=$?"
+
+oc auth can-i create secrets -n "${WANAKU_NAMESPACE}" | grep -q "yes"
+echo "can-create-secrets=$?"
+
 # Expected: all values should be 0
 ```
+
+## Output Variables
+
+| Variable | Description |
+|----------|-------------|
+| `WANAKU_NAMESPACE` | The namespace (OpenShift project) for this run. The current `oc` context targets it. |
+| `WANAKU_TEST_RUN_ID` | The unique suffix of this run |

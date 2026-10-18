@@ -12,23 +12,24 @@ Reusable helper that polls for Kubernetes resource deletion instead of using a f
 Define this function before use:
 
 ```bash
+# POSIX sh has no "local": the variables use a WFD_ prefix to avoid collisions
 wait_for_deletion() {
-  local RESOURCE_TYPE="$1"
-  local RESOURCE_NAME="$2"
-  local NAMESPACE="$3"
-  local TIMEOUT="${4:-60}"
-  local INTERVAL=3
-  local ELAPSED=0
+  WFD_TYPE="$1"
+  WFD_NAME="$2"
+  WFD_NAMESPACE="$3"
+  WFD_TIMEOUT="${4:-60}"
+  WFD_INTERVAL=3
+  WFD_ELAPSED=0
 
-  while oc get "${RESOURCE_TYPE}" "${RESOURCE_NAME}" -n "${NAMESPACE}" > /dev/null 2>&1; do
-    if [ "${ELAPSED}" -ge "${TIMEOUT}" ]; then
-      echo "FAIL: ${RESOURCE_TYPE}/${RESOURCE_NAME} still exists after ${TIMEOUT}s"
+  while oc get "${WFD_TYPE}" "${WFD_NAME}" -n "${WFD_NAMESPACE}" > /dev/null 2>&1; do
+    if [ "${WFD_ELAPSED}" -ge "${WFD_TIMEOUT}" ]; then
+      echo "FAIL: ${WFD_TYPE}/${WFD_NAME} still exists after ${WFD_TIMEOUT}s"
       return 1
     fi
-    sleep ${INTERVAL}
-    ELAPSED=$((ELAPSED + INTERVAL))
+    sleep ${WFD_INTERVAL}
+    WFD_ELAPSED=$((WFD_ELAPSED + WFD_INTERVAL))
   done
-  echo "PASS: ${RESOURCE_TYPE}/${RESOURCE_NAME} deleted (${ELAPSED}s)"
+  echo "PASS: ${WFD_TYPE}/${WFD_NAME} deleted (${WFD_ELAPSED}s)"
   return 0
 }
 ```
@@ -39,3 +40,5 @@ wait_for_deletion() {
 wait_for_deletion deployment my-deployment "${WANAKU_NAMESPACE}" 60
 wait_for_deletion route my-route "${WANAKU_NAMESPACE}" 30
 ```
+
+The function returns `0` when the resource is gone and `1` after the timeout. It prints one PASS or FAIL line.

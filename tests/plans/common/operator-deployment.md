@@ -14,16 +14,19 @@ Reusable steps for installing the Wanaku operator on OpenShift using Helm.
 | Variable | Description | Example |
 |----------|-------------|---------|
 | `WANAKU_NAMESPACE` | Target namespace created for this run | `wanaku-test-<run-id>` |
-| `WANAKU_REPO_ROOT` | Path to the wanaku repository root | `/path/to/wanaku` |
-| `WANAKU_OPERATOR_IMAGE` | Operator container image (optional override) | `quay.io/wanaku/wanaku-operator:latest` |
+| `WANAKU_REPO_ROOT` | Path to the wanaku-barn repository root (it contains the operator chart) | `/path/to/wanaku-barn` |
+| `WANAKU_OPERATOR_IMAGE` | Operator container image | `quay.io/wanaku/wanaku-operator:latest` |
+| `WANAKU_OPERATOR_PULL_POLICY` | Image pull policy of the operator | `Always` |
 
 ## Steps
 
 ### 1. Set the repository root
 
 ```bash
-# Set this to the root of the wanaku git checkout
+# Set this to the root of the wanaku-barn git checkout
 export WANAKU_REPO_ROOT="${WANAKU_REPO_ROOT:-.}"
+export WANAKU_OPERATOR_IMAGE="${WANAKU_OPERATOR_IMAGE:-quay.io/wanaku/wanaku-operator:latest}"
+export WANAKU_OPERATOR_PULL_POLICY="${WANAKU_OPERATOR_PULL_POLICY:-Always}"
 ```
 
 ### 2. Verify the Helm chart exists
@@ -39,12 +42,15 @@ echo "PASS: Helm chart found"
 
 ### 3. Install the operator via Helm
 
+The chart installs the four CRDs from its `crds/` directory. By default, every controller watches only the release
+namespace (`JOSDK_WATCH_CURRENT`).
+
 ```bash
 helm install wanaku-operator \
   "${WANAKU_REPO_ROOT}/apps/wanaku-operator/deploy/helm/wanaku-operator" \
   --namespace "${WANAKU_NAMESPACE}" \
-  --set operatorNamespace="${WANAKU_NAMESPACE}" \
-  --set app.imagePullPolicy=Always
+  --set app.image="${WANAKU_OPERATOR_IMAGE}" \
+  --set app.imagePullPolicy="${WANAKU_OPERATOR_PULL_POLICY}"
 ```
 
 **Expected output:** Helm prints a success message containing `STATUS: deployed`.
@@ -78,17 +84,49 @@ if [ "${OPERATOR_POD_STATUS}" != "Running" ]; then
   exit 1
 fi
 echo "PASS: operator pod is Running"
+
+OPERATOR_IMAGE=$(oc get deployment wanaku-operator -n "${WANAKU_NAMESPACE}" \
+  -o jsonpath='{.spec.template.spec.containers[0].image}')
+if [ "${OPERATOR_IMAGE}" != "${WANAKU_OPERATOR_IMAGE}" ]; then
+  echo "FAIL: operator image is '${OPERATOR_IMAGE}', expected '${WANAKU_OPERATOR_IMAGE}'"
+  exit 1
+fi
+echo "PASS: operator image is ${OPERATOR_IMAGE}"
+
+# All four controllers watch the release namespace
+for CONTROLLER in ROUTER SERVICE_CATALOG SEMANTIC_ROUTER INTEGRATION; do
+  ENV_NAME="QUARKUS_OPERATOR_SDK_CONTROLLERS_WANAKU_${CONTROLLER}_NAMESPACES"
+  VALUE=$(oc get deployment wanaku-operator -n "${WANAKU_NAMESPACE}" \
+    -o jsonpath="{.spec.template.spec.containers[0].env[?(@.name==\"${ENV_NAME}\")].value}")
+  if [ "${VALUE}" != "JOSDK_WATCH_CURRENT" ]; then
+    echo "FAIL: ${ENV_NAME} is '${VALUE}', expected 'JOSDK_WATCH_CURRENT'"
+    exit 1
+  fi
+  echo "PASS: ${ENV_NAME}=${VALUE}"
+done
 ```
 
 ### 6. Verify CRDs are installed
 
+Helm installs the CRDs only when they do not exist yet. It does not upgrade them. If an earlier operator release
+installed the CRDs, apply the current CRDs before you continue:
+`oc apply -f "${WANAKU_REPO_ROOT}/apps/wanaku-operator/deploy/helm/wanaku-operator/crds/"`. A CRD that does not match
+the operator causes an empty `status` on the custom resources.
+
 ```bash
-for CRD in wanakurouters.wanaku.ai wanakucapabilities.wanaku.ai wanakuservicecatalogs.wanaku.ai wanakucamelcodeexecutionengines.wanaku.ai; do
+for CRD in wanakurouters.wanaku.ai wanakuservicecatalogs.wanaku.ai wanakusemanticrouters.wanaku.ai wanakuintegrations.wanaku.ai; do
   if ! oc get crd "${CRD}" > /dev/null 2>&1; then
     echo "FAIL: CRD ${CRD} not found"
     exit 1
   fi
   echo "PASS: CRD ${CRD} exists"
+done
+
+# The removed CRDs must not be installed by this chart
+for CRD in wanakucapabilities.wanaku.ai wanakucamelroutes.wanaku.ai wanakucamelcodeexecutionengines.wanaku.ai; do
+  if oc get crd "${CRD}" > /dev/null 2>&1; then
+    echo "WARN: obsolete CRD ${CRD} is still installed (left over from an earlier operator version)"
+  fi
 done
 ```
 
@@ -96,7 +134,7 @@ done
 
 ```bash
 # Check ClusterRoles
-for ROLE_SUFFIX in wanaku-capability-cluster-role wanaku-router-cluster-role wanaku-service-catalog-cluster-role josdk-crd-validating-cluster-role; do
+for ROLE_SUFFIX in wanaku-router-cluster-role wanaku-service-catalog-cluster-role wanaku-semantic-router-cluster-role wanaku-integration-cluster-role josdk-crd-validating-cluster-role; do
   ROLE_NAME="${WANAKU_NAMESPACE}-${ROLE_SUFFIX}"
   if ! oc get clusterrole "${ROLE_NAME}" > /dev/null 2>&1; then
     echo "FAIL: ClusterRole ${ROLE_NAME} not found"
@@ -105,27 +143,58 @@ for ROLE_SUFFIX in wanaku-capability-cluster-role wanaku-router-cluster-role wan
   echo "PASS: ClusterRole ${ROLE_NAME} exists"
 done
 
+# Check the ClusterRoleBindings for the CRD validation role
+for CRB in crd-validating-role-binding wanaku-router-crd-validating-role-binding \
+    wanaku-service-catalog-crd-validating-role-binding wanaku-semantic-router-crd-validating-role-binding \
+    wanaku-integration-crd-validating-role-binding; do
+  if ! oc get clusterrolebinding "${WANAKU_NAMESPACE}-${CRB}" > /dev/null 2>&1; then
+    echo "FAIL: ClusterRoleBinding ${WANAKU_NAMESPACE}-${CRB} not found"
+    exit 1
+  fi
+  echo "PASS: ClusterRoleBinding ${WANAKU_NAMESPACE}-${CRB} exists"
+done
+
+# Check the namespaced RoleBindings that grant the controller ClusterRoles (JOSDK_WATCH_CURRENT)
+for RB in wanaku-operator-view wanaku-router-role-binding wanaku-service-catalog-role-binding \
+    wanaku-semantic-router-role-binding wanaku-integration-role-binding; do
+  if ! oc get rolebinding "${RB}" -n "${WANAKU_NAMESPACE}" > /dev/null 2>&1; then
+    echo "FAIL: RoleBinding ${RB} not found"
+    exit 1
+  fi
+  echo "PASS: RoleBinding ${RB} exists"
+done
+
 # Check ServiceAccount
 oc get serviceaccount wanaku-operator -n "${WANAKU_NAMESPACE}" > /dev/null 2>&1
 echo "service-account-exists=$?"
 # Expected: service-account-exists=0
+
+# The operator must be able to set Route hosts (needed for spec.exposure.host).
+# This check needs impersonation rights. If your user cannot impersonate, record SKIP for this line.
+oc auth can-i create routes/custom-host -n "${WANAKU_NAMESPACE}" \
+  --as="system:serviceaccount:${WANAKU_NAMESPACE}:wanaku-operator" | grep -q "yes"
+echo "can-create-custom-host=$?"
+# Expected: can-create-custom-host=0
 ```
 
 ### 8. Verify operator health endpoints
 
+The operator Deployment uses the Quarkus health endpoints on port `8081` (`/q/health/started`, `/q/health/ready` and
+`/q/health/live`) as probes. The pod is Ready only when the readiness probe succeeds. The operator image does not need
+`curl` for this check.
+
 ```bash
-OPERATOR_POD=$(oc get pods -l app.kubernetes.io/name=wanaku-operator \
-  -n "${WANAKU_NAMESPACE}" -o jsonpath='{.items[0].metadata.name}')
+for PROBE in livenessProbe readinessProbe startupProbe; do
+  PROBE_PATH=$(oc get deployment wanaku-operator -n "${WANAKU_NAMESPACE}" \
+    -o jsonpath="{.spec.template.spec.containers[0].${PROBE}.httpGet.path}")
+  case "${PROBE_PATH}" in
+    /q/health/*) echo "PASS: ${PROBE} uses ${PROBE_PATH}" ;;
+    *) echo "FAIL: ${PROBE} path is '${PROBE_PATH}'"; exit 1 ;;
+  esac
+done
 
-# Check liveness
-oc exec "${OPERATOR_POD}" -n "${WANAKU_NAMESPACE}" -- \
-  curl -sf http://localhost:8081/q/health/live > /dev/null 2>&1
-echo "liveness=$?"
-# Expected: liveness=0
-
-# Check readiness
-oc exec "${OPERATOR_POD}" -n "${WANAKU_NAMESPACE}" -- \
-  curl -sf http://localhost:8081/q/health/ready > /dev/null 2>&1
-echo "readiness=$?"
-# Expected: readiness=0
+oc wait pod -l app.kubernetes.io/name=wanaku-operator \
+  --for=condition=Ready --timeout=180s -n "${WANAKU_NAMESPACE}"
+echo "operator-ready=$?"
+# Expected: operator-ready=0
 ```

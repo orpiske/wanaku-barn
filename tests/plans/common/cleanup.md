@@ -2,22 +2,51 @@
 
 Reusable steps for cleaning up all Wanaku test resources from OpenShift.
 
+All steps are idempotent. You can run them again after a partial or failed cleanup.
+
 ## Prerequisites
 
+- `oc` CLI installed and logged in (see [openshift-login.md](openshift-login.md))
 - `WANAKU_NAMESPACE` environment variable set to the namespace created for this test run
+- `helm` CLI installed (only for step 7)
 
 ## Steps
 
-### 1. Delete WanakuServiceCatalog resources
+### 1. Delete the runtime custom resources
+
+Delete the `WanakuIntegration` and `WanakuSemanticRouter` resources first. Their runtimes remove their forwards from
+Wanaku Server when they stop, so the router must still be running.
 
 ```bash
-oc delete wanakuservicecatalog --all -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
+oc delete wanakuintegration --all -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
+echo "integrations-deleted=$?"
+# Expected: integrations-deleted=0
+
+oc delete wanakusemanticrouter --all -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
+echo "semantic-routers-deleted=$?"
+# Expected: semantic-routers-deleted=0
+```
+
+### 2. Delete WanakuServiceCatalog resources
+
+The operator removes the deployed catalogs from Wanaku Barn before it releases each resource. Delete the catalogs
+before the router, so that Barn is still available.
+
+```bash
+oc delete wanakuservicecatalog --all -n "${WANAKU_NAMESPACE}" --ignore-not-found=true --timeout=120s
 echo "service-catalogs-deleted=$?"
 # Expected: service-catalogs-deleted=0
 ```
 
+If the command times out because the router is already gone, remove the finalizers:
 
-### 2. Delete WanakuRouter resources
+```bash
+for SC in $(oc get wanakuservicecatalog -n "${WANAKU_NAMESPACE}" -o name 2>/dev/null); do
+  oc patch "${SC}" -n "${WANAKU_NAMESPACE}" --type=merge -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
+done
+```
+
+### 3. Delete WanakuRouter resources
 
 ```bash
 oc delete wanakurouter --all -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
@@ -25,30 +54,39 @@ echo "routers-deleted=$?"
 # Expected: routers-deleted=0
 ```
 
-### 3. Wait for operator-managed resources to be cleaned up
+### 4. Wait for the operator-managed resources to be removed
+
+The managed Deployments, Services, ConfigMaps, Routes and PVCs have an owner reference to their custom resource.
+Kubernetes garbage collection removes them. The operator labels its Deployments with
+`app.kubernetes.io/managed-by=wanaku-operator`.
 
 ```bash
-# Wait for operator-managed deployments to be garbage-collected (excludes the operator itself and keycloak)
-oc wait --for=delete deployment -l component=wanaku-barn-backend -n "${WANAKU_NAMESPACE}" --timeout=60s 2>/dev/null || true
+oc wait --for=delete deployment -l app.kubernetes.io/managed-by=wanaku-operator \
+  -n "${WANAKU_NAMESPACE}" --timeout=120s 2>/dev/null || true
 
-# Verify no operator-managed deployments remain (except the operator itself and keycloak)
-REMAINING=$(oc get deployments -n "${WANAKU_NAMESPACE}" \
-  -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' \
-  | grep -v -E "^(wanaku-operator|keycloak)$" | wc -l | tr -d ' ')
+REMAINING=$(oc get deployments -l app.kubernetes.io/managed-by=wanaku-operator \
+  -n "${WANAKU_NAMESPACE}" -o name 2>/dev/null | wc -l | tr -d ' ')
 
 if [ "${REMAINING}" != "0" ]; then
-  echo "WARN: ${REMAINING} non-operator deployments still present"
-  oc get deployments -n "${WANAKU_NAMESPACE}" -o name
+  echo "WARN: ${REMAINING} operator-managed deployments still present"
+  oc get deployments -l app.kubernetes.io/managed-by=wanaku-operator -n "${WANAKU_NAMESPACE}" -o name
 else
   echo "PASS: operator-managed deployments cleaned up"
 fi
+
+# The Server PVC (server-volume-claim) and the Barn PVC (<router>-barn-data) are owned by the router
+oc get pvc -n "${WANAKU_NAMESPACE}" -o name 2>/dev/null | grep -v "keycloak-data-pvc" || echo "PASS: no Wanaku PVCs remain"
 ```
 
-### 5. Delete test ConfigMaps
+### 5. Delete test ConfigMaps and Secrets
+
+Test plans label the ConfigMaps and Secrets that they create with `wanaku-test=true`.
 
 ```bash
 oc delete configmap -l wanaku-test=true -n "${WANAKU_NAMESPACE}" --ignore-not-found=true 2>/dev/null || true
-echo "PASS: test ConfigMaps cleaned up"
+oc delete secret -l wanaku-test=true -n "${WANAKU_NAMESPACE}" --ignore-not-found=true 2>/dev/null || true
+oc delete secret "${WANAKU_AUTH_SECRET_NAME:-wanaku-oidc}" -n "${WANAKU_NAMESPACE}" --ignore-not-found=true 2>/dev/null || true
+echo "PASS: test ConfigMaps and Secrets cleaned up"
 ```
 
 ### 6. Delete Keycloak
@@ -63,6 +101,9 @@ echo "PASS: Keycloak resources deleted"
 
 ### 7. Uninstall the operator Helm release
 
+Helm removes the namespace-prefixed ClusterRoles and ClusterRoleBindings of the release. Helm does not remove the
+CRDs.
+
 ```bash
 helm uninstall wanaku-operator --namespace "${WANAKU_NAMESPACE}" 2>/dev/null || true
 echo "PASS: Helm release uninstalled"
@@ -74,9 +115,8 @@ echo "PASS: Helm release uninstalled"
 # WARNING: This removes CRDs cluster-wide. Only do this if no other namespace uses them.
 # Uncomment the following lines for a full cleanup:
 #
-# oc delete crd wanakurouters.wanaku.ai --ignore-not-found=true
-# oc delete crd wanakucapabilities.wanaku.ai --ignore-not-found=true
-# oc delete crd wanakuservicecatalogs.wanaku.ai --ignore-not-found=true
+# oc delete crd wanakurouters.wanaku.ai wanakuservicecatalogs.wanaku.ai \
+#   wanakusemanticrouters.wanaku.ai wanakuintegrations.wanaku.ai --ignore-not-found=true
 # echo "PASS: CRDs deleted"
 
 echo "SKIP: CRD deletion (uncomment to enable)"
@@ -101,6 +141,9 @@ echo "SKIP: namespace deletion (uncomment to enable)"
 ```bash
 echo "--- Remaining resources in ${WANAKU_NAMESPACE} ---"
 oc get all -n "${WANAKU_NAMESPACE}" 2>/dev/null || echo "(namespace may have been deleted)"
+echo "--- Remaining Wanaku custom resources ---"
+oc get wanakurouter,wanakuservicecatalog,wanakusemanticrouter,wanakuintegration \
+  -n "${WANAKU_NAMESPACE}" 2>/dev/null || echo "(none, or the CRDs were deleted)"
 echo "--- Wanaku CRDs ---"
 oc get crd | grep wanaku || echo "(no Wanaku CRDs)"
 echo "--- Helm releases ---"

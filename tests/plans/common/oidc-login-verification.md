@@ -1,7 +1,11 @@
 # Common: OIDC Login Verification
 
-Reusable steps for verifying OIDC authentication end to end: log in against Keycloak, then call the router through
+Reusable steps for verifying OIDC authentication end to end: log in against Keycloak, then call Wanaku Server through
 the oauth2-proxy that protects its management API.
+
+Wanaku Server has no built-in authentication. When `WanakuRouter.spec.auth.enabled` is `true`, the operator deploys
+oauth2-proxy (Deployment `<router>-oauth2-proxy`, Service `oauth2-proxy-<router>`) and points the `<router>` and
+`<router>-mcp` Routes at it. The proxies validate the tokens.
 
 The `wanaku auth login` command authenticates directly against Keycloak (`<auth-server>/realms/<realm>`, realm
 `wanaku` by default) using the confidential `wanaku-mcp-router` client. oauth2-proxy accepts only tokens carrying that
@@ -11,8 +15,11 @@ client's audience, so the client secret must be available in `WANAKU_CLIENT_SECR
 ## Prerequisites
 
 - Keycloak deployed and configured (see [keycloak-setup.md](keycloak-setup.md))
-- WanakuRouter CR created and Ready
-- `WANAKU_ROUTER_URL` environment variable set (e.g. `http://<router-route-host>`)
+- WanakuRouter CR created with `spec.auth.enabled: true`, and Ready
+- `WANAKU_ROUTER_URL` environment variable set to the management Route URL (e.g. `https://<host of Route <router>>`).
+  The operator creates edge-terminated Routes, so use `https`.
+- Optional: `WANAKU_CLI_TLS_OPTS` set to `--insecure` when the cluster ingress certificate is not trusted
+  (default: empty)
 - `WANAKU_TEST_USER` and `WANAKU_TEST_PASS` environment variables set
 - `KEYCLOAK_URL` and `WANAKU_CLIENT_SECRET` environment variables set
 - `WANAKU_CREDENTIALS` exported to a per-run path (see [#1697](https://github.com/wanaku-ai/wanaku/issues/1697)) to isolate credential storage across concurrent test runs
@@ -86,13 +93,17 @@ if [ "${LOGIN_FAILED}" = "true" ]; then
 fi
 ```
 
-> Note: the oauth2-proxy instances in front of the router use the same client secret. After regenerating it,
-> update the router's OIDC secret (for example the `wanaku-oidc` Kubernetes Secret) and restart the proxies.
+> Note: the oauth2-proxy instances in front of the router use the same client secret. After you regenerate it, update
+> the `client-secret` key of the Secret that `spec.auth.secretName` names (`${WANAKU_AUTH_SECRET_NAME}`, see
+> [keycloak-setup.md](keycloak-setup.md), step 9). The operator restarts the proxies when the Secret changes.
 
 ### 3. Verify the token is accepted by the router's management proxy
 
+The CLI sends the token that `wanaku auth login` stored.
+
 ```bash
-OUTPUT=$(${WANAKU_CLI:-wanaku} tools list --host "${WANAKU_ROUTER_URL}" --plain 2>&1)
+# WANAKU_CLI_TLS_OPTS is not quoted on purpose: it holds zero or one option
+OUTPUT=$(${WANAKU_CLI:-wanaku} tools list --host "${WANAKU_ROUTER_URL}" ${WANAKU_CLI_TLS_OPTS} --plain 2>&1)
 
 if [ $? -ne 0 ]; then
   echo "FAIL: management proxy rejected the token issued to wanaku-mcp-router"
@@ -101,3 +112,23 @@ if [ $? -ne 0 ]; then
 fi
 echo "PASS: token accepted by the management proxy at ${WANAKU_ROUTER_URL}"
 ```
+
+### 4. Verify the management proxy rejects requests without a token
+
+`--no-auth` makes the CLI send no token. The proxy must answer `401`, so the command must fail.
+
+```bash
+OUTPUT=$(${WANAKU_CLI:-wanaku} tools list --host "${WANAKU_ROUTER_URL}" ${WANAKU_CLI_TLS_OPTS} --no-auth --plain 2>&1)
+
+if [ $? -eq 0 ]; then
+  echo "FAIL: management proxy accepted a request without a token"
+  echo "${OUTPUT}"
+  exit 1
+fi
+echo "PASS: management proxy rejected the request without a token"
+```
+
+## Output Variables
+
+This procedure does not set new variables. After step 1, the CLI credential store (`WANAKU_CREDENTIALS`) contains the
+token of `WANAKU_TEST_USER`. Read it with `${WANAKU_CLI:-wanaku} auth token --get --unmask --plain`.

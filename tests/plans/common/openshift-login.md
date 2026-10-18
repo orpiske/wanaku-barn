@@ -19,12 +19,22 @@ oc login "${OPENSHIFT_API_URL}" --token="${OPENSHIFT_SA_TOKEN}" --insecure-skip-
 ### 2. Verify login
 
 ```bash
-oc whoami
-# Expected: prints the service account name (e.g. system:serviceaccount:<namespace>:<sa-name>)
+OC_USER=$(oc whoami 2>/dev/null)
+if [ -z "${OC_USER}" ]; then
+  echo "FAIL: not logged in to ${OPENSHIFT_API_URL}"
+  exit 1
+fi
+echo "PASS: logged in as ${OC_USER}"
+# Expected: the service account name (e.g. system:serviceaccount:<namespace>:<sa-name>)
 
 oc whoami --show-server
 # Expected: prints the cluster API URL
 
 oc version
 # Expected: prints client and server version info
+
+# The operator plans use OpenShift Routes
+oc api-resources --api-group=route.openshift.io -o name | grep -q "^routes"
+echo "route-api-available=$?"
+# Expected: route-api-available=0
 ```

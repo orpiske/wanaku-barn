@@ -22,6 +22,7 @@ Reusable steps for deploying and configuring Keycloak as the OIDC provider for W
 | `KEYCLOAK_ADMIN_USER` | Keycloak admin username | `admin` |
 | `KEYCLOAK_ADMIN_PASS` | Keycloak admin password | `admin` |
 | `KEYCLOAK_IMAGE` | Keycloak container image | `quay.io/keycloak/keycloak:26.7` |
+| `WANAKU_AUTH_SECRET_NAME` | Name of the Secret that `WanakuRouter.spec.auth.secretName` references (see step 9) | `wanaku-oidc` |
 
 ## Steps
 
@@ -33,9 +34,9 @@ export KEYCLOAK_ADMIN_PASS="${KEYCLOAK_ADMIN_PASS:-admin}"
 export KEYCLOAK_IMAGE="${KEYCLOAK_IMAGE:-quay.io/keycloak/keycloak:26.7}"
 export WANAKU_REPO_ROOT="${WANAKU_REPO_ROOT:-.}"
 
-# Option A: use the installed CLIs
-export WANAKU_CLI="wanaku"
-export WANAKU_KEYCLOAK_ADMIN_CLI="wanaku-keycloak-admin"
+# Option A: use the installed CLIs (an existing value is kept)
+export WANAKU_CLI="${WANAKU_CLI:-wanaku}"
+export WANAKU_KEYCLOAK_ADMIN_CLI="${WANAKU_KEYCLOAK_ADMIN_CLI:-wanaku-keycloak-admin}"
 
 # Option B: use the jars from a local build (after running `mvn verify` from the repo root)
 # export WANAKU_CLI="java -jar ${WANAKU_REPO_ROOT}/apps/wanaku-cli/target/quarkus-app/quarkus-run.jar"
@@ -161,15 +162,17 @@ echo "PASS: Keycloak host is ${KEYCLOAK_HOST}"
 
 ### 5. Set KC_HOSTNAME to match the external route
 
-Setting `KC_HOSTNAME` ensures Keycloak stamps the same issuer in tokens regardless of whether
-they are obtained via the external route or internally. Without this, tokens obtained externally
-(e.g. `http://keycloak-wanaku-test.<cluster>/realms/wanaku`) will have a different issuer than
-what the router expects (`http://keycloak:8080/realms/wanaku`), causing 401 errors.
+Setting `KC_HOSTNAME` makes Keycloak put the same issuer in all tokens. The issuer does not change when a client
+gets the token through the external Route or through the internal `keycloak` Service.
+
+The oauth2-proxy instances that the operator deploys compare the token issuer with `spec.auth.issuerUrl`
+(the external URL, `${KEYCLOAK_URL}/realms/wanaku`). They send token and key requests to
+`spec.auth.internalIssuerUrl` (`http://keycloak:8080/realms/wanaku`). Without `KC_HOSTNAME`, a token that the proxy
+gets internally has the internal issuer, and the proxy rejects it with `401`.
 
 **Important:** In Keycloak 26+, `KC_HOSTNAME` must be a **full URL** (e.g., `http://hostname`),
 not a bare hostname. A bare hostname causes Keycloak to append the internal HTTP port (8080) to
-the issuer URL, which is unreachable from inside the cluster via the external route and causes
-the Quarkus OIDC tenants to timeout sequentially at startup.
+the issuer URL. That issuer does not match `spec.auth.issuerUrl`.
 
 ```bash
 oc set env deployment/keycloak \
@@ -285,27 +288,65 @@ fi
 echo "PASS: wanaku-mcp-router secret retrieved (length: ${#WANAKU_CLIENT_SECRET})"
 ```
 
-### 9. Create the Kubernetes Secret for the operator
+### 9. Create the authentication Secret for the WanakuRouter
 
-The operator Helm chart reads `WANAKU_OIDC_CLIENT_SECRET` from a Kubernetes Secret named `wanaku-oidc` (configurable via `app.oidc.secretName`). Create this Secret so the operator can authenticate with the OIDC-protected router when deploying service catalogs.
+When `WanakuRouter.spec.auth.enabled` is `true`, the operator deploys oauth2-proxy in front of Wanaku Server. The
+proxies read two keys from the Secret that `spec.auth.secretName` names:
+
+| Key | Content |
+|-----|---------|
+| `client-secret` | The secret of the `wanaku-mcp-router` client (`spec.auth.clientId`, default `wanaku-mcp-router`) |
+| `cookie-secret` | 16, 24 or 32 bytes, or the base64 encoding of such a value |
+
+The operator does not deploy the proxies while the Secret is missing or not valid. The `AuthConfigured` condition of
+the router then has the status `False`.
+
+`openssl rand -hex 16` writes 32 hexadecimal characters, which is a valid 32-byte cookie secret. The command uses
+`oc apply`, so you can run it again.
 
 ```bash
-oc create secret generic wanaku-oidc \
-  --from-literal=client-secret="${WANAKU_OIDC_SECRET}" \
-  -n "${WANAKU_NAMESPACE}" 2>/dev/null \
-  || oc get secret wanaku-oidc -n "${WANAKU_NAMESPACE}" > /dev/null 2>&1
+export WANAKU_AUTH_SECRET_NAME="${WANAKU_AUTH_SECRET_NAME:-wanaku-oidc}"
 
-if ! oc get secret wanaku-oidc -n "${WANAKU_NAMESPACE}" > /dev/null 2>&1; then
-  echo "FAIL: could not create wanaku-oidc secret"
-  exit 1
-fi
-echo "PASS: wanaku-oidc Kubernetes Secret created"
+oc create secret generic "${WANAKU_AUTH_SECRET_NAME}" \
+  --from-literal=client-secret="${WANAKU_CLIENT_SECRET}" \
+  --from-literal=cookie-secret="$(openssl rand -hex 16)" \
+  --dry-run=client -o yaml \
+  | oc apply -n "${WANAKU_NAMESPACE}" -f -
+
+for KEY in client-secret cookie-secret; do
+  VALUE=$(oc get secret "${WANAKU_AUTH_SECRET_NAME}" -n "${WANAKU_NAMESPACE}" -o jsonpath="{.data.${KEY}}" 2>/dev/null)
+  if [ -z "${VALUE}" ]; then
+    echo "FAIL: Secret ${WANAKU_AUTH_SECRET_NAME} has no ${KEY} key"
+    exit 1
+  fi
+done
+echo "PASS: Secret ${WANAKU_AUTH_SECRET_NAME} has the client-secret and cookie-secret keys"
+```
+
+Set the issuer URLs for the `WanakuRouter` resource:
+
+```bash
+export WANAKU_AUTH_ISSUER_URL="${KEYCLOAK_URL}/realms/wanaku"
+export WANAKU_AUTH_INTERNAL_ISSUER_URL="http://keycloak:8080/realms/wanaku"
+echo "PASS: issuerUrl=${WANAKU_AUTH_ISSUER_URL} internalIssuerUrl=${WANAKU_AUTH_INTERNAL_ISSUER_URL}"
+```
+
+Use these values in the router:
+
+```yaml
+spec:
+  auth:
+    enabled: true
+    issuerUrl: ${WANAKU_AUTH_ISSUER_URL}
+    internalIssuerUrl: ${WANAKU_AUTH_INTERNAL_ISSUER_URL}
+    clientId: wanaku-mcp-router
+    secretName: ${WANAKU_AUTH_SECRET_NAME}
 ```
 
 ### 10. Create a test user
 
 The realm import creates clients and roles but no regular users. Create a test user that
-subsequent steps will use to interact with the router.
+subsequent steps use to call Wanaku Server through the oauth2-proxy.
 
 ```bash
 export WANAKU_TEST_USER="${WANAKU_TEST_USER:-alice}"
@@ -335,7 +376,8 @@ echo "PASS: test user '${WANAKU_TEST_USER}' created"
 
 The `wanaku auth login` command authenticates directly against Keycloak (`<auth-server>/realms/<realm>`, realm `wanaku`
 by default) using the `wanaku-mcp-router` client and the secret from `WANAKU_CLIENT_SECRET`. The router does not need
-to be deployed for the login itself; the resulting token is what the oauth2-proxy in front of the router accepts.
+to be deployed for the login itself. The oauth2-proxy in front of Wanaku Server accepts the resulting token. Wanaku
+Server itself does not validate tokens.
 
 - To verify the token end to end against the router, follow [common/oidc-login-verification.md](oidc-login-verification.md) **after the router is created**.
 - To log in without a router:
@@ -362,3 +404,6 @@ After completing this procedure, the following variables are set and available f
 | `WANAKU_TEST_USER` | Username for authenticated CLI operations (default: `alice`) |
 | `WANAKU_TEST_PASS` | Password for the test user (default: `secretpass`) |
 | `WANAKU_TEST_EMAIL` | Email for the test user (default: `alice@example.com`) |
+| `WANAKU_AUTH_SECRET_NAME` | Secret with the `client-secret` and `cookie-secret` keys for `spec.auth.secretName` (default: `wanaku-oidc`) |
+| `WANAKU_AUTH_ISSUER_URL` | Public issuer URL for `spec.auth.issuerUrl` (`${KEYCLOAK_URL}/realms/wanaku`) |
+| `WANAKU_AUTH_INTERNAL_ISSUER_URL` | In-cluster issuer URL for `spec.auth.internalIssuerUrl` (`http://keycloak:8080/realms/wanaku`) |
