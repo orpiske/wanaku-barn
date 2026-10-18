@@ -2,12 +2,28 @@
 
 ## Overview
 
-This test plan verifies the `wanaku mcp` CLI commands for interacting directly with MCP servers. It is split into two parts:
+This test plan verifies the `wanaku mcp` CLI commands. These commands talk to an MCP endpoint directly. The plan points
+them at the MCP endpoint of **Wanaku Server** (`${WANAKU_MCP_BASE_URL}/<namespace>/mcp`). The tools, resources and
+prompts come from the MCP reference server, which is registered with Wanaku Server as a forward. Thus the
+`list`, `call`, `read` and `get` operations return real data.
 
-- **Part 1 — Unit-level validation:** Help output, required option enforcement, and basic command behavior against any MCP server.
-- **Part 2 — End-to-end with real capabilities:** Full deployment on OpenShift with the operator, HTTP capability service, and real external APIs (currency conversion).
+The plan has two parts:
 
-Every step except the initial `oc login` is fully automatable.
+- **Part 1 — Local:** help output, option validation, tool/resource/prompt operations, namespace isolation,
+  governance, enable/disable and error handling against a local Wanaku Server.
+- **Part 2 — OpenShift:** the operator deploys Wanaku Server with oauth2-proxy authentication. The plan registers an
+  in-cluster MCP server as a forward and uses the `wanaku mcp` commands through the MCP Route with a bearer token.
+
+**Components:**
+
+| Component | Part 1 | Part 2 |
+|-----------|--------|--------|
+| Wanaku Server | Required (local) | Required (operator, `spec.server`) |
+| Wanaku Barn | Not used | Not used (`spec.barn` is not enabled) |
+| MCP reference server (`@modelcontextprotocol/server-everything`) | Required (local, forward `everything`) | Required (in-cluster Deployment, forward `everything`) |
+| Keycloak and oauth2-proxy | Not used | Required (`spec.auth.enabled: true`) |
+
+Every step in Part 1 is automatable. In Part 2, only the OpenShift login is manual.
 
 ## Prerequisites
 
@@ -15,356 +31,527 @@ Every step except the initial `oc login` is fully automatable.
 
 | Tool | Minimum version | Verify command |
 |------|-----------------|----------------|
-| `wanaku` | build from source | `wanaku --version` |
+| `wanaku` CLI | build from source | `wanaku --version` |
+| `java` | 21+ | `java -version` |
+| `node` / `npx` | 18+ | `npx --version` |
+| `curl` | any | `curl --version` |
 | `jq` | 1.6+ | `jq --version` |
 
 ### CLI invocation
 
-When using the CLI from a local build (not installed), use `java -jar` directly:
+The plan calls the CLI as `wanaku`. To use the CLI jar from a local build, define a shell function. A function works
+in `sh`, `bash` and `zsh`:
 
 ```bash
-CLI_JAR="apps/wanaku-cli/target/quarkus-app/quarkus-run.jar"
-java -jar ${CLI_JAR} mcp tool list --uri ...
+CLI_JAR="${CLI_JAR:-apps/wanaku-cli/target/quarkus-app/quarkus-run.jar}"
+wanaku() { java -jar "${CLI_JAR}" "$@"; }
 ```
 
-Do **not** assign the full command to a single variable (e.g., `WANAKU_CLI="java -jar path/to/jar"`) — zsh treats it as a single token. Use `CLI_JAR` for the path and call `java -jar ${CLI_JAR}` explicitly.
+Do not put the full command in a variable (for example `WANAKU_CLI="java -jar ..."`). `zsh` does not split it into
+words.
+
+### How to read MCP command output
+
+- The `wanaku mcp` commands write results to stdout. Capture stdout and stderr separately. When the CLI talks to an
+  upstream server that sends SSE frames, the MCP client library can write `WARN` log lines with Java stack traces to
+  stderr. These lines are not errors of the command.
+- `wanaku mcp ... list` prints one line per entry: `<name> <description>` for tools and prompts, and
+  `<name> <uri> <mimeType>` for resources. An empty list prints `No tools found` (or `No resources found`,
+  `No prompts found`) and exits with `0`.
+- A failed call prints the error message and exits with `1`. Missing picocli-required options (for example `--uri`
+  on `list` subcommands) exit with `2`.
+- The CLI sends every `--param` and `--arg` value as a JSON **string**. A tool that requires a number or boolean
+  argument (for example `get-sum`) rejects the call with `-32602`. Use string arguments for success paths.
+
+### Known limitations
+
+- Wanaku Server is fail-safe. It denies `tools/call`, `resources/read` and `prompts/get` in a namespace unless the
+  governance configuration or an action policy allows them. The denial message is
+  `No governance policy permits this action.` (action-policy filter, `-32003`) or `evaluator: no_match` (evaluator
+  filter). Listing requests are not governed. Part 1 starts the server with the test governance configuration of
+  [common/start-server.md](common/start-server.md) (step 2b).
+- The operator has no field to supply the governance configuration. Part 2 therefore verifies the fail-safe denial
+  for calls. The success path of calls on OpenShift is blocked until the operator supports it (see Test 11.2).
+- Tool, resource and prompt names are unique in the whole Wanaku Server registry, not per namespace. Do not register
+  the same upstream server twice in one server. The second discovery moves the entries to the namespace of the second
+  forward.
+
+---
+---
+
+# Part 1 — Local
 
 ### Environment variables
 
 ```bash
-export MCP_SERVER_URI="${MCP_SERVER_URI:-http://localhost:8080/public/mcp/}"
+export MCP_NAMESPACE="${MCP_NAMESPACE:-default}"
+export MCP_ISOLATED_NAMESPACE="${MCP_ISOLATED_NAMESPACE:-mcp-isolated}"
+export MCP_UNGOVERNED_NAMESPACE="${MCP_UNGOVERNED_NAMESPACE:-mcp-ungoverned}"
+export MCP_UNREACHABLE_URI="${MCP_UNREACHABLE_URI:-http://localhost:59999/default/mcp}"
+# Governance allows calls only in these namespaces (see common/start-server.md, step 2b)
+export WANAKU_TEST_GOVERNED_NAMESPACES="${MCP_NAMESPACE},${MCP_ISOLATED_NAMESPACE}"
 ```
 
-### MCP server setup
+The reference server forward goes into `MCP_NAMESPACE`. `MCP_ISOLATED_NAMESPACE` is governed but has no forward.
+`MCP_UNGOVERNED_NAMESPACE` has the fail-safe defaults.
 
-An MCP server must be running and accessible at `MCP_SERVER_URI`. Follow
-[common/start-backend.md](common/start-backend.md) to build, re-augment and start the Wanaku backend locally with
-authentication disabled.
+## Phase 0: Prerequisites
 
-Wait for the router health check (curl is used here specifically to test HTTP-level readiness):
+### Test 0.1: Verify the required tools
 
 ```bash
-curl -sf http://localhost:8080/q/health/ready > /dev/null && echo "READY" || echo "NOT READY"
+for CMD in java npx curl jq; do
+  command -v "${CMD}" > /dev/null 2>&1 && echo "PASS [0.1]: ${CMD} available" || echo "FAIL [0.1]: ${CMD} not found"
+done
+wanaku --version > /dev/null 2>&1 && echo "PASS [0.1]: wanaku CLI available" || echo "FAIL [0.1]: wanaku CLI not available"
 ```
-
-### Known limitations for local testing
-
-- **No capabilities started locally:** Only the backend is started by the common steps. Tool services and resource providers (like `performancestaticfile`) must be started separately. Resource read tests (Phase 12) require a deployed environment.
-- **Prompts are not registered by default:** No prompt providers ship with the base installation. Prompt list/get tests will return empty results locally.
-- **MCP endpoint path:** The public MCP endpoint is `/public/mcp/` (not `/mcp`). The `wanaku mcp` commands only support Streamable HTTP; the legacy `/public/mcp/sse` endpoint is rejected with a migration hint.
 
 ---
 
-## Phase 1: Help and Usage
+## Phase 1: Environment Setup
 
-### Test 1.1: Verify `wanaku mcp` shows usage
+### Step 1.1: Start Wanaku Server with the test governance configuration
+
+Follow [common/start-server.md](common/start-server.md). Run the optional step 2b with the
+`WANAKU_TEST_GOVERNED_NAMESPACES` value from the environment variables above. After completion,
+`WANAKU_SERVER_URL`, `WANAKU_MCP_BASE_URL`, `WANAKU_SERVER_PID` and `WANAKU_SERVER_DATA_DIR` must be set.
+
+```bash
+grep -q "${MCP_ISOLATED_NAMESPACE}:" "${WANAKU_SERVER_DATA_DIR}/wanaku.yaml" \
+  && echo "PASS [1.1]: governance configuration allows ${WANAKU_TEST_GOVERNED_NAMESPACES}" \
+  || echo "FAIL [1.1]: governance configuration does not contain ${MCP_ISOLATED_NAMESPACE}"
+```
+
+### Step 1.2: Start the MCP reference server and register it
+
+Follow [common/start-test-mcp-server.md](common/start-test-mcp-server.md) with `TEST_MCP_NAMESPACE="${MCP_NAMESPACE}"`.
+After completion, `TEST_MCP_URL`, `TEST_MCP_PID` and the forward `everything` must exist.
+
+### Step 1.3: Create the test namespaces
+
+```bash
+for NS in "${MCP_ISOLATED_NAMESPACE}" "${MCP_UNGOVERNED_NAMESPACE}"; do
+  wanaku namespaces create "${NS}" --host "${WANAKU_SERVER_URL}" --no-auth --plain > /dev/null
+  [ $? -eq 0 ] && echo "PASS [1.3]: namespace ${NS} created" || echo "FAIL [1.3]: namespace ${NS} not created"
+done
+```
+
+### Step 1.4: Set the MCP endpoint
+
+```bash
+export MCP_URI="${WANAKU_MCP_BASE_URL}/${MCP_NAMESPACE}/mcp"
+echo "MCP endpoint: ${MCP_URI}"
+```
+
+---
+
+## Phase 2: Help and Usage
+
+### Test 2.1: `wanaku mcp` shows the subcommands
 
 ```bash
 OUTPUT=$(wanaku mcp 2>&1)
-echo "${OUTPUT}" | grep -q "tool" && echo "PASS: 'tool' subcommand listed" || echo "FAIL: 'tool' not in usage"
-echo "${OUTPUT}" | grep -q "resource" && echo "PASS: 'resource' subcommand listed" || echo "FAIL: 'resource' not in usage"
-echo "${OUTPUT}" | grep -q "prompt" && echo "PASS: 'prompt' subcommand listed" || echo "FAIL: 'prompt' not in usage"
+for SUB in tool resource prompt; do
+  echo "${OUTPUT}" | grep -q "^  ${SUB} " && echo "PASS [2.1]: '${SUB}' listed" || echo "FAIL [2.1]: '${SUB}' not listed"
+done
 ```
 
-### Test 1.2: Verify `wanaku mcp tool --help` shows options
+### Test 2.2: Subcommand help shows the options
 
 ```bash
-OUTPUT=$(wanaku mcp tool --help 2>&1)
-echo "${OUTPUT}" | grep -q "\-\-uri" && echo "PASS: --uri option listed" || echo "FAIL: --uri not in help"
-echo "${OUTPUT}" | grep -q "\-\-name" && echo "PASS: --name option listed" || echo "FAIL: --name not in help"
-echo "${OUTPUT}" | grep -q "\-\-param" && echo "PASS: --param option listed" || echo "FAIL: --param not in help"
-echo "${OUTPUT}" | grep -q "list" && echo "PASS: 'list' subcommand listed" || echo "FAIL: 'list' not in help"
-```
-
-### Test 1.3: Verify `wanaku mcp resource --help` shows options
-
-```bash
-OUTPUT=$(wanaku mcp resource --help 2>&1)
-echo "${OUTPUT}" | grep -q "\-\-uri" && echo "PASS: --uri option listed" || echo "FAIL: --uri not in help"
-echo "${OUTPUT}" | grep -q "\-\-resource-uri" && echo "PASS: --resource-uri option listed" || echo "FAIL: --resource-uri not in help"
-echo "${OUTPUT}" | grep -q "list" && echo "PASS: 'list' subcommand listed" || echo "FAIL: 'list' not in help"
-```
-
-### Test 1.4: Verify `wanaku mcp prompt --help` shows options
-
-```bash
-OUTPUT=$(wanaku mcp prompt --help 2>&1)
-echo "${OUTPUT}" | grep -q "\-\-uri" && echo "PASS: --uri option listed" || echo "FAIL: --uri not in help"
-echo "${OUTPUT}" | grep -q "\-\-name" && echo "PASS: --name option listed" || echo "FAIL: --name not in help"
-echo "${OUTPUT}" | grep -q "\-\-arg" && echo "PASS: --arg option listed" || echo "FAIL: --arg not in help"
-echo "${OUTPUT}" | grep -q "list" && echo "PASS: 'list' subcommand listed" || echo "FAIL: 'list' not in help"
+check_help() {
+  HELP=$(wanaku mcp "$1" --help 2>&1)
+  shift
+  for OPT in "$@"; do
+    echo "${HELP}" | grep -q -- "${OPT}" && echo "PASS [2.2]: ${OPT} listed" || echo "FAIL [2.2]: ${OPT} missing"
+  done
+  echo "${HELP}" | grep -q "^  list " && echo "PASS [2.2]: 'list' listed" || echo "FAIL [2.2]: 'list' missing"
+}
+check_help tool --uri --name --param
+check_help resource --uri --resource-uri
+check_help prompt --uri --name --arg
 ```
 
 ---
 
-## Phase 2: Required Option Validation
+## Phase 3: Required Option Validation
 
-### Test 2.1: `wanaku mcp tool` without `--uri` should fail
+The call commands check `--uri`, `--name` and `--resource-uri` themselves and exit with `1`. The `list` subcommands
+declare `--uri` as a required picocli option and exit with `2`.
 
-```bash
-wanaku mcp tool --name test 2>&1
-EXIT_CODE=$?
-if [ "${EXIT_CODE}" -ne 0 ]; then
-  echo "PASS: missing --uri rejected (exit code ${EXIT_CODE})"
-else
-  echo "FAIL: missing --uri should fail"
-fi
-```
-
-### Test 2.2: `wanaku mcp tool` without `--name` should fail
+### Test 3.1: Missing options are rejected
 
 ```bash
-wanaku mcp tool --uri "${MCP_SERVER_URI}" 2>&1
-EXIT_CODE=$?
-if [ "${EXIT_CODE}" -ne 0 ]; then
-  echo "PASS: missing --name rejected (exit code ${EXIT_CODE})"
-else
-  echo "FAIL: missing --name should fail"
-fi
-```
-
-### Test 2.3: `wanaku mcp resource` without `--resource-uri` should fail
-
-```bash
-wanaku mcp resource --uri "${MCP_SERVER_URI}" 2>&1
-EXIT_CODE=$?
-if [ "${EXIT_CODE}" -ne 0 ]; then
-  echo "PASS: missing --resource-uri rejected (exit code ${EXIT_CODE})"
-else
-  echo "FAIL: missing --resource-uri should fail"
-fi
-```
-
-### Test 2.4: `wanaku mcp tool list` without `--uri` should fail
-
-```bash
-wanaku mcp tool list 2>&1
-EXIT_CODE=$?
-if [ "${EXIT_CODE}" -ne 0 ]; then
-  echo "PASS: missing --uri rejected (exit code ${EXIT_CODE})"
-else
-  echo "FAIL: missing --uri should fail"
-fi
+expect_exit() {
+  EXPECTED="$1"; MESSAGE="$2"; shift 2
+  OUTPUT=$("$@" 2>&1)
+  EXIT_CODE=$?
+  if [ "${EXIT_CODE}" -eq "${EXPECTED}" ] && echo "${OUTPUT}" | grep -q -- "${MESSAGE}"; then
+    echo "PASS [3.1]: '$*' exits ${EXIT_CODE} with '${MESSAGE}'"
+  else
+    echo "FAIL [3.1]: '$*' exit ${EXIT_CODE}, expected ${EXPECTED} with '${MESSAGE}'"
+    echo "${OUTPUT}"
+  fi
+}
+expect_exit 1 "Missing required option: --uri"          wanaku mcp tool --no-auth --name echo
+expect_exit 1 "Missing required option: --name"         wanaku mcp tool --no-auth --uri "${MCP_URI}"
+expect_exit 1 "Missing required option: --resource-uri" wanaku mcp resource --no-auth --uri "${MCP_URI}"
+expect_exit 1 "Missing required option: --name"         wanaku mcp prompt --no-auth --uri "${MCP_URI}"
+expect_exit 2 "Missing required option"                 wanaku mcp tool list --no-auth
+expect_exit 2 "Missing required option"                 wanaku mcp resource list --no-auth
+expect_exit 2 "Missing required option"                 wanaku mcp prompt list --no-auth
 ```
 
 ---
 
-## Phase 3: Tool Operations
+## Phase 4: Tool Operations
 
-### Test 3.1: List tools from MCP server
+### Test 4.1: List the tools of the namespace
 
 ```bash
-OUTPUT=$(wanaku mcp tool list --uri "${MCP_SERVER_URI}" --plain 2>&1)
+OUTPUT=$(wanaku mcp tool list --uri "${MCP_URI}" --no-auth --plain 2>/dev/null)
 EXIT_CODE=$?
-if [ "${EXIT_CODE}" -eq 0 ]; then
-  echo "PASS: tool list returned successfully"
-  echo "Tools found:"
-  echo "${OUTPUT}"
+[ "${EXIT_CODE}" -eq 0 ] && echo "PASS [4.1]: tool list exit 0" || echo "FAIL [4.1]: tool list exit ${EXIT_CODE}"
+for TOOL in echo get-sum; do
+  echo "${OUTPUT}" | grep -q "^${TOOL} " && echo "PASS [4.1]: '${TOOL}' listed" || echo "FAIL [4.1]: '${TOOL}' not listed"
+done
+```
+
+### Test 4.2: Call a tool with one parameter
+
+```bash
+OUTPUT=$(wanaku mcp tool --uri "${MCP_URI}" --no-auth --name echo --param message=hello --plain 2>/dev/null)
+EXIT_CODE=$?
+if [ "${EXIT_CODE}" -eq 0 ] && [ "${OUTPUT}" = "Echo: hello" ]; then
+  echo "PASS [4.2]: echo returned 'Echo: hello'"
 else
-  echo "FAIL: tool list failed (exit code ${EXIT_CODE})"
-  echo "${OUTPUT}"
+  echo "FAIL [4.2]: exit ${EXIT_CODE}, output '${OUTPUT}'"
 fi
 ```
 
-### Test 3.2: Call a tool with parameters
+### Test 4.3: Call a tool with repeated and comma-separated parameters
 
-**Description:** Call a known tool on the MCP server with parameters and verify the result is printed.
+The CLI accepts `--param` more than once, and it splits one value at commas. The reference server ignores the extra
+key.
 
 ```bash
-# Replace TOOL_NAME with an actual tool from the server (e.g., "echo", "http-request")
-TOOL_NAME="${TEST_TOOL_NAME:-echo}"
-TOOL_PARAM="${TEST_TOOL_PARAM:-message=hello}"
+for ARGS in "--param message=hello --param extra=x" "--param message=hello,extra=x"; do
+  # shellcheck disable=SC2086 # word splitting of ARGS is intended
+  OUTPUT=$(wanaku mcp tool --uri "${MCP_URI}" --no-auth --name echo ${ARGS} --plain 2>/dev/null)
+  [ "${OUTPUT}" = "Echo: hello" ] && echo "PASS [4.3]: ${ARGS}" || echo "FAIL [4.3]: ${ARGS} returned '${OUTPUT}'"
+done
+```
 
-OUTPUT=$(wanaku mcp tool --uri "${MCP_SERVER_URI}" --name "${TOOL_NAME}" --param "${TOOL_PARAM}" --plain 2>&1)
+### Test 4.4: Non-string tool arguments are rejected
+
+The CLI sends `a=2` and `b=3` as strings. `get-sum` requires numbers.
+
+```bash
+OUTPUT=$(wanaku mcp tool --uri "${MCP_URI}" --no-auth --name get-sum --param a=2 --param b=3 --plain 2>&1)
 EXIT_CODE=$?
-if [ "${EXIT_CODE}" -eq 0 ]; then
-  echo "PASS: tool call returned successfully"
-  echo "Result: ${OUTPUT}"
+if [ "${EXIT_CODE}" -eq 1 ] && echo "${OUTPUT}" | grep -q "expected number, received string"; then
+  echo "PASS [4.4]: string arguments rejected by the upstream schema"
 else
-  echo "FAIL: tool call failed (exit code ${EXIT_CODE})"
-  echo "${OUTPUT}"
+  echo "FAIL [4.4]: exit ${EXIT_CODE}, output: ${OUTPUT}"
 fi
 ```
 
-### Test 3.3: Call a tool with multiple parameters
+### Test 4.5: Call a tool without its required argument
 
 ```bash
-TOOL_NAME="${TEST_TOOL_NAME:-echo}"
-
-OUTPUT=$(wanaku mcp tool --uri "${MCP_SERVER_URI}" --name "${TOOL_NAME}" --param key1=value1 --param key2=value2 --plain 2>&1)
+OUTPUT=$(wanaku mcp tool --uri "${MCP_URI}" --no-auth --name echo --plain 2>&1)
 EXIT_CODE=$?
-if [ "${EXIT_CODE}" -eq 0 ]; then
-  echo "PASS: tool call with multiple params succeeded"
+if [ "${EXIT_CODE}" -eq 1 ] && echo "${OUTPUT}" | grep -q -- "-32602"; then
+  echo "PASS [4.5]: missing 'message' rejected with -32602"
 else
-  echo "FAIL: tool call with multiple params failed (exit code ${EXIT_CODE})"
-  echo "${OUTPUT}"
+  echo "FAIL [4.5]: exit ${EXIT_CODE}, output: ${OUTPUT}"
 fi
 ```
 
-### Test 3.4: Call a non-existent tool should fail
+### Test 4.6: Call an unknown tool
 
 ```bash
-OUTPUT=$(wanaku mcp tool --uri "${MCP_SERVER_URI}" --name "non-existent-tool-12345" --plain 2>&1)
+OUTPUT=$(wanaku mcp tool --uri "${MCP_URI}" --no-auth --name non-existent-tool-12345 --plain 2>&1)
 EXIT_CODE=$?
-if [ "${EXIT_CODE}" -ne 0 ]; then
-  echo "PASS: non-existent tool call failed as expected (exit code ${EXIT_CODE})"
+if [ "${EXIT_CODE}" -eq 1 ] && echo "${OUTPUT}" | grep -q "tool not found: non-existent-tool-12345"; then
+  echo "PASS [4.6]: unknown tool rejected"
 else
-  echo "FAIL: non-existent tool call should have failed"
+  echo "FAIL [4.6]: exit ${EXIT_CODE}, output: ${OUTPUT}"
 fi
 ```
 
 ---
 
-## Phase 4: Resource Operations
+## Phase 5: Resource Operations
 
-### Test 4.1: List resources from MCP server
+### Test 5.1: List the resources of the namespace
 
 ```bash
-OUTPUT=$(wanaku mcp resource list --uri "${MCP_SERVER_URI}" --plain 2>&1)
+OUTPUT=$(wanaku mcp resource list --uri "${MCP_URI}" --no-auth --plain 2>/dev/null)
 EXIT_CODE=$?
-if [ "${EXIT_CODE}" -eq 0 ]; then
-  echo "PASS: resource list returned successfully"
-  echo "Resources found:"
-  echo "${OUTPUT}"
+if [ "${EXIT_CODE}" -eq 0 ] && echo "${OUTPUT}" | grep -q "^architecture.md .*demo://resource/static/document/architecture.md"; then
+  echo "PASS [5.1]: architecture.md listed with its URI"
 else
-  echo "FAIL: resource list failed (exit code ${EXIT_CODE})"
-  echo "${OUTPUT}"
+  echo "FAIL [5.1]: exit ${EXIT_CODE}, output: ${OUTPUT}"
 fi
 ```
 
-### Test 4.2: Read a resource
-
-**Description:** Read a known resource from the MCP server and verify content is printed.
+### Test 5.2: Read a resource
 
 ```bash
-# Replace RESOURCE_URI with an actual resource URI from the server
-RESOURCE_URI="${TEST_RESOURCE_URI:-file:///test}"
-
-OUTPUT=$(wanaku mcp resource --uri "${MCP_SERVER_URI}" --resource-uri "${RESOURCE_URI}" --plain 2>&1)
+RESOURCE_URI="${TEST_RESOURCE_URI:-demo://resource/static/document/architecture.md}"
+OUTPUT=$(wanaku mcp resource --uri "${MCP_URI}" --no-auth --resource-uri "${RESOURCE_URI}" --plain 2>/dev/null)
 EXIT_CODE=$?
-if [ "${EXIT_CODE}" -eq 0 ]; then
-  echo "PASS: resource read returned successfully"
-  echo "Content: ${OUTPUT}"
+if [ "${EXIT_CODE}" -eq 0 ] && echo "${OUTPUT}" | grep -q "McpTextResourceContents\[uri=${RESOURCE_URI}"; then
+  echo "PASS [5.2]: resource content returned"
 else
-  echo "FAIL: resource read failed (exit code ${EXIT_CODE})"
-  echo "${OUTPUT}"
+  echo "FAIL [5.2]: exit ${EXIT_CODE}, output: ${OUTPUT}"
 fi
 ```
 
-### Test 4.3: Read a non-existent resource should fail
+### Test 5.3: Read an unknown resource
+
+Wanaku Server looks up the URI in its registry before it forwards the request.
 
 ```bash
-OUTPUT=$(wanaku mcp resource --uri "${MCP_SERVER_URI}" --resource-uri "file:///non-existent-12345" --plain 2>&1)
+OUTPUT=$(wanaku mcp resource --uri "${MCP_URI}" --no-auth --resource-uri "demo://non-existent-12345" --plain 2>&1)
 EXIT_CODE=$?
-if [ "${EXIT_CODE}" -ne 0 ]; then
-  echo "PASS: non-existent resource read failed as expected"
+if [ "${EXIT_CODE}" -eq 1 ] && echo "${OUTPUT}" | grep -q "resource not found: demo://non-existent-12345"; then
+  echo "PASS [5.3]: unknown resource rejected"
 else
-  echo "WARN: non-existent resource read did not fail — server may return empty content"
+  echo "FAIL [5.3]: exit ${EXIT_CODE}, output: ${OUTPUT}"
 fi
 ```
 
 ---
 
-## Phase 5: Prompt Operations
+## Phase 6: Prompt Operations
 
-### Test 5.1: List prompts from MCP server
+### Test 6.1: List the prompts of the namespace
 
 ```bash
-OUTPUT=$(wanaku mcp prompt list --uri "${MCP_SERVER_URI}" --plain 2>&1)
+OUTPUT=$(wanaku mcp prompt list --uri "${MCP_URI}" --no-auth --plain 2>/dev/null)
+for PROMPT in simple-prompt args-prompt; do
+  echo "${OUTPUT}" | grep -q "^${PROMPT} " && echo "PASS [6.1]: '${PROMPT}' listed" || echo "FAIL [6.1]: '${PROMPT}' not listed"
+done
+```
+
+### Test 6.2: Get a prompt without arguments
+
+```bash
+OUTPUT=$(wanaku mcp prompt --uri "${MCP_URI}" --no-auth --name simple-prompt --plain 2>/dev/null)
+echo "${OUTPUT}" | grep -q "This is a simple prompt without arguments." \
+  && echo "PASS [6.2]: simple-prompt rendered" || echo "FAIL [6.2]: output: ${OUTPUT}"
+```
+
+### Test 6.3: Get a prompt with arguments
+
+```bash
+OUTPUT=$(wanaku mcp prompt --uri "${MCP_URI}" --no-auth --name args-prompt --arg city=Paris --arg state=Texas --plain 2>/dev/null)
+echo "${OUTPUT}" | grep -q "Paris, Texas" \
+  && echo "PASS [6.3]: args-prompt rendered with both arguments" || echo "FAIL [6.3]: output: ${OUTPUT}"
+```
+
+### Test 6.4: Get a prompt without its required argument
+
+```bash
+wanaku mcp prompt --uri "${MCP_URI}" --no-auth --name args-prompt --plain > /dev/null 2>&1
 EXIT_CODE=$?
-if [ "${EXIT_CODE}" -eq 0 ]; then
-  echo "PASS: prompt list returned successfully"
-  echo "Prompts found:"
-  echo "${OUTPUT}"
+[ "${EXIT_CODE}" -eq 1 ] && echo "PASS [6.4]: missing 'city' rejected" || echo "FAIL [6.4]: exit ${EXIT_CODE}"
+```
+
+### Test 6.5: Get an unknown prompt
+
+```bash
+OUTPUT=$(wanaku mcp prompt --uri "${MCP_URI}" --no-auth --name non-existent-prompt-12345 --plain 2>&1)
+EXIT_CODE=$?
+if [ "${EXIT_CODE}" -eq 1 ] && echo "${OUTPUT}" | grep -q "prompt not found: non-existent-prompt-12345"; then
+  echo "PASS [6.5]: unknown prompt rejected"
 else
-  echo "FAIL: prompt list failed (exit code ${EXIT_CODE})"
-  echo "${OUTPUT}"
+  echo "FAIL [6.5]: exit ${EXIT_CODE}, output: ${OUTPUT}"
 fi
 ```
 
-### Test 5.2: Get a prompt with arguments
+---
 
-**Description:** Render a known prompt from the MCP server with arguments.
+## Phase 7: Namespaces and Governance
+
+### Test 7.1: A namespace shows only its own entries
+
+`MCP_ISOLATED_NAMESPACE` is governed, but it has no forward.
 
 ```bash
-# Replace PROMPT_NAME with an actual prompt from the server
-PROMPT_NAME="${TEST_PROMPT_NAME:-greeting}"
-PROMPT_ARG="${TEST_PROMPT_ARG:-name=Alice}"
+ISO_URI="${WANAKU_MCP_BASE_URL}/${MCP_ISOLATED_NAMESPACE}/mcp"
+for KIND in tool resource prompt; do
+  OUTPUT=$(wanaku mcp "${KIND}" list --uri "${ISO_URI}" --no-auth --plain 2>/dev/null)
+  echo "${OUTPUT}" | grep -q "^No ${KIND}s found" \
+    && echo "PASS [7.1]: no ${KIND}s in ${MCP_ISOLATED_NAMESPACE}" || echo "FAIL [7.1]: ${KIND}s leaked: ${OUTPUT}"
+done
+```
 
-OUTPUT=$(wanaku mcp prompt --uri "${MCP_SERVER_URI}" --name "${PROMPT_NAME}" --arg "${PROMPT_ARG}" --plain 2>&1)
+### Test 7.2: A tool of another namespace cannot be called
+
+```bash
+OUTPUT=$(wanaku mcp tool --uri "${ISO_URI}" --no-auth --name echo --param message=hello --plain 2>&1)
 EXIT_CODE=$?
-if [ "${EXIT_CODE}" -eq 0 ]; then
-  echo "PASS: prompt get returned successfully"
-  echo "Messages: ${OUTPUT}"
+if [ "${EXIT_CODE}" -eq 1 ] && echo "${OUTPUT}" | grep -q "tool not found: echo"; then
+  echo "PASS [7.2]: 'echo' is not callable from ${MCP_ISOLATED_NAMESPACE}"
 else
-  echo "FAIL: prompt get failed (exit code ${EXIT_CODE})"
-  echo "${OUTPUT}"
+  echo "FAIL [7.2]: exit ${EXIT_CODE}, output: ${OUTPUT}"
 fi
 ```
 
-### Test 5.3: Get a non-existent prompt should fail
+### Test 7.3: The fail-safe default denies calls in a namespace that is not governed
+
+The governance check runs before the tool lookup. Listing is not governed.
 
 ```bash
-OUTPUT=$(wanaku mcp prompt --uri "${MCP_SERVER_URI}" --name "non-existent-prompt-12345" --plain 2>&1)
+UNGOV_URI="${WANAKU_MCP_BASE_URL}/${MCP_UNGOVERNED_NAMESPACE}/mcp"
+wanaku mcp tool list --uri "${UNGOV_URI}" --no-auth --plain > /dev/null 2>&1 \
+  && echo "PASS [7.3]: listing is allowed in ${MCP_UNGOVERNED_NAMESPACE}" || echo "FAIL [7.3]: listing failed"
+
+OUTPUT=$(wanaku mcp tool --uri "${UNGOV_URI}" --no-auth --name echo --param message=hello --plain 2>&1)
 EXIT_CODE=$?
-if [ "${EXIT_CODE}" -ne 0 ]; then
-  echo "PASS: non-existent prompt get failed as expected"
+if [ "${EXIT_CODE}" -eq 1 ] && echo "${OUTPUT}" | grep -q "No governance policy permits this action."; then
+  echo "PASS [7.3]: tools/call denied by the fail-safe default"
 else
-  echo "FAIL: non-existent prompt get should have failed"
+  echo "FAIL [7.3]: exit ${EXIT_CODE}, output: ${OUTPUT}"
+fi
+```
+
+### Test 7.4: A disabled tool is hidden from MCP clients
+
+The enable and disable routes have no CLI command, so this test uses `curl`.
+
+```bash
+HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X PUT "${WANAKU_SERVER_URL}/api/v1/tools/echo/disable")
+[ "${HTTP_CODE}" = "200" ] && echo "PASS [7.4]: echo disabled" || echo "FAIL [7.4]: disable returned HTTP ${HTTP_CODE}"
+
+wanaku mcp tool list --uri "${MCP_URI}" --no-auth --plain 2>/dev/null | grep -q "^echo " \
+  && echo "FAIL [7.4]: disabled tool still listed" || echo "PASS [7.4]: disabled tool not listed"
+
+OUTPUT=$(wanaku mcp tool --uri "${MCP_URI}" --no-auth --name echo --param message=hello --plain 2>&1)
+echo "${OUTPUT}" | grep -q "tool not found: echo" \
+  && echo "PASS [7.4]: disabled tool cannot be called" || echo "FAIL [7.4]: output: ${OUTPUT}"
+
+# The management API still lists the entry
+wanaku tools list --host "${WANAKU_SERVER_URL}" --no-auth --plain | grep -q "^echo" \
+  && echo "PASS [7.4]: management API still lists echo" || echo "FAIL [7.4]: echo missing from management API"
+```
+
+### Test 7.5: An enabled tool is visible again
+
+```bash
+HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X PUT "${WANAKU_SERVER_URL}/api/v1/tools/echo/enable")
+[ "${HTTP_CODE}" = "200" ] && echo "PASS [7.5]: echo enabled" || echo "FAIL [7.5]: enable returned HTTP ${HTTP_CODE}"
+
+OUTPUT=$(wanaku mcp tool --uri "${MCP_URI}" --no-auth --name echo --param message=again --plain 2>/dev/null)
+[ "${OUTPUT}" = "Echo: again" ] && echo "PASS [7.5]: echo callable again" || echo "FAIL [7.5]: output '${OUTPUT}'"
+```
+
+---
+
+## Phase 8: Endpoint and Connection Errors
+
+### Test 8.1: The bare `/mcp` path is rejected
+
+Wanaku Server returns the JSON-RPC error `-32600` for an MCP request without a namespace.
+
+```bash
+OUTPUT=$(wanaku mcp tool list --uri "${WANAKU_MCP_BASE_URL}/mcp" --no-auth --plain 2>&1)
+EXIT_CODE=$?
+if [ "${EXIT_CODE}" -eq 1 ] && echo "${OUTPUT}" | grep -q "invalid MCP endpoint path: use /{namespace}/mcp"; then
+  echo "PASS [8.1]: bare /mcp rejected"
+else
+  echo "FAIL [8.1]: exit ${EXIT_CODE}, output: ${OUTPUT}"
+fi
+```
+
+### Test 8.2: A legacy SSE endpoint is rejected by the CLI
+
+```bash
+OUTPUT=$(wanaku mcp tool list --uri "${MCP_URI}/sse" --no-auth --plain 2>&1)
+EXIT_CODE=$?
+if [ "${EXIT_CODE}" -eq 1 ] && echo "${OUTPUT}" | grep -q "Legacy SSE MCP endpoints are no longer supported"; then
+  echo "PASS [8.2]: SSE endpoint rejected with a migration hint"
+else
+  echo "FAIL [8.2]: exit ${EXIT_CODE}, output: ${OUTPUT}"
+fi
+```
+
+### Test 8.3: An unreachable server fails without a stack trace
+
+```bash
+OUTPUT=$(wanaku mcp tool list --uri "${MCP_UNREACHABLE_URI}" --no-auth --plain 2>&1)
+EXIT_CODE=$?
+if [ "${EXIT_CODE}" -eq 1 ] && ! echo "${OUTPUT}" | grep -q "at .*(.*\.java:"; then
+  echo "PASS [8.3]: unreachable server fails gracefully"
+else
+  echo "FAIL [8.3]: exit ${EXIT_CODE}, output: ${OUTPUT}"
+fi
+echo "${OUTPUT}" | grep -q "Connection refused" \
+  || echo "WARN [8.3]: message is not the friendly 'Connection refused' text: ${OUTPUT}"
+```
+
+### Test 8.4: An invalid URI fails gracefully
+
+```bash
+OUTPUT=$(wanaku mcp tool list --uri "not-a-valid-uri" --no-auth --plain 2>&1)
+EXIT_CODE=$?
+if [ "${EXIT_CODE}" -eq 1 ] && echo "${OUTPUT}" | grep -q "Invalid URI: 'not-a-valid-uri'"; then
+  echo "PASS [8.4]: invalid URI rejected"
+else
+  echo "FAIL [8.4]: exit ${EXIT_CODE}, output: ${OUTPUT}"
 fi
 ```
 
 ---
 
-## Phase 6: Connection Error Handling
-
-### Test 6.1: Connecting to a non-existent server should fail gracefully
+## Phase 9: Cleanup (Part 1)
 
 ```bash
-OUTPUT=$(wanaku mcp tool list --uri "http://localhost:59999/mcp" --plain 2>&1)
-EXIT_CODE=$?
-if [ "${EXIT_CODE}" -ne 0 ]; then
-  echo "PASS: connection to non-existent server failed gracefully (exit code ${EXIT_CODE})"
-else
-  echo "FAIL: connection to non-existent server should fail"
-fi
+for NS in "${MCP_ISOLATED_NAMESPACE}" "${MCP_UNGOVERNED_NAMESPACE}"; do
+  wanaku namespaces delete "${NS}" --host "${WANAKU_SERVER_URL}" --no-auth --plain > /dev/null 2>&1 || true
+done
+curl -s -o /dev/null -X PUT "${WANAKU_SERVER_URL}/api/v1/tools/echo/enable" 2>/dev/null || true
+echo "PASS [9.1]: test namespaces removed"
 ```
 
-### Test 6.2: Invalid URI should fail gracefully
-
-```bash
-OUTPUT=$(wanaku mcp tool list --uri "not-a-valid-uri" --plain 2>&1)
-EXIT_CODE=$?
-if [ "${EXIT_CODE}" -ne 0 ]; then
-  echo "PASS: invalid URI failed gracefully (exit code ${EXIT_CODE})"
-else
-  echo "FAIL: invalid URI should fail"
-fi
-```
-
----
+Then follow the **Shutdown** sections of [common/start-test-mcp-server.md](common/start-test-mcp-server.md) and
+[common/start-server.md](common/start-server.md), in this order.
 
 ## Part 1 Summary
 
 | Phase | Test ID | Test Name | Priority |
 |-------|---------|-----------|----------|
-| 1 | 1.1-1.4 | Help and usage output | Medium |
-| 2 | 2.1-2.4 | Required option validation | High |
-| 3 | 3.1-3.4 | Tool list, call, multi-param, non-existent | Critical |
-| 4 | 4.1-4.3 | Resource list, read, non-existent | Critical |
-| 5 | 5.1-5.3 | Prompt list, get, non-existent | Critical |
-| 6 | 6.1-6.2 | Connection error handling | High |
+| 0 | 0.1 | Prerequisites | High |
+| 1 | 1.1-1.4 | Server with test governance, reference forward, namespaces | Critical |
+| 2 | 2.1-2.2 | Help and usage output | Medium |
+| 3 | 3.1 | Required option validation (exit codes 1 and 2) | High |
+| 4 | 4.1-4.6 | Tool list, call, multi-param, string-only params, missing arg, unknown tool | Critical |
+| 5 | 5.1-5.3 | Resource list, read, unknown resource | Critical |
+| 6 | 6.1-6.5 | Prompt list, get, get with args, missing arg, unknown prompt | Critical |
+| 7 | 7.1-7.5 | Namespace isolation, fail-safe governance, disable/enable | Critical |
+| 8 | 8.1-8.4 | Bare `/mcp`, legacy SSE, unreachable server, invalid URI | High |
+| 9 | 9.1 | Cleanup | Critical |
 
 ---
 ---
 
-# Part 2 — End-to-End: MCP CLI with Real Capabilities on OpenShift
+# Part 2 — OpenShift with the Operator and oauth2-proxy
 
 ## Overview
 
-This part deploys a full Wanaku stack via the operator (router + HTTP capability), registers real HTTP tools (currency conversion, cat facts), and verifies end-to-end tool invocation through the `wanaku mcp` CLI commands against the deployed router's MCP endpoints.
+The operator deploys Wanaku Server from a `WanakuRouter` resource (`spec.server`) with authentication enabled
+(`spec.auth`). The operator creates:
 
-The first `oc login` step is manual; everything else is automatable.
+- the `<router>-server` Deployment and the `server-<router>` Service (ports 8080 management, 8081 MCP, 8083, 8084)
+- the `<router>-oauth2-proxy` Deployment (4180 MCP proxy, 4181 management proxy)
+- the Route `<router>` for the management API and the Route `<router>-mcp` for the MCP listener (edge TLS)
+
+The plan deploys the MCP reference server in the cluster and registers it as a forward with the CLI. This replaces
+the removed `WanakuCapability` resource. The operator also offers `WanakuIntegration` for the Camel Integration
+Capability; this plan does not need it. Barn is not deployed.
 
 ## Prerequisites
 
@@ -374,422 +561,377 @@ The first `oc login` step is manual; everything else is automatable.
 |------|-----------------|----------------|
 | `oc` | 4.12+ | `oc version --client` |
 | `helm` | 3.x | `helm version --short` |
-| `wanaku` | build from source | `wanaku --version` |
-| `jq` | 1.6+ | `jq --version` |
+| `wanaku` CLI and `wanaku-keycloak-admin` | build from source | `wanaku --version` |
+| `openssl` | any | `openssl version` |
+| `curl`, `jq` | any / 1.6+ | `jq --version` |
 
 ### Environment variables
 
+Follow [common/namespace-setup.md](common/namespace-setup.md) first. It sets a unique `WANAKU_NAMESPACE`.
+
 ```bash
 export WANAKU_REPO_ROOT="${WANAKU_REPO_ROOT:-.}"
-export WANAKU_ROUTER_IMAGE="${WANAKU_ROUTER_IMAGE:-quay.io/wanaku/wanaku-barn-backend:latest}"
-export WANAKU_CAPABILITY_HTTP_IMAGE="${WANAKU_CAPABILITY_HTTP_IMAGE:-quay.io/wanaku/wanaku-tool-service-http:latest}"
-export WANAKU_PROVIDER_STATIC_FILE_IMAGE="${WANAKU_PROVIDER_STATIC_FILE_IMAGE:-quay.io/wanaku/wanaku-provider-performance-static-file:latest}"
-# Isolate credentials per test run to avoid contention (see #1697)
+export WANAKU_ROUTER_NAME="${WANAKU_ROUTER_NAME:-wanaku-mcp-test}"
+export WANAKU_SERVER_IMAGE="${WANAKU_SERVER_IMAGE:-quay.io/wanaku/wanaku-server:latest}"
+export WANAKU_OAUTH2_PROXY_IMAGE="${WANAKU_OAUTH2_PROXY_IMAGE:-}"   # empty: operator default
+export TEST_MCP_NODE_IMAGE="${TEST_MCP_NODE_IMAGE:-registry.access.redhat.com/ubi9/nodejs-22:latest}"
+export TEST_MCP_PACKAGE="${TEST_MCP_PACKAGE:-@modelcontextprotocol/server-everything@1.0.0}"
+export MCP_E2E_NAMESPACE="${MCP_E2E_NAMESPACE:-mcp-e2e}"
+# Set to "--insecure" when the cluster Route certificates are not trusted
+export WANAKU_TLS_FLAG="${WANAKU_TLS_FLAG:-}"
+# Isolate CLI credentials per test run (see #1697)
 export WANAKU_CREDENTIALS="${WANAKU_CREDENTIALS:-/tmp/wanaku-creds-${WANAKU_NAMESPACE}}"
 ```
 
-Follow [common/namespace-setup.md](common/namespace-setup.md) before Part 2 to derive a unique `WANAKU_NAMESPACE` for the OpenShift environment.
+The reference server pod downloads `TEST_MCP_PACKAGE` from the npm registry. The cluster needs egress to
+`registry.npmjs.org`, or a mirror set with `npm_config_registry` in the Deployment.
 
-### Helper: wait for resource deletion
-
-```bash
-wait_for_deletion() {
-  local RESOURCE_TYPE="$1"
-  local RESOURCE_NAME="$2"
-  local NAMESPACE="$3"
-  local TIMEOUT="${4:-60}"
-  local INTERVAL=3
-  local ELAPSED=0
-
-  while oc get "${RESOURCE_TYPE}" "${RESOURCE_NAME}" -n "${NAMESPACE}" > /dev/null 2>&1; do
-    if [ "${ELAPSED}" -ge "${TIMEOUT}" ]; then
-      echo "FAIL: ${RESOURCE_TYPE}/${RESOURCE_NAME} still exists after ${TIMEOUT}s"
-      return 1
-    fi
-    sleep ${INTERVAL}
-    ELAPSED=$((ELAPSED + INTERVAL))
-  done
-  echo "PASS: ${RESOURCE_TYPE}/${RESOURCE_NAME} deleted (${ELAPSED}s)"
-  return 0
-}
-```
+Define `wait_for_deletion` from [common/wait-for-deletion.md](common/wait-for-deletion.md).
 
 ---
 
-## Phase 7: OpenShift Login (MANUAL)
+## Phase 10: OpenShift Login (MANUAL)
 
-This is the only manual step in Part 2.
-
-### Step 7.1: Log in to OpenShift
-
-```bash
-oc login <cluster-api-url> --username=<username> --password=<password>
-```
-
-### Step 7.2: Verify login
-
-```bash
-oc whoami
-oc whoami --show-server
-```
+Follow [common/openshift-login.md](common/openshift-login.md).
 
 ---
 
-## Phase 8: Deploy the Wanaku Stack
+## Phase 11: Deploy the Wanaku Stack
 
-### Step 8.1: Create namespace
+### Step 11.1: Create the namespace
 
-Follow [common/namespace-setup.md](common/namespace-setup.md) to create and verify the namespace.
+Follow [common/namespace-setup.md](common/namespace-setup.md).
 
-### Step 8.2: Deploy Keycloak
+### Step 11.2: Deploy Keycloak
 
-Follow [common/keycloak-setup.md](common/keycloak-setup.md). After completion, verify:
+Follow [common/keycloak-setup.md](common/keycloak-setup.md). After completion, verify the variables:
 
 ```bash
-for VAR_NAME in KEYCLOAK_HOST KEYCLOAK_URL WANAKU_OIDC_SECRET; do
+for VAR_NAME in KEYCLOAK_URL WANAKU_CLIENT_SECRET WANAKU_TEST_USER WANAKU_TEST_PASS; do
   eval "VAL=\${${VAR_NAME}}"
-  if [ -z "${VAL}" ]; then
-    echo "FAIL: ${VAR_NAME} is not set"
-    exit 1
-  fi
-  echo "PASS: ${VAR_NAME} is set"
+  [ -n "${VAL}" ] && echo "PASS [11.2]: ${VAR_NAME} is set" || { echo "FAIL [11.2]: ${VAR_NAME} is not set"; exit 1; }
 done
 ```
 
-### Step 8.3: Install the operator
+### Step 11.3: Install the operator
 
-Follow [common/operator-deployment.md](common/operator-deployment.md) to install the operator via Helm.
+Follow [common/operator-deployment.md](common/operator-deployment.md).
 
-### Step 8.4: Create WanakuRouter
+### Step 11.4: Create the oauth2-proxy Secret
+
+The proxies use the `wanaku-mcp-router` client. The Secret needs the keys `client-secret` and `cookie-secret`.
 
 ```bash
-cat <<EOF | oc apply -n "${WANAKU_NAMESPACE}" -f -
+oc create secret generic "${WANAKU_ROUTER_NAME}-oidc" -n "${WANAKU_NAMESPACE}" \
+  --from-literal=client-secret="${WANAKU_CLIENT_SECRET}" \
+  --from-literal=cookie-secret="$(openssl rand -hex 16)" 2>/dev/null \
+  || oc get secret "${WANAKU_ROUTER_NAME}-oidc" -n "${WANAKU_NAMESPACE}" > /dev/null
+[ $? -eq 0 ] && echo "PASS [11.4]: oauth2-proxy Secret exists" || { echo "FAIL [11.4]: Secret not created"; exit 1; }
+```
+
+### Step 11.5: Create the WanakuRouter
+
+```bash
+{
+cat <<EOF
 apiVersion: "wanaku.ai/v1alpha1"
 kind: WanakuRouter
 metadata:
-  name: wanaku-mcp-test-router
+  name: ${WANAKU_ROUTER_NAME}
 spec:
-  auth:
-    authServer: "http://keycloak:8080"
-    authProxy: "auto"
-  router:
-    image: ${WANAKU_ROUTER_IMAGE}
+  server:
+    image: ${WANAKU_SERVER_IMAGE}
     imagePullPolicy: Always
+  auth:
+    enabled: true
+    issuerUrl: ${KEYCLOAK_URL}/realms/wanaku
+    internalIssuerUrl: http://keycloak:8080/realms/wanaku
+    clientId: wanaku-mcp-router
+    secretName: ${WANAKU_ROUTER_NAME}-oidc
 EOF
+[ -n "${WANAKU_OAUTH2_PROXY_IMAGE}" ] && echo "    image: ${WANAKU_OAUTH2_PROXY_IMAGE}"
+} | oc apply -n "${WANAKU_NAMESPACE}" -f -
+
+oc wait "wanakurouter/${WANAKU_ROUTER_NAME}" --for=condition=Ready --timeout=300s -n "${WANAKU_NAMESPACE}" \
+  && echo "PASS [11.5]: WanakuRouter is Ready" || { echo "FAIL [11.5]: WanakuRouter not Ready"; exit 1; }
 ```
 
-**Wait for Ready:**
+### Step 11.6: Verify the generated resources
 
 ```bash
-oc wait wanakurouter/wanaku-mcp-test-router \
-  --for=condition=Ready \
-  --timeout=120s \
-  -n "${WANAKU_NAMESPACE}"
+R="${WANAKU_ROUTER_NAME}"
+for DEP in "${R}-server" "${R}-oauth2-proxy"; do
+  oc rollout status "deployment/${DEP}" --timeout=180s -n "${WANAKU_NAMESPACE}" > /dev/null \
+    && echo "PASS [11.6]: deployment ${DEP} available" || echo "FAIL [11.6]: deployment ${DEP} not available"
+done
+
+PORTS=$(oc get service "server-${R}" -n "${WANAKU_NAMESPACE}" -o jsonpath='{.spec.ports[*].port}')
+for PORT in 8080 8081; do
+  echo " ${PORTS} " | grep -q " ${PORT} " && echo "PASS [11.6]: server-${R} exposes ${PORT}" \
+    || echo "FAIL [11.6]: server-${R} ports are '${PORTS}'"
+done
+
+for ROUTE in "${R}" "${R}-mcp"; do
+  oc get route "${ROUTE}" -n "${WANAKU_NAMESPACE}" > /dev/null 2>&1 \
+    && echo "PASS [11.6]: route ${ROUTE} exists" || echo "FAIL [11.6]: route ${ROUTE} missing"
+done
+
+oc get deployment "${R}-barn" -n "${WANAKU_NAMESPACE}" > /dev/null 2>&1 \
+  && echo "FAIL [11.6]: Barn deployed although spec.barn is not enabled" || echo "PASS [11.6]: Barn not deployed"
+
+REASON=$(oc get wanakurouter "${R}" -n "${WANAKU_NAMESPACE}" \
+  -o jsonpath='{.status.conditions[?(@.type=="AuthConfigured")].reason}')
+[ "${REASON}" = "Configured" ] && echo "PASS [11.6]: AuthConfigured=Configured" \
+  || echo "FAIL [11.6]: AuthConfigured reason is '${REASON}'"
 ```
 
-### Step 8.7: Set router URL variables
+### Step 11.7: Set the URL variables
 
 ```bash
-export WANAKU_ROUTER_HOST=$(oc get route wanaku-mcp-test-router -n "${WANAKU_NAMESPACE}" -o jsonpath='{.spec.host}')
-export WANAKU_ROUTER_URL="http://${WANAKU_ROUTER_HOST}"
-export WANAKU_MCP_URI="${WANAKU_ROUTER_URL}/public/mcp/"
+export WANAKU_SERVER_URL="https://$(oc get route "${WANAKU_ROUTER_NAME}" -n "${WANAKU_NAMESPACE}" -o jsonpath='{.spec.host}')"
+export WANAKU_MCP_BASE_URL="https://$(oc get route "${WANAKU_ROUTER_NAME}-mcp" -n "${WANAKU_NAMESPACE}" -o jsonpath='{.spec.host}')"
+# common/oidc-login-verification.md uses WANAKU_ROUTER_URL
+export WANAKU_ROUTER_URL="${WANAKU_SERVER_URL}"
+export MCP_URI="${WANAKU_MCP_BASE_URL}/default/mcp"
 
-if [ -z "${WANAKU_ROUTER_HOST}" ]; then
-  echo "FAIL: could not retrieve router host from route"
-  exit 1
-fi
-echo "PASS: router URL is ${WANAKU_ROUTER_URL}"
-echo "PASS: MCP URI is ${WANAKU_MCP_URI}"
+STATUS_MCP=$(oc get wanakurouter "${WANAKU_ROUTER_NAME}" -n "${WANAKU_NAMESPACE}" -o jsonpath='{.status.endpoints.mcp}')
+[ "${STATUS_MCP}" = "${WANAKU_MCP_BASE_URL}/mcp" ] && echo "PASS [11.7]: status.endpoints.mcp is ${STATUS_MCP}" \
+  || echo "FAIL [11.7]: status.endpoints.mcp is '${STATUS_MCP}', expected ${WANAKU_MCP_BASE_URL}/mcp"
 ```
 
-### Step 8.8: Wait for router health
+### Step 11.8: Wait for health
+
+`/health` does not require a token. `curl` is used to test HTTP-level readiness. Add `-k` to the `curl` commands of
+this part when `WANAKU_TLS_FLAG` is `--insecure`.
 
 ```bash
-MAX_RETRIES=24
-RETRY_INTERVAL=5
-for i in $(seq 1 ${MAX_RETRIES}); do
-  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${WANAKU_ROUTER_URL}/q/health/ready" 2>/dev/null || echo "000")
-  if [ "${HTTP_CODE}" = "200" ]; then
-    echo "PASS: router is healthy (attempt ${i})"
-    break
-  fi
-  if [ "${i}" -eq "${MAX_RETRIES}" ]; then
-    echo "FAIL: router not healthy after ${MAX_RETRIES} attempts (last HTTP ${HTTP_CODE})"
-    exit 1
-  fi
-  echo "Waiting for router... (attempt ${i}, HTTP ${HTTP_CODE})"
-  sleep ${RETRY_INTERVAL}
+for i in $(seq 1 30); do
+  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${WANAKU_SERVER_URL}/health" 2>/dev/null || echo "000")
+  [ "${HTTP_CODE}" = "200" ] && { echo "PASS [11.8]: Wanaku Server healthy (attempt ${i})"; break; }
+  [ "${i}" -eq 30 ] && { echo "FAIL [11.8]: health returned HTTP ${HTTP_CODE}"; exit 1; }
+  sleep 5
 done
 ```
 
-### Step 8.9: Verify OIDC login via router
-
-Follow [common/oidc-login-verification.md](common/oidc-login-verification.md) to verify end-to-end OIDC authentication through the router.
-
----
-
-## Phase 9: Verify Tools from MCP Servers
-
-Tools are provided by MCP servers registered with the router. Ensure the HTTP capability is running and has registered tools (e.g., currency conversion, cat facts) before proceeding.
-
-### Test 9.1: Verify tools are listed via CLI
+### Step 11.9: Verify that the proxies require a token
 
 ```bash
-TOOLS_OUTPUT=$(wanaku tools list --host "${WANAKU_ROUTER_URL}" --no-auth --plain 2>&1)
+HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${WANAKU_SERVER_URL}/api/v1/tools")
+[ "${HTTP_CODE}" = "401" ] && echo "PASS [11.9]: management API returns 401 without a token" \
+  || echo "FAIL [11.9]: management API returned HTTP ${HTTP_CODE}"
 
-echo "${TOOLS_OUTPUT}" | grep -q "free-currency-conversion-api" \
-  && echo "PASS: currency conversion tool is listed" \
-  || echo "FAIL: currency conversion tool not found"
+HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${MCP_URI}" \
+  -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}')
+[ "${HTTP_CODE}" = "401" ] && echo "PASS [11.9]: MCP endpoint returns 401 without a token" \
+  || echo "FAIL [11.9]: MCP endpoint returned HTTP ${HTTP_CODE}"
 
-echo "${TOOLS_OUTPUT}" | grep -q "meow-facts" \
-  && echo "PASS: meow-facts tool is listed" \
-  || echo "FAIL: meow-facts tool not found"
+# The OAuth protected-resource metadata is public. The operator sets WANAKU_AUTH_ISSUER.
+META=$(curl -s "${WANAKU_MCP_BASE_URL}/.well-known/oauth-protected-resource/default/mcp")
+echo "${META}" | grep -q "${KEYCLOAK_URL}/realms/wanaku" \
+  && echo "PASS [11.9]: protected-resource metadata names the issuer" || echo "FAIL [11.9]: metadata: ${META}"
+```
+
+### Step 11.10: Log in
+
+Follow [common/oidc-login-verification.md](common/oidc-login-verification.md). Then read the access token for the
+`wanaku mcp` commands. These commands do not read the stored credentials, so they need `--token`.
+
+```bash
+MCP_TOKEN=$(wanaku auth token --get --unmask 2>/dev/null)
+[ -n "${MCP_TOKEN}" ] && echo "PASS [11.10]: access token available" || { echo "FAIL [11.10]: no access token"; exit 1; }
 ```
 
 ---
 
-## Phase 10: List Tools via MCP CLI
+## Phase 12: Register an MCP Server as a Forward
 
-### Test 10.1: List tools via MCP SSE endpoint
+### Step 12.1: Deploy the reference MCP server
 
 ```bash
-OUTPUT=$(wanaku mcp tool list --uri "${WANAKU_MCP_URI}" --plain 2>&1)
-EXIT_CODE=$?
+cat <<EOF | oc apply -n "${WANAKU_NAMESPACE}" -f -
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-mcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: test-mcp
+  template:
+    metadata:
+      labels:
+        app: test-mcp
+    spec:
+      containers:
+        - name: everything
+          image: ${TEST_MCP_NODE_IMAGE}
+          command: ["sh", "-c", "npx -y ${TEST_MCP_PACKAGE} streamableHttp"]
+          env:
+            - name: PORT
+              value: "3001"
+            - name: npm_config_cache
+              value: /tmp/.npm
+          ports:
+            - containerPort: 3001
+          readinessProbe:
+            tcpSocket:
+              port: 3001
+            periodSeconds: 5
+            failureThreshold: 60
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-mcp
+spec:
+  selector:
+    app: test-mcp
+  ports:
+    - port: 3001
+      targetPort: 3001
+EOF
+oc rollout status deployment/test-mcp --timeout=300s -n "${WANAKU_NAMESPACE}" \
+  && echo "PASS [12.1]: reference MCP server running" || { echo "FAIL [12.1]: reference MCP server not ready"; exit 1; }
+```
 
-if [ "${EXIT_CODE}" -ne 0 ]; then
-  echo "FAIL: wanaku mcp tool list failed (exit code ${EXIT_CODE})"
-  echo "${OUTPUT}"
-  exit 1
-fi
+### Step 12.2: Register the forward
 
-echo "PASS: tool list succeeded"
-echo "${OUTPUT}"
+The CLI uses the stored token from step 11.10. Do not pass `--no-auth`.
 
-echo "${OUTPUT}" | grep -q "free-currency-conversion-api" \
-  && echo "PASS: currency conversion tool visible via MCP" \
-  || echo "FAIL: currency conversion tool not visible via MCP"
+```bash
+wanaku forwards add --host "${WANAKU_SERVER_URL}" ${WANAKU_TLS_FLAG} \
+  --name everything --service "http://test-mcp:3001/mcp" --namespace default --plain
+[ $? -eq 0 ] && echo "PASS [12.2]: forward 'everything' registered" || echo "FAIL [12.2]: forward not registered"
+```
 
-echo "${OUTPUT}" | grep -q "meow-facts" \
-  && echo "PASS: meow-facts tool visible via MCP" \
-  || echo "FAIL: meow-facts tool not visible via MCP"
+### Step 12.3: Verify the discovery
+
+```bash
+OUTPUT=$(wanaku tools list --host "${WANAKU_SERVER_URL}" ${WANAKU_TLS_FLAG} --plain 2>&1)
+echo "${OUTPUT}" | grep -q "^echo" && echo "PASS [12.3]: tool 'echo' discovered" \
+  || echo "FAIL [12.3]: 'echo' not discovered: ${OUTPUT}"
+```
+
+### Step 12.4: Create a second namespace
+
+```bash
+wanaku namespaces create "${MCP_E2E_NAMESPACE}" --host "${WANAKU_SERVER_URL}" ${WANAKU_TLS_FLAG} --plain > /dev/null \
+  && echo "PASS [12.4]: namespace ${MCP_E2E_NAMESPACE} created" || echo "FAIL [12.4]: namespace not created"
 ```
 
 ---
 
-## Phase 11: Invoke Real Tools via MCP CLI
+## Phase 13: MCP CLI Through the MCP Route
 
-### Test 11.1: Call the currency conversion tool (USD to EUR)
-
-**Description:** Invoke the currency conversion API via the deployed HTTP capability and verify the response contains exchange rate data.
+### Test 13.1: List tools, resources and prompts with a token
 
 ```bash
-OUTPUT=$(wanaku mcp tool \
-  --uri "${WANAKU_MCP_URI}" \
-  --name free-currency-conversion-api \
-  --param firstCurrency=USD \
-  --param secondCurrency=EUR \
-  --plain 2>&1)
-EXIT_CODE=$?
+OUTPUT=$(wanaku mcp tool list --uri "${MCP_URI}" --token "${MCP_TOKEN}" ${WANAKU_TLS_FLAG} --plain 2>/dev/null)
+echo "${OUTPUT}" | grep -q "^echo " && echo "PASS [13.1]: echo listed through the Route" || echo "FAIL [13.1]: ${OUTPUT}"
 
-echo "Exit code: ${EXIT_CODE}"
-echo "Output: ${OUTPUT}"
+OUTPUT=$(wanaku mcp resource list --uri "${MCP_URI}" --token "${MCP_TOKEN}" ${WANAKU_TLS_FLAG} --plain 2>/dev/null)
+echo "${OUTPUT}" | grep -q "^architecture.md " && echo "PASS [13.1]: architecture.md listed" || echo "FAIL [13.1]: ${OUTPUT}"
 
-if [ "${EXIT_CODE}" -ne 0 ]; then
-  echo "FAIL: currency conversion tool call failed"
-  exit 1
-fi
-
-# The API returns JSON with currency pair data (e.g., "USDEUR")
-echo "${OUTPUT}" | grep -qi "USD" \
-  && echo "PASS: response contains currency data" \
-  || echo "FAIL: response does not contain expected currency data"
+OUTPUT=$(wanaku mcp prompt list --uri "${MCP_URI}" --token "${MCP_TOKEN}" ${WANAKU_TLS_FLAG} --plain 2>/dev/null)
+echo "${OUTPUT}" | grep -q "^simple-prompt " && echo "PASS [13.1]: simple-prompt listed" || echo "FAIL [13.1]: ${OUTPUT}"
 ```
 
-### Test 11.2: Call the currency conversion tool (EUR to BRL)
-
-**Description:** Verify a different currency pair also works, confirming parameter interpolation.
+### Test 13.2: The MCP Route rejects a request without a token
 
 ```bash
-OUTPUT=$(wanaku mcp tool \
-  --uri "${WANAKU_MCP_URI}" \
-  --name free-currency-conversion-api \
-  --param firstCurrency=EUR \
-  --param secondCurrency=BRL \
-  --plain 2>&1)
+wanaku mcp tool list --uri "${MCP_URI}" ${WANAKU_TLS_FLAG} --plain > /dev/null 2>&1
 EXIT_CODE=$?
-
-if [ "${EXIT_CODE}" -ne 0 ]; then
-  echo "FAIL: EUR-BRL conversion tool call failed"
-  echo "${OUTPUT}"
-  exit 1
-fi
-
-echo "${OUTPUT}" | grep -qi "EUR" \
-  && echo "PASS: EUR-BRL response contains currency data" \
-  || echo "FAIL: EUR-BRL response does not contain expected data"
+[ "${EXIT_CODE}" -ne 0 ] && echo "PASS [13.2]: request without token rejected (exit ${EXIT_CODE})" \
+  || echo "FAIL [13.2]: request without token succeeded"
 ```
 
-### Test 11.3: Call the cat facts tool
-
-**Description:** Invoke meow-facts and verify the response contains fact data.
+### Test 13.3: Namespace isolation through the Route
 
 ```bash
-OUTPUT=$(wanaku mcp tool \
-  --uri "${WANAKU_MCP_URI}" \
-  --name meow-facts \
-  --param count=2 \
-  --plain 2>&1)
+OUTPUT=$(wanaku mcp tool list --uri "${WANAKU_MCP_BASE_URL}/${MCP_E2E_NAMESPACE}/mcp" \
+  --token "${MCP_TOKEN}" ${WANAKU_TLS_FLAG} --plain 2>/dev/null)
+echo "${OUTPUT}" | grep -q "^No tools found" && echo "PASS [13.3]: ${MCP_E2E_NAMESPACE} has no tools" \
+  || echo "FAIL [13.3]: tools leaked: ${OUTPUT}"
+```
+
+### Test 13.4: The bare `/mcp` path is rejected
+
+The MCP Route sends all paths to the MCP proxy. Wanaku Server rejects `/mcp` without a namespace.
+
+```bash
+OUTPUT=$(wanaku mcp tool list --uri "${WANAKU_MCP_BASE_URL}/mcp" --token "${MCP_TOKEN}" ${WANAKU_TLS_FLAG} --plain 2>&1)
+echo "${OUTPUT}" | grep -q "invalid MCP endpoint path" && echo "PASS [13.4]: bare /mcp rejected" \
+  || echo "FAIL [13.4]: output: ${OUTPUT}"
+```
+
+---
+
+## Phase 14: Governed Calls on OpenShift
+
+### Test 14.1: Calls get the fail-safe denial
+
+The operator starts Wanaku Server without a governance configuration. The default posture denies `tools/call`,
+`resources/read` and `prompts/get`.
+
+```bash
+OUTPUT=$(wanaku mcp tool --uri "${MCP_URI}" --token "${MCP_TOKEN}" ${WANAKU_TLS_FLAG} \
+  --name echo --param message=hello --plain 2>&1)
 EXIT_CODE=$?
-
-echo "Exit code: ${EXIT_CODE}"
-echo "Output: ${OUTPUT}"
-
-if [ "${EXIT_CODE}" -ne 0 ]; then
-  echo "FAIL: meow-facts tool call failed"
-  exit 1
-fi
-
-# Response should be non-empty and contain some data
-if [ -n "${OUTPUT}" ]; then
-  echo "PASS: meow-facts returned data"
+if [ "${EXIT_CODE}" -eq 1 ] && echo "${OUTPUT}" | grep -Eq "No governance policy permits this action.|evaluator: no_match"; then
+  echo "PASS [14.1]: tools/call denied by the fail-safe default"
 else
-  echo "FAIL: meow-facts returned empty response"
+  echo "FAIL [14.1]: exit ${EXIT_CODE}, output: ${OUTPUT}"
 fi
+
+OUTPUT=$(wanaku mcp resource --uri "${MCP_URI}" --token "${MCP_TOKEN}" ${WANAKU_TLS_FLAG} \
+  --resource-uri demo://resource/static/document/architecture.md --plain 2>&1)
+echo "${OUTPUT}" | grep -Eq "No governance policy permits this action.|evaluator: no_match" \
+  && echo "PASS [14.1]: resources/read denied" || echo "FAIL [14.1]: output: ${OUTPUT}"
 ```
 
-### Test 11.4: Call a tool with missing required parameters
+### Test 14.2: Calls succeed when governance allows them (BLOCKED)
 
-**Description:** The MCP server or capability should handle missing required parameters gracefully.
+This test is blocked. The `WanakuRouter` resource has no field for the Wanaku Server governance configuration, and
+the operator owns the generated `wanaku.yaml`. Run the test only when the deployment allows calls in the `default`
+namespace. Set `WANAKU_E2E_GOVERNANCE_ALLOWS_DEFAULT=true` in that case.
 
 ```bash
-OUTPUT=$(wanaku mcp tool \
-  --uri "${WANAKU_MCP_URI}" \
-  --name free-currency-conversion-api \
-  --param firstCurrency=USD \
-  --plain 2>&1)
-EXIT_CODE=$?
-
-echo "Exit code: ${EXIT_CODE}"
-# Missing secondCurrency — the API may return an error or the capability may reject it
-if [ "${EXIT_CODE}" -ne 0 ]; then
-  echo "PASS: missing required parameter caused an error (expected)"
+if [ "${WANAKU_E2E_GOVERNANCE_ALLOWS_DEFAULT:-false}" = "true" ]; then
+  OUTPUT=$(wanaku mcp tool --uri "${MCP_URI}" --token "${MCP_TOKEN}" ${WANAKU_TLS_FLAG} \
+    --name echo --param message=hello --plain 2>/dev/null)
+  [ "${OUTPUT}" = "Echo: hello" ] && echo "PASS [14.2]: echo called through the Route" || echo "FAIL [14.2]: '${OUTPUT}'"
+  OUTPUT=$(wanaku mcp prompt --uri "${MCP_URI}" --token "${MCP_TOKEN}" ${WANAKU_TLS_FLAG} \
+    --name args-prompt --arg city=Paris --plain 2>/dev/null)
+  echo "${OUTPUT}" | grep -q "Paris" && echo "PASS [14.2]: args-prompt rendered" || echo "FAIL [14.2]: '${OUTPUT}'"
 else
-  echo "WARN: missing required parameter did not fail — check if API returned an error in the response body"
-  echo "${OUTPUT}"
+  echo "SKIP [14.2]: governance configuration is not available through the operator"
 fi
 ```
 
 ---
 
-## Phase 12: Read Resources via MCP CLI
+## Phase 15: Cleanup (Part 2)
 
-Resources are provided by MCP servers registered with the router. Ensure the appropriate resource provider capability is running before proceeding.
-
-### Test 12.1: Verify resource is listed via CLI
+### Step 15.1: Remove the test data and workloads
 
 ```bash
-RESOURCES_OUTPUT=$(wanaku resources list --host "${WANAKU_ROUTER_URL}" --no-auth --plain 2>&1)
-
-echo "${RESOURCES_OUTPUT}" | grep -q "test-static-resource" \
-  && echo "PASS: test-static-resource is listed" \
-  || echo "FAIL: test-static-resource not found"
+wanaku forwards remove --host "${WANAKU_SERVER_URL}" ${WANAKU_TLS_FLAG} --name everything --plain > /dev/null 2>&1 || true
+wanaku namespaces delete "${MCP_E2E_NAMESPACE}" --host "${WANAKU_SERVER_URL}" ${WANAKU_TLS_FLAG} --plain > /dev/null 2>&1 || true
+oc delete deployment test-mcp -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
+oc delete service test-mcp -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
+oc delete wanakurouter "${WANAKU_ROUTER_NAME}" -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
+wait_for_deletion deployment "${WANAKU_ROUTER_NAME}-server" "${WANAKU_NAMESPACE}" 120 || true
+wait_for_deletion deployment "${WANAKU_ROUTER_NAME}-oauth2-proxy" "${WANAKU_NAMESPACE}" 120 || true
+oc delete secret "${WANAKU_ROUTER_NAME}-oidc" -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
+wanaku auth logout > /dev/null 2>&1 || true
+rm -rf "${WANAKU_CREDENTIALS}" 2>/dev/null || true
 ```
 
-### Test 12.3: List resources via MCP SSE endpoint
+### Step 15.2: Full cleanup
 
-```bash
-OUTPUT=$(wanaku mcp resource list --uri "${WANAKU_MCP_URI}" --plain 2>&1)
-EXIT_CODE=$?
-
-if [ "${EXIT_CODE}" -ne 0 ]; then
-  echo "FAIL: wanaku mcp resource list failed (exit code ${EXIT_CODE})"
-  echo "${OUTPUT}"
-  exit 1
-fi
-
-echo "PASS: resource list succeeded"
-echo "${OUTPUT}"
-
-echo "${OUTPUT}" | grep -q "test-static-resource" \
-  && echo "PASS: test-static-resource visible via MCP" \
-  || echo "FAIL: test-static-resource not visible via MCP"
-```
-
-### Test 12.4: Read the static file resource via MCP
-
-**Description:** Read the registered resource through the MCP endpoint. The static file provider should return its fixed content (`1234567890`).
-
-```bash
-OUTPUT=$(wanaku mcp resource \
-  --uri "${WANAKU_MCP_URI}" \
-  --resource-uri "performancestaticfile://test-file.txt" \
-  --plain 2>&1)
-EXIT_CODE=$?
-
-echo "Exit code: ${EXIT_CODE}"
-echo "Output: ${OUTPUT}"
-
-if [ "${EXIT_CODE}" -ne 0 ]; then
-  echo "FAIL: resource read failed (exit code ${EXIT_CODE})"
-  exit 1
-fi
-
-echo "${OUTPUT}" | grep -q "1234567890" \
-  && echo "PASS: resource content matches expected static data" \
-  || echo "FAIL: resource content does not contain expected '1234567890'"
-```
-
-### Test 12.5: Read a non-existent resource via MCP
-
-```bash
-OUTPUT=$(wanaku mcp resource \
-  --uri "${WANAKU_MCP_URI}" \
-  --resource-uri "performancestaticfile://does-not-exist.txt" \
-  --plain 2>&1)
-EXIT_CODE=$?
-
-if [ "${EXIT_CODE}" -ne 0 ]; then
-  echo "PASS: non-existent resource read failed as expected (exit code ${EXIT_CODE})"
-else
-  echo "WARN: non-existent resource read did not fail — server may return empty content"
-  echo "${OUTPUT}"
-fi
-```
-
----
-
-## Phase 13: List Prompts via MCP CLI
-
-### Test 13.1: List prompts via MCP SSE endpoint
-
-```bash
-OUTPUT=$(wanaku mcp prompt list --uri "${WANAKU_MCP_URI}" --plain 2>&1)
-EXIT_CODE=$?
-
-if [ "${EXIT_CODE}" -ne 0 ]; then
-  echo "FAIL: wanaku mcp prompt list failed (exit code ${EXIT_CODE})"
-  echo "${OUTPUT}"
-else
-  echo "PASS: prompt list succeeded"
-  echo "${OUTPUT}"
-fi
-```
-
----
-
-## Phase 14: Cleanup
-
-### Step 14.1: Delete capability and router CRs
-
-```bash
-
-oc delete wanakurouter wanaku-mcp-test-router -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
-wait_for_deletion deployment wanaku-mcp-test-router-barn "${WANAKU_NAMESPACE}" 60
-```
-
-### Step 14.3: Full cleanup
-
-Follow [common/cleanup.md](common/cleanup.md) for remaining teardown (Keycloak, operator, namespace).
+Follow [common/cleanup.md](common/cleanup.md) for Keycloak, the operator and the namespace.
 
 ---
 
@@ -797,17 +939,19 @@ Follow [common/cleanup.md](common/cleanup.md) for remaining teardown (Keycloak, 
 
 | Phase | Test ID | Test Name | Priority | Part |
 |-------|---------|-----------|----------|------|
-| 1 | 1.1-1.4 | Help and usage output | Medium | 1 |
-| 2 | 2.1-2.4 | Required option validation | High | 1 |
-| 3 | 3.1-3.4 | Tool list, call, multi-param, non-existent | Critical | 1 |
-| 4 | 4.1-4.3 | Resource list, read, non-existent | Critical | 1 |
-| 5 | 5.1-5.3 | Prompt list, get, non-existent | Critical | 1 |
-| 6 | 6.1-6.2 | Connection error handling | High | 1 |
-| 7 | 7.1-7.2 | OpenShift login (MANUAL) | Critical | 2 |
-| 8 | 8.1-8.8 | Stack deployment (operator, router, capability) | Critical | 2 |
-| 9 | 9.1-9.3 | Register real HTTP tools | Critical | 2 |
-| 10 | 10.1 | List tools via MCP SSE endpoint | Critical | 2 |
-| 11 | 11.1-11.4 | Invoke real tools (currency, cat facts, missing param) | Critical | 2 |
-| 12 | 12.1-12.5 | Register, list, and read resources via MCP endpoint | Critical | 2 |
-| 13 | 13.1 | List prompts via MCP endpoint | High | 2 |
-| 14 | 14.1-14.3 | Cleanup | Critical | 2 |
+| 0 | 0.1 | Prerequisites | High | 1 |
+| 1 | 1.1-1.4 | Server with test governance, reference forward, namespaces | Critical | 1 |
+| 2 | 2.1-2.2 | Help and usage output | Medium | 1 |
+| 3 | 3.1 | Required option validation | High | 1 |
+| 4 | 4.1-4.6 | Tool operations | Critical | 1 |
+| 5 | 5.1-5.3 | Resource operations | Critical | 1 |
+| 6 | 6.1-6.5 | Prompt operations | Critical | 1 |
+| 7 | 7.1-7.5 | Namespace isolation, governance, disable/enable | Critical | 1 |
+| 8 | 8.1-8.4 | Endpoint and connection errors | High | 1 |
+| 9 | 9.1 | Cleanup | Critical | 1 |
+| 10 | — | OpenShift login (MANUAL) | Critical | 2 |
+| 11 | 11.1-11.10 | Operator, Keycloak, WanakuRouter with oauth2-proxy, Routes, 401 checks, login | Critical | 2 |
+| 12 | 12.1-12.4 | In-cluster MCP server registered as a forward | Critical | 2 |
+| 13 | 13.1-13.4 | MCP list through the Route, token required, isolation, bare `/mcp` | Critical | 2 |
+| 14 | 14.1-14.2 | Fail-safe denial; governed success path (BLOCKED) | High | 2 |
+| 15 | 15.1-15.2 | Cleanup | Critical | 2 |

@@ -2,9 +2,23 @@
 
 ## Overview
 
-This test plan verifies the `wanaku forwards` and `wanaku data-store` CLI commands against a locally running Wanaku instance (no authentication). It covers the full CRUD lifecycle for forward targets and data store entries, including label management and negative tests.
+This test plan verifies two CLI command groups that belong to different components:
 
-Every step except the initial build is fully automatable.
+- `wanaku forwards` against **Wanaku Server**. Forwards are the only way to add tools, resources and prompts to
+  Wanaku Server. The plan covers the forward lifecycle, upstream discovery, refresh, the behavior for unreachable and
+  re-registered forwards, and the persistence of forwards across a restart.
+- `wanaku data-store` against **Wanaku Barn**. The plan covers the data store lifecycle, labels and label expressions.
+
+**Components:**
+
+| Component | Needed | Used for |
+|-----------|--------|----------|
+| Wanaku Server | Yes | `forwards`, `namespaces`, `tools`, `resources`, `prompts` (`--host "${WANAKU_SERVER_URL}"`) |
+| Wanaku Barn | Yes | `data-store` (`--host "${WANAKU_BARN_URL}"`) |
+| MCP reference server | Yes | Upstream for the forward `everything` (discovery) |
+
+The plan does not call tools, so it does not need the test governance configuration of Wanaku Server. Every step is
+automatable.
 
 ## Prerequisites
 
@@ -12,669 +26,523 @@ Every step except the initial build is fully automatable.
 
 | Tool | Minimum version | Verify command |
 |------|-----------------|----------------|
-| `wanaku` | build from source | `wanaku --version` |
-| `jq` | 1.6+ | `jq --version` |
+| `wanaku` CLI | build from source | `wanaku --version` |
 | `java` | 21+ | `java -version` |
 | `mvn` | 3.9+ | `mvn -version` |
+| `node` / `npx` | 18+ | `npx --version` |
+| `curl`, `jq` | any / 1.6+ | `jq --version` |
 
 ### CLI invocation
 
-When using the CLI from a local build (not installed), use `java -jar` directly:
+The plan calls the CLI as `wanaku`. To use the CLI jar from a local build, define a shell function:
 
 ```bash
-CLI_JAR="apps/wanaku-cli/target/quarkus-app/quarkus-run.jar"
-java -jar ${CLI_JAR} forwards list --host ...
+CLI_JAR="${CLI_JAR:-apps/wanaku-cli/target/quarkus-app/quarkus-run.jar}"
+wanaku() { java -jar "${CLI_JAR}" "$@"; }
 ```
 
-Do **not** assign the full command to a single variable (e.g., `WANAKU_CLI="java -jar path/to/jar"`) -- zsh treats it as a single token. Use `CLI_JAR` for the path and call `java -jar ${CLI_JAR}` explicitly.
+### Output formats
+
+- `wanaku forwards add` prints nothing on success and exits with `0`.
+- The `--plain` tables use tab separators and CRLF line ends. Do not anchor a pattern at the line end (`$`). Strip
+  `\r` (`tr -d '\r'`) before you compare the last column.
+- `wanaku forwards list --plain` prints a tab-separated table with the columns `name` and `address`.
+- `wanaku tools list --plain` prints the columns `name`, `namespace`, `type`, `uri` and `labels`. An empty registry
+  prints nothing.
+- `wanaku data-store list --plain` prints the columns `id`, `name`, `dataTruncated` and `labels`. Barn can contain
+  data stores from other sources (for example service templates). Always filter by name or label.
 
 ### Environment variables
 
 ```bash
-export WANAKU_REPO_ROOT="${WANAKU_REPO_ROOT:-.}"
-export WANAKU_ROUTER_URL="${WANAKU_ROUTER_URL:-http://localhost:8080}"
+export FWD_NAMESPACE="${FWD_NAMESPACE:-default}"
+export FWD_AUTO_NAMESPACE="${FWD_AUTO_NAMESPACE:-fwd-auto-ns}"
+export FWD_SECOND_NAMESPACE="${FWD_SECOND_NAMESPACE:-fwd-second}"
+export FWD_UNREACHABLE_URL="${FWD_UNREACHABLE_URL:-http://localhost:59998/mcp}"
+export DS_PREFIX="${DS_PREFIX:-cli-ds}"
+export DS_WORK_DIR="${DS_WORK_DIR:-$(mktemp -d)}"
+# The --plain tables use tab separators
+TAB=$(printf '\t')
 ```
 
 ---
 
-## Phase 0: Manual Prerequisites
+## Phase 0: Prerequisites
 
-Verify all required tools are available:
+### Test 0.1: Verify the required tools
 
 ```bash
-wanaku --version && echo "PASS: wanaku CLI available" || echo "FAIL: wanaku CLI not found"
-jq --version && echo "PASS: jq available" || echo "FAIL: jq not found"
-java -version 2>&1 | head -1 && echo "PASS: java available" || echo "FAIL: java not found"
+for CMD in java mvn npx curl jq; do
+  command -v "${CMD}" > /dev/null 2>&1 && echo "PASS [0.1]: ${CMD} available" || echo "FAIL [0.1]: ${CMD} not found"
+done
 ```
 
 ---
 
-## Phase 1: Start Wanaku Locally
+## Phase 1: Environment Setup
 
-Follow [common/start-backend.md](common/start-backend.md). After completion, `WANAKU_ROUTER_URL`, `WANAKU_PID`, and `CLI_JAR` must be set.
+### Step 1.1: Start Wanaku Server
 
-Verify the CLI can connect:
+Follow [common/start-server.md](common/start-server.md). The optional step 2b is not necessary. After completion,
+`WANAKU_SERVER_URL`, `WANAKU_SERVER_PID` and `WANAKU_SERVER_DATA_DIR` must be set.
+
+### Step 1.2: Start Wanaku Barn
+
+Follow [common/start-barn.md](common/start-barn.md). After completion, `WANAKU_BARN_URL`, `WANAKU_BARN_PID` and
+`CLI_JAR` must be set.
+
+### Step 1.3: Start the MCP reference server
+
+Follow [common/start-test-mcp-server.md](common/start-test-mcp-server.md) with `TEST_MCP_NAMESPACE="${FWD_NAMESPACE}"`.
+After completion, `TEST_MCP_URL` must be set and the forward `everything` must exist.
+
+---
+
+## Phase 2: Forward Lifecycle (Wanaku Server)
+
+### Test 2.1: List the forwards
 
 ```bash
-wanaku forwards list --host "${WANAKU_ROUTER_URL}" --plain
+OUTPUT=$(wanaku forwards list --host "${WANAKU_SERVER_URL}" --no-auth --plain 2>&1)
 EXIT_CODE=$?
-if [ "${EXIT_CODE}" -eq 0 ]; then
-  echo "PASS: CLI can connect to router"
+if [ "${EXIT_CODE}" -eq 0 ] && echo "${OUTPUT}" | grep -q "^everything${TAB}${TEST_MCP_URL}"; then
+  echo "PASS [2.1]: forward 'everything' listed with its address"
 else
-  echo "FAIL: CLI cannot connect to router (exit code ${EXIT_CODE})"
-  exit 1
+  echo "FAIL [2.1]: exit ${EXIT_CODE}, output: ${OUTPUT}"
 fi
+```
+
+### Test 2.2: Add a forward to an unreachable address
+
+Wanaku Server stores a forward even when discovery fails. The forward is then unavailable, and `statusMessage`
+contains the error. The CLI does not show these fields, so the test reads them with `curl`.
+
+```bash
+wanaku forwards add --host "${WANAKU_SERVER_URL}" --no-auth \
+  --name fwd-unreachable --service "${FWD_UNREACHABLE_URL}" --namespace "${FWD_NAMESPACE}" --plain
+EXIT_CODE=$?
+[ "${EXIT_CODE}" -eq 0 ] && echo "PASS [2.2]: add exits 0" || echo "FAIL [2.2]: add exit ${EXIT_CODE}"
+
+wanaku forwards list --host "${WANAKU_SERVER_URL}" --no-auth --plain | grep -q "^fwd-unreachable${TAB}" \
+  && echo "PASS [2.2]: fwd-unreachable listed" || echo "FAIL [2.2]: fwd-unreachable not listed"
+
+FWD_JSON=$(curl -s "${WANAKU_SERVER_URL}/api/v1/forwards/fwd-unreachable")
+[ "$(echo "${FWD_JSON}" | jq -r '.data.available')" = "false" ] \
+  && echo "PASS [2.2]: forward is unavailable" || echo "FAIL [2.2]: ${FWD_JSON}"
+echo "${FWD_JSON}" | jq -r '.data.statusMessage' | grep -q "failed to connect" \
+  && echo "PASS [2.2]: statusMessage reports the connection error" || echo "FAIL [2.2]: ${FWD_JSON}"
+```
+
+### Test 2.3: Re-register a forward with the same name
+
+Wanaku Server has no update route for forwards. A second `add` with the same name replaces the entry. It does not
+return a conflict.
+
+```bash
+wanaku forwards add --host "${WANAKU_SERVER_URL}" --no-auth \
+  --name fwd-unreachable --service "http://localhost:59997/mcp" --namespace "${FWD_NAMESPACE}" --plain
+[ $? -eq 0 ] && echo "PASS [2.3]: re-registration exits 0" || echo "FAIL [2.3]: re-registration failed"
+
+OUTPUT=$(wanaku forwards list --host "${WANAKU_SERVER_URL}" --no-auth --plain)
+COUNT=$(echo "${OUTPUT}" | grep -c "^fwd-unreachable${TAB}")
+if [ "${COUNT}" -eq 1 ] && echo "${OUTPUT}" | grep -q "^fwd-unreachable${TAB}http://localhost:59997/mcp"; then
+  echo "PASS [2.3]: one entry with the new address"
+else
+  echo "FAIL [2.3]: ${COUNT} entries: ${OUTPUT}"
+fi
+```
+
+### Test 2.4: A forward creates its namespace
+
+Wanaku Server lists a namespace when a forward refers to it. A separate `namespaces create` is not necessary.
+
+```bash
+wanaku forwards add --host "${WANAKU_SERVER_URL}" --no-auth \
+  --name fwd-auto-ns --service "${FWD_UNREACHABLE_URL}" --namespace "${FWD_AUTO_NAMESPACE}" --plain
+wanaku namespaces show "${FWD_AUTO_NAMESPACE}" --host "${WANAKU_SERVER_URL}" --no-auth --plain > /dev/null 2>&1 \
+  && echo "PASS [2.4]: namespace ${FWD_AUTO_NAMESPACE} exists" || echo "FAIL [2.4]: namespace ${FWD_AUTO_NAMESPACE} missing"
+```
+
+### Test 2.5: Remove the forwards
+
+```bash
+for FWD in fwd-unreachable fwd-auto-ns; do
+  OUTPUT=$(wanaku forwards remove --host "${WANAKU_SERVER_URL}" --no-auth --name "${FWD}" --plain 2>&1)
+  echo "${OUTPUT}" | grep -q "Successfully removed forward reference '${FWD}'" \
+    && echo "PASS [2.5]: ${FWD} removed" || echo "FAIL [2.5]: ${OUTPUT}"
+done
+OUTPUT=$(wanaku forwards list --host "${WANAKU_SERVER_URL}" --no-auth --plain)
+echo "${OUTPUT}" | grep -q "^fwd-" && echo "FAIL [2.5]: test forwards still listed" || echo "PASS [2.5]: test forwards gone"
+echo "${OUTPUT}" | grep -q "^everything${TAB}" && echo "PASS [2.5]: 'everything' not affected" || echo "FAIL [2.5]: 'everything' missing"
 ```
 
 ---
 
-## Phase 2: Forward CRUD
+## Phase 3: Discovery and Refresh (Wanaku Server)
 
-### Test 2.1: Add a forward target
+### Test 3.1: The forward supplies tools, resources and prompts
 
 ```bash
-wanaku forwards add \
-  --host "${WANAKU_ROUTER_URL}" \
-  --name test-forward \
-  --service "http://localhost:9999/mcp/sse" \
-  --namespace public
-EXIT_CODE=$?
-if [ "${EXIT_CODE}" -eq 0 ]; then
-  echo "PASS: forward 'test-forward' added"
-else
-  echo "FAIL: could not add forward (exit code ${EXIT_CODE})"
-fi
+wanaku tools list --host "${WANAKU_SERVER_URL}" --no-auth --plain | grep -q "^echo${TAB}${FWD_NAMESPACE}${TAB}mcp-forward${TAB}${TEST_MCP_URL}" \
+  && echo "PASS [3.1]: tool echo discovered in ${FWD_NAMESPACE}" || echo "FAIL [3.1]: tool echo missing"
+wanaku resources list --host "${WANAKU_SERVER_URL}" --no-auth --plain | grep -q "^architecture.md${TAB}" \
+  && echo "PASS [3.1]: resource architecture.md discovered" || echo "FAIL [3.1]: resource architecture.md missing"
+wanaku prompts list --host "${WANAKU_SERVER_URL}" --no-auth --plain | grep -q "^simple-prompt${TAB}${FWD_NAMESPACE}${TAB}" \
+  && echo "PASS [3.1]: prompt simple-prompt discovered" || echo "FAIL [3.1]: prompt simple-prompt missing"
 ```
 
-### Test 2.2: Verify forward appears in list
+### Test 3.2: Refresh a forward
 
 ```bash
-OUTPUT=$(wanaku forwards list --host "${WANAKU_ROUTER_URL}" --plain 2>&1)
-EXIT_CODE=$?
-if [ "${EXIT_CODE}" -ne 0 ]; then
-  echo "FAIL: forwards list failed (exit code ${EXIT_CODE})"
-  echo "${OUTPUT}"
-elif echo "${OUTPUT}" | grep -q "test-forward"; then
-  echo "PASS: 'test-forward' appears in forwards list"
-else
-  echo "FAIL: 'test-forward' not found in forwards list"
-  echo "${OUTPUT}"
-fi
+OUTPUT=$(wanaku forwards refresh --host "${WANAKU_SERVER_URL}" --no-auth --name everything --plain 2>&1)
+echo "${OUTPUT}" | grep -q "Successfully refreshed forward reference 'everything'" \
+  && echo "PASS [3.2]: refresh succeeded" || echo "FAIL [3.2]: ${OUTPUT}"
+wanaku tools list --host "${WANAKU_SERVER_URL}" --no-auth --plain | grep -q "^echo${TAB}" \
+  && echo "PASS [3.2]: echo still present" || echo "FAIL [3.2]: echo missing after refresh"
 ```
 
-### Test 2.3: Remove the forward target
+### Test 3.3: A refresh keeps a disabled tool disabled
+
+The enable and disable routes have no CLI command, so this test uses `curl`.
 
 ```bash
-wanaku forwards remove \
-  --host "${WANAKU_ROUTER_URL}" \
-  --name test-forward
-EXIT_CODE=$?
-if [ "${EXIT_CODE}" -eq 0 ]; then
-  echo "PASS: forward 'test-forward' removed"
-else
-  echo "FAIL: could not remove forward (exit code ${EXIT_CODE})"
-fi
+curl -s -o /dev/null -X PUT "${WANAKU_SERVER_URL}/api/v1/tools/echo/disable"
+wanaku forwards refresh --host "${WANAKU_SERVER_URL}" --no-auth --name everything --plain > /dev/null
+ENABLED=$(curl -s "${WANAKU_SERVER_URL}/api/v1/tools/echo" | jq -r '.data.enabled')
+[ "${ENABLED}" = "false" ] && echo "PASS [3.3]: echo stays disabled after refresh" || echo "FAIL [3.3]: enabled=${ENABLED}"
+curl -s -o /dev/null -X PUT "${WANAKU_SERVER_URL}/api/v1/tools/echo/enable"
+ENABLED=$(curl -s "${WANAKU_SERVER_URL}/api/v1/tools/echo" | jq -r '.data.enabled')
+[ "${ENABLED}" = "true" ] && echo "PASS [3.3]: echo enabled again" || echo "FAIL [3.3]: enabled=${ENABLED}"
 ```
 
-### Test 2.5: Add a forward using --namespace (name resolution)
+### Test 3.4: Refresh an unreachable forward
 
-This verifies the `--namespace` flag resolves the namespace name to its ID before registering the forward.
+The refresh of an unreachable forward succeeds with zero discovered entries. The CLI reports success.
 
 ```bash
-wanaku forwards add \
-  --host "${WANAKU_ROUTER_URL}" \
-  --name ns-name-test-forward \
-  --service "http://localhost:9999/mcp/sse" \
-  --namespace public
+wanaku forwards add --host "${WANAKU_SERVER_URL}" --no-auth \
+  --name fwd-refresh-down --service "${FWD_UNREACHABLE_URL}" --namespace "${FWD_NAMESPACE}" --plain
+OUTPUT=$(wanaku forwards refresh --host "${WANAKU_SERVER_URL}" --no-auth --name fwd-refresh-down --plain 2>&1)
 EXIT_CODE=$?
-if [ "${EXIT_CODE}" -eq 0 ]; then
-  echo "PASS: forward 'ns-name-test-forward' added using --namespace"
-else
-  echo "FAIL: could not add forward with --namespace (exit code ${EXIT_CODE})"
-fi
-
-# Clean up
-wanaku forwards remove \
-  --host "${WANAKU_ROUTER_URL}" \
-  --name ns-name-test-forward 2>/dev/null || true
+[ "${EXIT_CODE}" -eq 0 ] && echo "PASS [3.4]: refresh exits 0 (${OUTPUT})" || echo "FAIL [3.4]: exit ${EXIT_CODE}: ${OUTPUT}"
+wanaku forwards list --host "${WANAKU_SERVER_URL}" --no-auth --plain | grep -q "^fwd-refresh-down${TAB}" \
+  && echo "PASS [3.4]: forward still present after refresh" || echo "FAIL [3.4]: forward disappeared"
+wanaku forwards remove --host "${WANAKU_SERVER_URL}" --no-auth --name fwd-refresh-down --plain > /dev/null 2>&1 || true
 ```
 
-### Test 2.6: Verify --namespace with non-existent namespace name fails
+### Test 3.5: Removing a forward removes its discovered entries
 
 ```bash
-OUTPUT=$(wanaku forwards add \
-  --host "${WANAKU_ROUTER_URL}" \
-  --name ns-name-invalid-test \
-  --service "http://localhost:9999/mcp/sse" \
-  --namespace non-existent-namespace 2>&1)
-EXIT_CODE=$?
-if [ "${EXIT_CODE}" -ne 0 ]; then
-  echo "PASS: add forward with non-existent --namespace rejected (exit code ${EXIT_CODE})"
+wanaku forwards remove --host "${WANAKU_SERVER_URL}" --no-auth --name everything --plain > /dev/null
+wanaku tools list --host "${WANAKU_SERVER_URL}" --no-auth --plain | grep -q "^echo${TAB}" \
+  && echo "FAIL [3.5]: echo still listed" || echo "PASS [3.5]: tools removed with the forward"
+wanaku resources list --host "${WANAKU_SERVER_URL}" --no-auth --plain | grep -q "^architecture.md${TAB}" \
+  && echo "FAIL [3.5]: architecture.md still listed" || echo "PASS [3.5]: resources removed with the forward"
+wanaku prompts list --host "${WANAKU_SERVER_URL}" --no-auth --plain | grep -q "^simple-prompt${TAB}" \
+  && echo "FAIL [3.5]: simple-prompt still listed" || echo "PASS [3.5]: prompts removed with the forward"
+```
+
+### Test 3.6: Adding the forward again restores the entries
+
+```bash
+wanaku forwards add --host "${WANAKU_SERVER_URL}" --no-auth \
+  --name everything --service "${TEST_MCP_URL}" --namespace "${FWD_NAMESPACE}" --plain
+wanaku tools list --host "${WANAKU_SERVER_URL}" --no-auth --plain | grep -q "^echo${TAB}" \
+  && echo "PASS [3.6]: echo discovered again" || echo "FAIL [3.6]: echo not discovered"
+```
+
+### Test 3.7: The same upstream registered in two namespaces
+
+Tool names are unique in the whole registry. When a second forward discovers a tool with the same name, the entry
+moves to the namespace of the second forward. This test records the current behavior and restores the state.
+
+```bash
+wanaku forwards add --host "${WANAKU_SERVER_URL}" --no-auth \
+  --name fwd-second --service "${TEST_MCP_URL}" --namespace "${FWD_SECOND_NAMESPACE}" --plain
+NS=$(wanaku tools list --host "${WANAKU_SERVER_URL}" --no-auth --plain | awk -F'\t' '$1=="echo"{print $2}')
+if [ "${NS}" = "${FWD_NAMESPACE}" ]; then
+  echo "PASS [3.7]: echo stays in ${FWD_NAMESPACE}"
 else
-  echo "FAIL: add forward with non-existent --namespace should fail"
-  wanaku forwards remove --host "${WANAKU_ROUTER_URL}" --name ns-name-invalid-test 2>/dev/null || true
+  echo "WARN [3.7]: known limitation: echo moved to namespace '${NS}'"
 fi
+
+# Restore: remove the second forward, then rediscover the first one
+wanaku forwards remove --host "${WANAKU_SERVER_URL}" --no-auth --name fwd-second --plain > /dev/null
+wanaku namespaces delete "${FWD_SECOND_NAMESPACE}" --host "${WANAKU_SERVER_URL}" --no-auth --plain > /dev/null 2>&1 || true
+wanaku forwards refresh --host "${WANAKU_SERVER_URL}" --no-auth --name everything --plain > /dev/null
+NS=$(wanaku tools list --host "${WANAKU_SERVER_URL}" --no-auth --plain | awk -F'\t' '$1=="echo"{print $2}')
+[ "${NS}" = "${FWD_NAMESPACE}" ] && echo "PASS [3.7]: echo restored in ${FWD_NAMESPACE}" || echo "FAIL [3.7]: echo namespace '${NS}'"
+```
+
+### Test 3.8: Forwards survive a restart
+
+Follow the **Restart** section of [common/start-server.md](common/start-server.md) (stop with `SIGTERM`, then steps 3
+and 4 with the same `WANAKU_SERVER_DATA_DIR`).
+
+```bash
+[ -f "${WANAKU_SERVER_DATA_DIR}/registry.json" ] && echo "PASS [3.8]: registry.json written" \
+  || echo "FAIL [3.8]: registry.json missing"
+wanaku forwards list --host "${WANAKU_SERVER_URL}" --no-auth --plain | grep -q "^everything${TAB}${TEST_MCP_URL}" \
+  && echo "PASS [3.8]: forward restored after restart" || echo "FAIL [3.8]: forward lost after restart"
+wanaku tools list --host "${WANAKU_SERVER_URL}" --no-auth --plain | grep -q "^echo${TAB}" \
+  && echo "PASS [3.8]: tools restored after restart" || echo "FAIL [3.8]: tools lost after restart"
 ```
 
 ---
 
-## Phase 3: Forward Refresh
+## Phase 4: Data Store — Add (Wanaku Barn)
 
-### Test 3.1: Re-add a forward target for refresh testing
-
-```bash
-wanaku forwards add \
-  --host "${WANAKU_ROUTER_URL}" \
-  --name test-forward-refresh \
-  --service "http://localhost:9999/mcp/sse" \
-  --namespace public
-EXIT_CODE=$?
-if [ "${EXIT_CODE}" -eq 0 ]; then
-  echo "PASS: forward 'test-forward-refresh' added"
-else
-  echo "FAIL: could not add forward (exit code ${EXIT_CODE})"
-fi
-```
-
-### Test 3.2: Refresh the forward
-
-The target service may not be reachable -- that is acceptable. The command should still exit without crashing.
+### Test 4.1: Create the test file
 
 ```bash
-wanaku forwards refresh \
-  --host "${WANAKU_ROUTER_URL}" \
-  --name test-forward-refresh 2>&1
-EXIT_CODE=$?
-if [ "${EXIT_CODE}" -eq 0 ]; then
-  echo "PASS: forwards refresh completed successfully"
-else
-  echo "WARN: forwards refresh exited with code ${EXIT_CODE} (target may be unreachable, but command should not crash)"
-fi
-```
-
-### Test 3.3: Verify the forward still exists after refresh
-
-```bash
-OUTPUT=$(wanaku forwards list --host "${WANAKU_ROUTER_URL}" --plain 2>&1)
-if echo "${OUTPUT}" | grep -q "test-forward-refresh"; then
-  echo "PASS: forward still present after refresh"
-else
-  echo "FAIL: forward disappeared after refresh"
-fi
-```
-
-### Test 3.4: Clean up refresh test forward
-
-```bash
-wanaku forwards remove \
-  --host "${WANAKU_ROUTER_URL}" \
-  --name test-forward-refresh 2>/dev/null || true
-echo "PASS: refresh test forward cleaned up"
-```
-
----
-
-## Phase 4: Data Store -- Add from File
-
-### Test 4.1: Create a test YAML file
-
-```bash
-cat > /tmp/test-datastore.yaml << 'YAMLEOF'
+cat > "${DS_WORK_DIR}/test-datastore.yaml" << 'YAMLEOF'
 name: test-config
 version: 1
 settings:
   key1: value1
   key2: value2
 YAMLEOF
-
-if [ -f /tmp/test-datastore.yaml ]; then
-  echo "PASS: test YAML file created"
-else
-  echo "FAIL: could not create test YAML file"
-fi
+[ -s "${DS_WORK_DIR}/test-datastore.yaml" ] && echo "PASS [4.1]: test file created" || echo "FAIL [4.1]: test file missing"
 ```
 
-### Test 4.2: Add data store from file
+### Test 4.2: Add a data store from the file
 
 ```bash
-wanaku data-store add \
-  --host "${WANAKU_ROUTER_URL}" \
-  --read-from-file /tmp/test-datastore.yaml \
-  --name test-datastore
+OUTPUT=$(wanaku data-store add --host "${WANAKU_BARN_URL}" --no-auth \
+  --read-from-file "${DS_WORK_DIR}/test-datastore.yaml" --name "${DS_PREFIX}-main" --plain 2>&1)
 EXIT_CODE=$?
-if [ "${EXIT_CODE}" -eq 0 ]; then
-  echo "PASS: data store 'test-datastore' added from file"
+if [ "${EXIT_CODE}" -eq 0 ] && echo "${OUTPUT}" | grep -q "Successfully added data store '${DS_PREFIX}-main' with ID: "; then
+  echo "PASS [4.2]: data store added"
 else
-  echo "FAIL: could not add data store (exit code ${EXIT_CODE})"
+  echo "FAIL [4.2]: exit ${EXIT_CODE}, output: ${OUTPUT}"
 fi
 ```
 
 ---
 
-## Phase 5: Data Store -- List and Get
+## Phase 5: Data Store — List and Get (Wanaku Barn)
 
-### Test 5.1: List data stores and verify entry appears
+### Test 5.1: The data store is listed
 
 ```bash
-OUTPUT=$(wanaku data-store list --host "${WANAKU_ROUTER_URL}" --plain 2>&1)
-EXIT_CODE=$?
-if [ "${EXIT_CODE}" -ne 0 ]; then
-  echo "FAIL: data-store list failed (exit code ${EXIT_CODE})"
-  echo "${OUTPUT}"
-elif echo "${OUTPUT}" | grep -q "test-datastore"; then
-  echo "PASS: 'test-datastore' appears in data store list"
-else
-  echo "FAIL: 'test-datastore' not found in data store list"
-  echo "${OUTPUT}"
-fi
+DS_ID=$(wanaku data-store list --host "${WANAKU_BARN_URL}" --no-auth --plain | awk -F'\t' -v n="${DS_PREFIX}-main" '$2==n{print $1}')
+[ -n "${DS_ID}" ] && echo "PASS [5.1]: ${DS_PREFIX}-main listed with ID ${DS_ID}" || echo "FAIL [5.1]: ${DS_PREFIX}-main not listed"
 ```
 
-### Test 5.2: Get data store by name and verify content
-
-The `data-store get` command writes the decoded content to a file. Verify the output matches the original.
+### Test 5.2: Get the data store by name and by ID
 
 ```bash
-wanaku data-store get \
-  --host "${WANAKU_ROUTER_URL}" \
-  --name test-datastore \
-  --output-file /tmp/test-datastore-retrieved.yaml
-EXIT_CODE=$?
-if [ "${EXIT_CODE}" -ne 0 ]; then
-  echo "FAIL: data-store get failed (exit code ${EXIT_CODE})"
-elif diff /tmp/test-datastore.yaml /tmp/test-datastore-retrieved.yaml > /dev/null 2>&1; then
-  echo "PASS: retrieved content matches original file"
-else
-  echo "FAIL: retrieved content does not match original"
-fi
+for SELECTOR in "--name ${DS_PREFIX}-main" "--id ${DS_ID}"; do
+  rm -f "${DS_WORK_DIR}/retrieved.yaml"
+  # shellcheck disable=SC2086 # word splitting of SELECTOR is intended
+  OUTPUT=$(wanaku data-store get --host "${WANAKU_BARN_URL}" --no-auth ${SELECTOR} \
+    --output-file "${DS_WORK_DIR}/retrieved.yaml" --plain 2>&1)
+  if echo "${OUTPUT}" | grep -q "Successfully retrieved data store" \
+     && diff "${DS_WORK_DIR}/test-datastore.yaml" "${DS_WORK_DIR}/retrieved.yaml" > /dev/null; then
+    echo "PASS [5.2]: ${SELECTOR} returns the original content"
+  else
+    echo "FAIL [5.2]: ${SELECTOR}: ${OUTPUT}"
+  fi
+done
 ```
 
 ---
 
-## Phase 6: Data Store -- Labels
+## Phase 6: Data Store — Labels (Wanaku Barn)
 
-### Test 6.1: Extract the data store ID
-
-Label commands require `--id`. Extract it from the list output.
+### Test 6.1: Add labels
 
 ```bash
-DS_ID=$(wanaku data-store list --host "${WANAKU_ROUTER_URL}" --plain 2>&1 | grep "test-datastore" | awk '{print $1}')
-if [ -n "${DS_ID}" ]; then
-  echo "PASS: extracted data store ID: ${DS_ID}"
-else
-  echo "FAIL: could not extract data store ID from list output"
-fi
+OUTPUT=$(wanaku data-store label add --host "${WANAKU_BARN_URL}" --no-auth --id "${DS_ID}" \
+  --label env=test --label type=yaml --plain 2>&1)
+echo "${OUTPUT}" | grep -q "(2 added, 0 updated)" && echo "PASS [6.1]: two labels added" || echo "FAIL [6.1]: ${OUTPUT}"
 ```
 
-### Test 6.2: Add labels to the data store
+### Test 6.2: The labels are listed
 
 ```bash
-wanaku data-store label add \
-  --host "${WANAKU_ROUTER_URL}" \
-  --id "${DS_ID}" \
-  --label env=test \
-  --label type=yaml
-EXIT_CODE=$?
-if [ "${EXIT_CODE}" -eq 0 ]; then
-  echo "PASS: labels added to data store"
-else
-  echo "FAIL: could not add labels (exit code ${EXIT_CODE})"
-fi
+LABELS=$(wanaku data-store list --host "${WANAKU_BARN_URL}" --no-auth --plain | awk -F'\t' -v n="${DS_PREFIX}-main" '$2==n{print $4}' | tr -d '\r')
+for L in env=test type=yaml; do
+  echo "${LABELS}" | grep -q "${L}" && echo "PASS [6.2]: label ${L} listed" || echo "FAIL [6.2]: labels are ${LABELS}"
+done
 ```
 
-### Test 6.3: Verify labels appear in list output
+### Test 6.3: Remove a label
 
 ```bash
-OUTPUT=$(wanaku data-store list --host "${WANAKU_ROUTER_URL}" --plain 2>&1)
-if echo "${OUTPUT}" | grep "test-datastore" | grep -q "env"; then
-  echo "PASS: label 'env' visible in list output"
-else
-  echo "FAIL: label 'env' not visible in list output"
-fi
-
-if echo "${OUTPUT}" | grep "test-datastore" | grep -q "type"; then
-  echo "PASS: label 'type' visible in list output"
-else
-  echo "FAIL: label 'type' not visible in list output"
-fi
-```
-
-### Test 6.4: Remove a label from the data store
-
-```bash
-wanaku data-store label remove \
-  --host "${WANAKU_ROUTER_URL}" \
-  --id "${DS_ID}" \
-  --label type
-EXIT_CODE=$?
-if [ "${EXIT_CODE}" -eq 0 ]; then
-  echo "PASS: label 'type' removed"
-else
-  echo "FAIL: could not remove label (exit code ${EXIT_CODE})"
-fi
-```
-
-### Test 6.5: Verify label was removed
-
-```bash
-OUTPUT=$(wanaku data-store list --host "${WANAKU_ROUTER_URL}" --plain 2>&1)
-if echo "${OUTPUT}" | grep "test-datastore" | grep -q "type=yaml"; then
-  echo "FAIL: label 'type=yaml' still present after removal"
-else
-  echo "PASS: label 'type' no longer present"
-fi
+OUTPUT=$(wanaku data-store label remove --host "${WANAKU_BARN_URL}" --no-auth --id "${DS_ID}" --label type --plain 2>&1)
+echo "${OUTPUT}" | grep -q "Removed label 'type' (was: 'yaml')" && echo "PASS [6.3]: label removed" || echo "FAIL [6.3]: ${OUTPUT}"
+LABELS=$(wanaku data-store list --host "${WANAKU_BARN_URL}" --no-auth --plain | awk -F'\t' -v n="${DS_PREFIX}-main" '$2==n{print $4}' | tr -d '\r')
+[ "${LABELS}" = "{env=test}" ] && echo "PASS [6.3]: only env=test remains" || echo "FAIL [6.3]: labels are ${LABELS}"
 ```
 
 ---
 
-## Phase 7: Data Store -- Remove
+## Phase 7: Data Store — Remove (Wanaku Barn)
 
 ### Test 7.1: Remove the data store by name
 
 ```bash
-wanaku data-store remove \
-  --host "${WANAKU_ROUTER_URL}" \
-  --name test-datastore
-EXIT_CODE=$?
-if [ "${EXIT_CODE}" -eq 0 ]; then
-  echo "PASS: data store 'test-datastore' removed"
-else
-  echo "FAIL: could not remove data store (exit code ${EXIT_CODE})"
-fi
-```
-
-### Test 7.2: Verify data store is gone from list
-
-```bash
-OUTPUT=$(wanaku data-store list --host "${WANAKU_ROUTER_URL}" --plain 2>&1)
-if echo "${OUTPUT}" | grep -q "test-datastore"; then
-  echo "FAIL: 'test-datastore' still appears after removal"
-else
-  echo "PASS: 'test-datastore' no longer in data store list"
-fi
+OUTPUT=$(wanaku data-store remove --host "${WANAKU_BARN_URL}" --no-auth --name "${DS_PREFIX}-main" --plain 2>&1)
+echo "${OUTPUT}" | grep -q "Successfully removed data store '${DS_PREFIX}-main'" \
+  && echo "PASS [7.1]: data store removed" || echo "FAIL [7.1]: ${OUTPUT}"
+wanaku data-store list --host "${WANAKU_BARN_URL}" --no-auth --plain | awk -F'\t' '{print $2}' | grep -qx "${DS_PREFIX}-main" \
+  && echo "FAIL [7.1]: data store still listed" || echo "PASS [7.1]: data store no longer listed"
 ```
 
 ---
 
-## Phase 8: Multiple Data Stores with Label Expression
+## Phase 8: Data Store — Label Expressions (Wanaku Barn)
 
-### Test 8.1: Add three data stores with a shared label
-
-```bash
-for i in 1 2 3; do
-  cat > /tmp/test-batch-${i}.yaml << EOF
-batch_item: ${i}
-EOF
-
-  wanaku data-store add \
-    --host "${WANAKU_ROUTER_URL}" \
-    --read-from-file /tmp/test-batch-${i}.yaml \
-    --name "batch-ds-${i}"
-  EXIT_CODE=$?
-  if [ "${EXIT_CODE}" -eq 0 ]; then
-    echo "PASS: batch data store 'batch-ds-${i}' added"
-  else
-    echo "FAIL: could not add 'batch-ds-${i}' (exit code ${EXIT_CODE})"
-  fi
-done
-```
-
-### Test 8.2: Add the `batch=true` label to all three using label expression
-
-First add a `batch=true` label to each data store individually (since we need the IDs):
+### Test 8.1: Add three labeled data stores
 
 ```bash
 for i in 1 2 3; do
-  DS_ID=$(wanaku data-store list --host "${WANAKU_ROUTER_URL}" --plain 2>&1 | grep "batch-ds-${i}" | awk '{print $1}')
-  if [ -z "${DS_ID}" ]; then
-    echo "FAIL: could not find ID for batch-ds-${i}"
-    continue
-  fi
-
-  wanaku data-store label add \
-    --host "${WANAKU_ROUTER_URL}" \
-    --id "${DS_ID}" \
-    --label batch=true
-  EXIT_CODE=$?
-  if [ "${EXIT_CODE}" -eq 0 ]; then
-    echo "PASS: label 'batch=true' added to batch-ds-${i}"
-  else
-    echo "FAIL: could not add label to batch-ds-${i} (exit code ${EXIT_CODE})"
-  fi
+  echo "batch_item: ${i}" > "${DS_WORK_DIR}/batch-${i}.yaml"
+  wanaku data-store add --host "${WANAKU_BARN_URL}" --no-auth \
+    --read-from-file "${DS_WORK_DIR}/batch-${i}.yaml" --name "${DS_PREFIX}-batch-${i}" --plain > /dev/null
+  ID=$(wanaku data-store list --host "${WANAKU_BARN_URL}" --no-auth --plain | awk -F'\t' -v n="${DS_PREFIX}-batch-${i}" '$2==n{print $1}')
+  wanaku data-store label add --host "${WANAKU_BARN_URL}" --no-auth --id "${ID}" --label "${DS_PREFIX}-batch=true" --plain > /dev/null
+  [ $? -eq 0 ] && echo "PASS [8.1]: ${DS_PREFIX}-batch-${i} added and labeled" || echo "FAIL [8.1]: ${DS_PREFIX}-batch-${i}"
 done
 ```
 
-### Test 8.3: List data stores filtered by label expression
+### Test 8.2: Filter the list by label expression
 
 ```bash
-OUTPUT=$(wanaku data-store list --host "${WANAKU_ROUTER_URL}" -e "batch=true" --plain 2>&1)
-EXIT_CODE=$?
-if [ "${EXIT_CODE}" -ne 0 ]; then
-  echo "FAIL: data-store list with expression failed (exit code ${EXIT_CODE})"
-  echo "${OUTPUT}"
-else
-  COUNT=$(echo "${OUTPUT}" | grep -c "batch-ds-")
-  if [ "${COUNT}" -eq 3 ]; then
-    echo "PASS: all 3 batch data stores returned by label expression"
-  else
-    echo "FAIL: expected 3 batch data stores, found ${COUNT}"
-    echo "${OUTPUT}"
-  fi
-fi
+COUNT=$(wanaku data-store list --host "${WANAKU_BARN_URL}" --no-auth -e "${DS_PREFIX}-batch=true" --plain | grep -c "${TAB}${DS_PREFIX}-batch-")
+[ "${COUNT}" -eq 3 ] && echo "PASS [8.2]: label expression returns 3 data stores" || echo "FAIL [8.2]: found ${COUNT}"
 ```
 
-### Test 8.4: Remove all batch data stores individually
+### Test 8.3: Add a label to every match of an expression
 
-Note: `data-store remove` does not support `--label-expression`. Remove each entry by name.
+```bash
+OUTPUT=$(wanaku data-store label add --host "${WANAKU_BARN_URL}" --no-auth -e "${DS_PREFIX}-batch=true" --label stage=two --plain 2>&1)
+echo "${OUTPUT}" | grep -q "Label update complete: 3 succeeded, 0 failed" \
+  && echo "PASS [8.3]: label added to 3 data stores" || echo "FAIL [8.3]: ${OUTPUT}"
+COUNT=$(wanaku data-store list --host "${WANAKU_BARN_URL}" --no-auth -e "${DS_PREFIX}-batch=true & stage=two" --plain | grep -c "${TAB}${DS_PREFIX}-batch-")
+[ "${COUNT}" -eq 3 ] && echo "PASS [8.3]: combined expression returns 3" || echo "FAIL [8.3]: found ${COUNT}"
+```
+
+### Test 8.4: Remove the batch data stores
+
+`data-store remove` has no label expression option. Remove each entry by name.
 
 ```bash
 for i in 1 2 3; do
-  wanaku data-store remove \
-    --host "${WANAKU_ROUTER_URL}" \
-    --name "batch-ds-${i}" 2>/dev/null || true
+  wanaku data-store remove --host "${WANAKU_BARN_URL}" --no-auth --name "${DS_PREFIX}-batch-${i}" --plain > /dev/null 2>&1 || true
 done
-
-OUTPUT=$(wanaku data-store list --host "${WANAKU_ROUTER_URL}" --plain 2>&1)
-if echo "${OUTPUT}" | grep -q "batch-ds-"; then
-  echo "FAIL: some batch data stores still present after removal"
-  echo "${OUTPUT}"
-else
-  echo "PASS: all batch data stores removed"
-fi
+wanaku data-store list --host "${WANAKU_BARN_URL}" --no-auth --plain | grep -q "${TAB}${DS_PREFIX}-batch-" \
+  && echo "FAIL [8.4]: batch data stores still listed" || echo "PASS [8.4]: batch data stores removed"
 ```
 
 ---
 
 ## Phase 9: Negative Tests
 
-### Test 9.1: Add forward with no name should fail
+Picocli rejects a missing required option with exit code `2`. Command-level validation and API errors exit with `1`.
+[cli-negative-tests.md](cli-negative-tests.md) covers more error paths.
+
+### Test 9.1: Missing forward options are rejected
 
 ```bash
-wanaku forwards add \
-  --host "${WANAKU_ROUTER_URL}" \
-  --service "http://localhost:9999/mcp/sse" \
-  --namespace public 2>&1
-EXIT_CODE=$?
-if [ "${EXIT_CODE}" -ne 0 ]; then
-  echo "PASS: forwards add without --name rejected (exit code ${EXIT_CODE})"
-else
-  echo "FAIL: forwards add without --name should fail"
-fi
+wanaku forwards add --host "${WANAKU_SERVER_URL}" --no-auth --service "${FWD_UNREACHABLE_URL}" --namespace "${FWD_NAMESPACE}" > /dev/null 2>&1
+[ $? -eq 2 ] && echo "PASS [9.1]: missing --name rejected" || echo "FAIL [9.1]: missing --name not rejected"
+wanaku forwards add --host "${WANAKU_SERVER_URL}" --no-auth --name neg-fwd --namespace "${FWD_NAMESPACE}" > /dev/null 2>&1
+[ $? -eq 2 ] && echo "PASS [9.1]: missing --service rejected" || echo "FAIL [9.1]: missing --service not rejected"
+OUTPUT=$(wanaku forwards add --host "${WANAKU_SERVER_URL}" --no-auth --name neg-fwd --service "${FWD_UNREACHABLE_URL}" 2>&1)
+[ $? -eq 2 ] && echo "${OUTPUT}" | grep -q "Missing required argument(s): -N=<namespace>" \
+  && echo "PASS [9.1]: missing --namespace rejected" || echo "FAIL [9.1]: ${OUTPUT}"
 ```
 
-### Test 9.2: Add forward with no service URL should fail
+### Test 9.2: Remove and refresh of an unknown forward fail
 
 ```bash
-wanaku forwards add \
-  --host "${WANAKU_ROUTER_URL}" \
-  --name negative-test-forward \
-  --namespace public 2>&1
-EXIT_CODE=$?
-if [ "${EXIT_CODE}" -ne 0 ]; then
-  echo "PASS: forwards add without --service rejected (exit code ${EXIT_CODE})"
-else
-  echo "FAIL: forwards add without --service should fail"
-  # Clean up in case it was created
-  wanaku forwards remove --host "${WANAKU_ROUTER_URL}" --name negative-test-forward 2>/dev/null || true
-fi
+for ACTION in remove refresh; do
+  OUTPUT=$(wanaku forwards "${ACTION}" --host "${WANAKU_SERVER_URL}" --no-auth --name does-not-exist-12345 --plain 2>&1)
+  EXIT_CODE=$?
+  if [ "${EXIT_CODE}" -eq 1 ] && echo "${OUTPUT}" | grep -q "Forward 'does-not-exist-12345' not found"; then
+    echo "PASS [9.2]: ${ACTION} of an unknown forward rejected"
+  else
+    echo "FAIL [9.2]: ${ACTION}: exit ${EXIT_CODE}, output: ${OUTPUT}"
+  fi
+done
 ```
 
-### Test 9.3: Add forward with no namespace identifier should fail
+### Test 9.3: Data store errors
 
 ```bash
-wanaku forwards add \
-  --host "${WANAKU_ROUTER_URL}" \
-  --name negative-test-forward \
-  --service "http://localhost:9999/mcp/sse" 2>&1
-EXIT_CODE=$?
-if [ "${EXIT_CODE}" -ne 0 ]; then
-  echo "PASS: forwards add without --namespace or --namespace-id rejected (exit code ${EXIT_CODE})"
-else
-  echo "FAIL: forwards add without a namespace identifier should fail"
-  wanaku forwards remove --host "${WANAKU_ROUTER_URL}" --name negative-test-forward 2>/dev/null || true
-fi
+OUTPUT=$(wanaku data-store add --host "${WANAKU_BARN_URL}" --no-auth --read-from-file "${DS_WORK_DIR}/missing.yaml" --name neg-ds --plain 2>&1)
+[ $? -eq 1 ] && echo "${OUTPUT}" | grep -q "Failed to read file" && echo "PASS [9.3]: missing file rejected" || echo "FAIL [9.3]: ${OUTPUT}"
+
+OUTPUT=$(wanaku data-store get --host "${WANAKU_BARN_URL}" --no-auth --name does-not-exist-12345 --output-file "${DS_WORK_DIR}/neg.yaml" --plain 2>&1)
+[ $? -eq 1 ] && echo "PASS [9.3]: get of unknown name rejected (${OUTPUT})" || echo "FAIL [9.3]: ${OUTPUT}"
+
+for CMD in get remove; do
+  OUTPUT=$(wanaku data-store "${CMD}" --host "${WANAKU_BARN_URL}" --no-auth --plain 2>&1)
+  [ $? -eq 1 ] && echo "${OUTPUT}" | grep -q "Either --id or --name must be provided" \
+    && echo "PASS [9.3]: ${CMD} without --id or --name rejected" || echo "FAIL [9.3]: ${CMD}: ${OUTPUT}"
+done
+
+OUTPUT=$(wanaku data-store remove --host "${WANAKU_BARN_URL}" --no-auth --name does-not-exist-12345 --plain 2>&1)
+[ $? -eq 1 ] && echo "${OUTPUT}" | grep -q "Data store 'does-not-exist-12345' not found" \
+  && echo "PASS [9.3]: remove of unknown name rejected" || echo "FAIL [9.3]: ${OUTPUT}"
+
+OUTPUT=$(wanaku data-store label add --host "${WANAKU_BARN_URL}" --no-auth --id x --label novalue --plain 2>&1)
+[ $? -eq 1 ] && echo "${OUTPUT}" | grep -q "Invalid label format: 'novalue'" \
+  && echo "PASS [9.3]: label without value rejected" || echo "FAIL [9.3]: ${OUTPUT}"
 ```
 
-### Test 9.4: Remove non-existent forward should fail gracefully
+### Test 9.4: Each command group fails against the wrong component
+
+Wanaku Server has no data store API. Barn has no forward API.
 
 ```bash
-OUTPUT=$(wanaku forwards remove \
-  --host "${WANAKU_ROUTER_URL}" \
-  --name "does-not-exist-12345" 2>&1)
-EXIT_CODE=$?
-if [ "${EXIT_CODE}" -ne 0 ]; then
-  echo "PASS: removing non-existent forward failed gracefully (exit code ${EXIT_CODE})"
-else
-  echo "FAIL: removing non-existent forward should fail"
-fi
-```
-
-### Test 9.5: Add data store with non-existent file should fail
-
-```bash
-wanaku data-store add \
-  --host "${WANAKU_ROUTER_URL}" \
-  --read-from-file /tmp/this-file-does-not-exist-12345.yaml \
-  --name negative-ds 2>&1
-EXIT_CODE=$?
-if [ "${EXIT_CODE}" -ne 0 ]; then
-  echo "PASS: data-store add with non-existent file rejected (exit code ${EXIT_CODE})"
-else
-  echo "FAIL: data-store add with non-existent file should fail"
-  wanaku data-store remove --host "${WANAKU_ROUTER_URL}" --name negative-ds 2>/dev/null || true
-fi
-```
-
-### Test 9.6: Get non-existent data store should fail
-
-```bash
-wanaku data-store get \
-  --host "${WANAKU_ROUTER_URL}" \
-  --name "does-not-exist-12345" \
-  --output-file /tmp/negative-ds-output.yaml 2>&1
-EXIT_CODE=$?
-if [ "${EXIT_CODE}" -ne 0 ]; then
-  echo "PASS: data-store get for non-existent entry failed (exit code ${EXIT_CODE})"
-else
-  echo "FAIL: data-store get for non-existent entry should fail"
-fi
-rm -f /tmp/negative-ds-output.yaml 2>/dev/null || true
-```
-
-### Test 9.7: Data store get without --id or --name should fail
-
-```bash
-wanaku data-store get \
-  --host "${WANAKU_ROUTER_URL}" \
-  --output-file /tmp/negative-ds-output.yaml 2>&1
-EXIT_CODE=$?
-if [ "${EXIT_CODE}" -ne 0 ]; then
-  echo "PASS: data-store get without --id or --name rejected (exit code ${EXIT_CODE})"
-else
-  echo "FAIL: data-store get without --id or --name should fail"
-fi
-rm -f /tmp/negative-ds-output.yaml 2>/dev/null || true
-```
-
-### Test 9.8: Data store remove without --id or --name should fail
-
-```bash
-wanaku data-store remove \
-  --host "${WANAKU_ROUTER_URL}" 2>&1
-EXIT_CODE=$?
-if [ "${EXIT_CODE}" -ne 0 ]; then
-  echo "PASS: data-store remove without --id or --name rejected (exit code ${EXIT_CODE})"
-else
-  echo "FAIL: data-store remove without --id or --name should fail"
-fi
-```
-
-### Test 9.9: Refresh non-existent forward should fail gracefully
-
-```bash
-OUTPUT=$(wanaku forwards refresh \
-  --host "${WANAKU_ROUTER_URL}" \
-  --name "does-not-exist-12345" 2>&1)
-EXIT_CODE=$?
-if [ "${EXIT_CODE}" -ne 0 ]; then
-  echo "PASS: refreshing non-existent forward failed gracefully (exit code ${EXIT_CODE})"
-else
-  echo "FAIL: refreshing non-existent forward should fail"
-fi
+wanaku data-store list --host "${WANAKU_SERVER_URL}" --no-auth --plain > /dev/null 2>&1
+[ $? -eq 1 ] && echo "PASS [9.4]: data-store against Wanaku Server fails" || echo "FAIL [9.4]: data-store against Wanaku Server"
+wanaku forwards list --host "${WANAKU_BARN_URL}" --no-auth --plain > /dev/null 2>&1
+[ $? -eq 1 ] && echo "PASS [9.4]: forwards against Barn fails" || echo "FAIL [9.4]: forwards against Barn"
 ```
 
 ---
 
 ## Phase 10: Cleanup
 
-### Step 10.1: Remove all test artifacts
+### Step 10.1: Remove the test data
 
 ```bash
-wanaku forwards remove --host "${WANAKU_ROUTER_URL}" --name test-forward 2>/dev/null || true
-wanaku forwards remove --host "${WANAKU_ROUTER_URL}" --name test-forward-refresh 2>/dev/null || true
-wanaku forwards remove --host "${WANAKU_ROUTER_URL}" --name negative-test-forward 2>/dev/null || true
-
-wanaku data-store remove --host "${WANAKU_ROUTER_URL}" --name test-datastore 2>/dev/null || true
-for i in 1 2 3; do
-  wanaku data-store remove --host "${WANAKU_ROUTER_URL}" --name "batch-ds-${i}" 2>/dev/null || true
+for FWD in fwd-unreachable fwd-auto-ns fwd-refresh-down fwd-second; do
+  wanaku forwards remove --host "${WANAKU_SERVER_URL}" --no-auth --name "${FWD}" --plain > /dev/null 2>&1 || true
 done
-
-echo "PASS: test artifacts cleaned up"
+for NS in "${FWD_AUTO_NAMESPACE}" "${FWD_SECOND_NAMESPACE}"; do
+  wanaku namespaces delete "${NS}" --host "${WANAKU_SERVER_URL}" --no-auth --plain > /dev/null 2>&1 || true
+done
+for DS in main batch-1 batch-2 batch-3; do
+  wanaku data-store remove --host "${WANAKU_BARN_URL}" --no-auth --name "${DS_PREFIX}-${DS}" --plain > /dev/null 2>&1 || true
+done
+rm -rf "${DS_WORK_DIR}" 2>/dev/null || true
+echo "PASS [10.1]: test data removed"
 ```
 
-### Step 10.2: Clean up temporary files
+### Step 10.2: Stop the processes
 
-```bash
-rm -f /tmp/test-datastore.yaml 2>/dev/null || true
-rm -f /tmp/test-datastore-retrieved.yaml 2>/dev/null || true
-rm -f /tmp/test-batch-1.yaml /tmp/test-batch-2.yaml /tmp/test-batch-3.yaml 2>/dev/null || true
-rm -f /tmp/negative-ds-output.yaml 2>/dev/null || true
-echo "PASS: temporary files cleaned up"
-```
-
-### Step 10.3: Stop the local stack
-
-```bash
-if [ -n "${WANAKU_PID}" ]; then
-  kill "${WANAKU_PID}" 2>/dev/null || true
-  wait "${WANAKU_PID}" 2>/dev/null || true
-  echo "PASS: Wanaku process stopped"
-fi
-```
+Follow the **Shutdown** sections of [common/start-test-mcp-server.md](common/start-test-mcp-server.md),
+[common/start-barn.md](common/start-barn.md) and [common/start-server.md](common/start-server.md), in this order.
 
 ---
 
 ## Test Summary Matrix
 
-| Phase | Test ID | Test Name | Priority |
-|-------|---------|-----------|----------|
-| 0 | 0.1 | Prerequisites check | High |
-| 1 | 1.1 | Start the backend and verify connectivity | Critical |
-| 2 | 2.1-2.6 | Forward add, list, remove, verify gone, namespace resolution | Critical |
-| 3 | 3.1-3.4 | Forward refresh lifecycle | High |
-| 4 | 4.1-4.2 | Data store add from file | Critical |
-| 5 | 5.1-5.2 | Data store list and get with content verification | Critical |
-| 6 | 6.1-6.5 | Data store label add, verify, remove, verify | High |
-| 7 | 7.1-7.2 | Data store remove and verify gone | Critical |
-| 8 | 8.1-8.4 | Multiple data stores with label expression filtering | High |
-| 9 | 9.1-9.9 | Negative tests (missing args, non-existent entries) | High |
-| 10 | 10.1-10.3 | Cleanup (artifacts, temp files, process) | Critical |
+| Phase | Test ID | Test Name | Component | Priority |
+|-------|---------|-----------|-----------|----------|
+| 0 | 0.1 | Prerequisites | — | High |
+| 1 | 1.1-1.3 | Start Server, Barn and the reference forward | Both | Critical |
+| 2 | 2.1-2.5 | Forward list, unreachable add, re-registration, implicit namespace, remove | Server | Critical |
+| 3 | 3.1-3.8 | Discovery, refresh, disabled state, removal cleanup, name collision, restart | Server | Critical |
+| 4 | 4.1-4.2 | Data store add from file | Barn | Critical |
+| 5 | 5.1-5.2 | Data store list, get by name and ID | Barn | Critical |
+| 6 | 6.1-6.3 | Data store labels | Barn | High |
+| 7 | 7.1 | Data store remove | Barn | Critical |
+| 8 | 8.1-8.4 | Label expressions | Barn | High |
+| 9 | 9.1-9.4 | Negative tests | Both | High |
+| 10 | 10.1-10.2 | Cleanup | Both | Critical |

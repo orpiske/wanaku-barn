@@ -2,9 +2,23 @@
 
 ## Overview
 
-This test plan exercises negative and error paths across all major Wanaku CLI command groups against a locally running instance (no auth). Every step verifies that the command **fails with a non-zero exit code** and **fails gracefully** (no stack trace, meaningful error message).
+This test plan exercises the negative and error paths of the major Wanaku CLI command groups. Each command points at
+the component that owns its API:
 
-All steps are idempotent, POSIX-compatible, and fully automatable.
+| Command group | Component | Target |
+|---------------|-----------|--------|
+| `tools`, `resources`, `prompts`, `forwards`, `namespaces` | Wanaku Server | `--host "${WANAKU_SERVER_URL}"` |
+| `mcp` | Wanaku Server MCP listener | `--uri "${WANAKU_MCP_BASE_URL}/<namespace>/mcp"` |
+| `data-store`, `service` | Wanaku Barn | `--host "${WANAKU_BARN_URL}"` |
+
+**Components:** Wanaku Server (with the test governance configuration), Wanaku Barn and the MCP reference server
+(forward `everything`).
+
+Every step verifies that the command **fails with the expected exit code**, prints a **meaningful message** and
+prints **no Java stack trace**. Some steps record Wanaku Server behavior that is not an error (for example a
+re-registered forward). These steps say so explicitly.
+
+All steps are idempotent, POSIX-compatible and automatable.
 
 ## Prerequisites
 
@@ -12,111 +26,83 @@ All steps are idempotent, POSIX-compatible, and fully automatable.
 
 | Tool | Minimum version | Verify command |
 |------|-----------------|----------------|
-| `wanaku` | build from source | `wanaku --version` |
-| `jq` | 1.6+ | `jq --version` |
+| `wanaku` CLI | build from source | `wanaku --version` |
 | `java` | 21+ | `java -version` |
 | `mvn` | 3.9+ | `mvn -version` |
+| `node` / `npx` | 18+ | `npx --version` |
+| `curl`, `jq` | any / 1.6+ | `jq --version` |
 
 ### CLI invocation
 
-When using the CLI from a local build (not installed), use `java -jar` directly:
+The plan calls the CLI as `wanaku`. To use the CLI jar from a local build, define a shell function:
 
 ```bash
-CLI_JAR="apps/wanaku-cli/target/quarkus-app/quarkus-run.jar"
-java -jar ${CLI_JAR} tools list --host ...
+CLI_JAR="${CLI_JAR:-apps/wanaku-cli/target/quarkus-app/quarkus-run.jar}"
+wanaku() { java -jar "${CLI_JAR}" "$@"; }
 ```
 
-Do **not** assign the full command to a single variable (e.g., `WANAKU_CLI="java -jar path/to/jar"`) -- zsh treats it as a single token. Use `CLI_JAR` for the path and call `java -jar ${CLI_JAR}` explicitly.
+### Exit codes
+
+| Exit code | Meaning |
+|-----------|---------|
+| `0` | Success |
+| `1` | Command validation failed, the API returned an error, or the connection failed |
+| `2` | Picocli usage error: missing required option or parameter, unknown option, unknown command |
 
 ### Environment variables
 
 ```bash
-export WANAKU_REPO_ROOT="${WANAKU_REPO_ROOT:-.}"
-export WANAKU_ROUTER_URL="${WANAKU_ROUTER_URL:-http://localhost:8080}"
 export WANAKU_UNREACHABLE_HOST="${WANAKU_UNREACHABLE_HOST:-http://localhost:59999}"
+export NEG_GOVERNED_NAMESPACE="${NEG_GOVERNED_NAMESPACE:-default}"
+export NEG_UNGOVERNED_NAMESPACE="${NEG_UNGOVERNED_NAMESPACE:-neg-ungoverned}"
+export NEG_WORK_DIR="${NEG_WORK_DIR:-$(mktemp -d)}"
+# Governance allows calls only in this namespace (see common/start-server.md, step 2b)
+export WANAKU_TEST_GOVERNED_NAMESPACES="${NEG_GOVERNED_NAMESPACE}"
+TAB=$(printf '\t')
 ```
 
 ### Helper: assert failure
 
-Reusable function to verify a command fails gracefully. Checks non-zero exit code and absence of Java stack traces.
+`assert_failure <test-id> <expected-exit> <expected-message> <command...>` runs the command. It checks the exit code
+(a number, or `nonzero`), checks that the output contains the message (an empty message skips this check) and checks
+that the output contains no Java stack trace.
 
 ```bash
 assert_failure() {
-  local TEST_ID="$1"
-  local DESCRIPTION="$2"
-  shift 2
+  AF_ID="$1"; AF_EXIT="$2"; AF_MSG="$3"; shift 3
   OUTPUT=$("$@" 2>&1)
   EXIT_CODE=$?
-
-  if [ "${EXIT_CODE}" -ne 0 ]; then
-    echo "PASS [${TEST_ID}]: ${DESCRIPTION} (exit code ${EXIT_CODE})"
+  AF_OK=true
+  if [ "${AF_EXIT}" = "nonzero" ]; then
+    [ "${EXIT_CODE}" -ne 0 ] || AF_OK=false
   else
-    echo "FAIL [${TEST_ID}]: expected non-zero exit code, got 0"
-    echo "  Output: ${OUTPUT}"
-    return 1
+    [ "${EXIT_CODE}" -eq "${AF_EXIT}" ] || AF_OK=false
   fi
-
-  # Verify no Java stack trace leaked to the user
+  if [ -n "${AF_MSG}" ] && ! echo "${OUTPUT}" | grep -qF -- "${AF_MSG}"; then
+    AF_OK=false
+  fi
   if echo "${OUTPUT}" | grep -q "at .*(.*\.java:"; then
-    echo "FAIL [${TEST_ID}]: stack trace detected in output"
-    echo "  Output: ${OUTPUT}"
-    return 1
+    echo "FAIL [${AF_ID}]: stack trace in output"
+    AF_OK=false
   fi
-
-  return 0
-}
-```
-
-### Helper: assert graceful failure (may succeed)
-
-Reusable function for "remove non-existent" cases where the CLI may exit 0 with a warning or exit non-zero. Either is acceptable as long as no stack trace appears.
-
-```bash
-assert_graceful() {
-  local TEST_ID="$1"
-  local DESCRIPTION="$2"
-  shift 2
-  OUTPUT=$("$@" 2>&1)
-  EXIT_CODE=$?
-
-  # Check no stack trace
-  if echo "${OUTPUT}" | grep -q "at .*(.*\.java:"; then
-    echo "FAIL [${TEST_ID}]: stack trace detected in output"
+  if [ "${AF_OK}" = "true" ]; then
+    echo "PASS [${AF_ID}]: exit ${EXIT_CODE}${AF_MSG:+, '${AF_MSG}'}"
+  else
+    echo "FAIL [${AF_ID}]: exit ${EXIT_CODE} (expected ${AF_EXIT}${AF_MSG:+ with '${AF_MSG}'})"
     echo "  Output: ${OUTPUT}"
-    return 1
   fi
-
-  echo "PASS [${TEST_ID}]: ${DESCRIPTION} (exit code ${EXIT_CODE})"
-  return 0
 }
 ```
 
 ---
 
-## Phase 0: Prerequisites Verification
+## Phase 0: Prerequisites
 
-### Test 0.1: Verify required tools
-
-```bash
-for CMD in wanaku jq java mvn; do
-  if command -v "${CMD}" > /dev/null 2>&1; then
-    echo "PASS [0.1]: ${CMD} is available"
-  else
-    echo "FAIL [0.1]: ${CMD} not found in PATH"
-  fi
-done
-```
-
-### Test 0.2: Verify environment variables
+### Test 0.1: Verify the required tools
 
 ```bash
-for VAR_NAME in WANAKU_ROUTER_URL WANAKU_UNREACHABLE_HOST; do
-  eval "VAL=\${${VAR_NAME}}"
-  if [ -z "${VAL}" ]; then
-    echo "FAIL [0.2]: ${VAR_NAME} is not set"
-  else
-    echo "PASS [0.2]: ${VAR_NAME}=${VAL}"
-  fi
+for CMD in java mvn npx curl jq; do
+  command -v "${CMD}" > /dev/null 2>&1 && echo "PASS [0.1]: ${CMD} available" || echo "FAIL [0.1]: ${CMD} not found"
 done
 ```
 
@@ -124,449 +110,423 @@ done
 
 ## Phase 1: Setup
 
-Follow [common/start-backend.md](common/start-backend.md) to build and start the Wanaku backend locally.
+### Step 1.1: Start Wanaku Server with the test governance configuration
 
-After completion, `WANAKU_ROUTER_URL`, `WANAKU_PID`, and `CLI_JAR` must be set.
+Follow [common/start-server.md](common/start-server.md). Run the optional step 2b with the
+`WANAKU_TEST_GOVERNED_NAMESPACES` value from the environment variables above. After completion,
+`WANAKU_SERVER_URL` and `WANAKU_MCP_BASE_URL` must be set.
 
-Verify router health (curl is used here specifically to test HTTP-level readiness):
+### Step 1.2: Start Wanaku Barn
+
+Follow [common/start-barn.md](common/start-barn.md). After completion, `WANAKU_BARN_URL` and `CLI_JAR` must be set.
+
+### Step 1.3: Start the MCP reference server
+
+Follow [common/start-test-mcp-server.md](common/start-test-mcp-server.md) with
+`TEST_MCP_NAMESPACE="${NEG_GOVERNED_NAMESPACE}"`.
+
+### Step 1.4: Verify health
+
+`curl` is used here to test HTTP-level readiness.
 
 ```bash
-curl -sf "${WANAKU_ROUTER_URL}/q/health/ready" > /dev/null && echo "PASS [1.0]: router is healthy" || echo "FAIL [1.0]: router not healthy"
+[ "$(curl -s -o /dev/null -w "%{http_code}" "${WANAKU_SERVER_URL}/health")" = "200" ] \
+  && echo "PASS [1.4]: Wanaku Server healthy" || echo "FAIL [1.4]: Wanaku Server not healthy"
+[ "$(curl -s -o /dev/null -w "%{http_code}" "${WANAKU_BARN_URL}/q/health/ready")" = "200" ] \
+  && echo "PASS [1.4]: Wanaku Barn healthy" || echo "FAIL [1.4]: Wanaku Barn not healthy"
+export NEG_MCP_URI="${WANAKU_MCP_BASE_URL}/${NEG_GOVERNED_NAMESPACE}/mcp"
 ```
 
 ---
 
-## Phase 2: Tools -- Error Cases
+## Phase 2: Tools, Resources and Prompts — Error Cases (Wanaku Server)
 
-### Test 2.1: Show non-existent tool
+### Test 2.1: Show unknown entries
 
 ```bash
-assert_failure "2.1" "show non-existent tool rejected" \
-  wanaku tools show \
-    --host "${WANAKU_ROUTER_URL}" \
-    --no-auth \
-    "nonexistent-tool-12345"
+assert_failure "2.1a" 1 "tool not found: nonexistent-tool-12345" \
+  wanaku tools show --host "${WANAKU_SERVER_URL}" --no-auth nonexistent-tool-12345
+assert_failure "2.1b" 1 "resource not found: nonexistent-resource-12345" \
+  wanaku resources show --host "${WANAKU_SERVER_URL}" --no-auth nonexistent-resource-12345
 ```
 
----
-
-## Phase 3: Resources -- Error Cases
-
-### Test 3.1: Show non-existent resource
+### Test 2.2: Show without a name
 
 ```bash
-assert_failure "3.1" "show non-existent resource rejected" \
-  wanaku resources show \
-    --host "${WANAKU_ROUTER_URL}" \
-    --no-auth \
-    "nonexistent-resource-12345"
+assert_failure "2.2a" 2 "Missing required parameter" wanaku tools show --host "${WANAKU_SERVER_URL}" --no-auth
+assert_failure "2.2b" 2 "Missing required parameter" wanaku resources show --host "${WANAKU_SERVER_URL}" --no-auth
 ```
 
----
+### Test 2.3: Enable or disable an unknown entry
 
-## Phase 4: Prompts -- Error Cases
-
-_Prompt CRUD commands (add, edit, remove) have been removed from the CLI. Prompts are managed via the UI or REST API. Only `prompts list` remains._
-
----
-
-## Phase 5: Forwards -- Error Cases
-
-### Test 5.1: Add forward with no name
-
-The `--name` option is required by `forwards add`.
+These routes have no CLI command, so the test uses `curl` and checks the HTTP status and the error envelope.
 
 ```bash
-assert_failure "5.1" "forwards add with no name rejected" \
-  wanaku forwards add \
-    --host "${WANAKU_ROUTER_URL}" \
-    --no-auth \
-    --service "http://example.com:8080"
-```
-
-### Test 5.2: Add forward with no service
-
-The `--service` option is required by `forwards add`.
-
-```bash
-assert_failure "5.2" "forwards add with no service rejected" \
-  wanaku forwards add \
-    --host "${WANAKU_ROUTER_URL}" \
-    --no-auth \
-    --name "neg-test-no-service"
-```
-
-### Test 5.3: Add forward with no namespace identifier should fail
-
-Providing neither `--namespace` nor `--namespace-id` should be rejected.
-
-```bash
-assert_failure "5.3" "forwards add with no namespace identifier rejected" \
-  wanaku forwards add \
-  --host "${WANAKU_ROUTER_URL}" \
-  --no-auth \
-  --name "neg-test-no-ns" \
-  --service "http://example.com:8080"
-```
-
-### Test 5.4: Add forward with both --namespace and --namespace-id should fail
-
-Both flags cannot be used together.
-
-```bash
-assert_failure "5.4" "forwards add with both --namespace and --namespace-id rejected" \
-  wanaku forwards add \
-  --host "${WANAKU_ROUTER_URL}" \
-  --no-auth \
-  --name "neg-test-both-ns" \
-  --service "http://example.com:8080" \
-  --namespace public \
-  --namespace-id some-uuid-value
-```
-### Test 5.5: Add duplicate forward name
-
-First register a forward, then try to add another with the same name.
-
-```bash
-wanaku forwards add \
-  --host "${WANAKU_ROUTER_URL}" \
-  --no-auth \
-  --name "neg-test-dup-forward" \
-  --service "http://example.com:8080" 2>&1
-SETUP_EXIT=$?
-
-if [ "${SETUP_EXIT}" -ne 0 ]; then
-  echo "SKIP [5.5]: could not register setup forward"
-else
-  OUTPUT=$(wanaku forwards add \
-    --host "${WANAKU_ROUTER_URL}" \
-    --no-auth \
-    --name "neg-test-dup-forward" \
-    --service "http://other.example.com:8080" 2>&1)
-  EXIT_CODE=$?
-
-  if [ "${EXIT_CODE}" -ne 0 ]; then
-    echo "PASS [5.5]: duplicate forward name rejected (exit code ${EXIT_CODE})"
+for KIND in tools resources prompts; do
+  BODY=$(curl -s -w "\n%{http_code}" -X PUT "${WANAKU_SERVER_URL}/api/v1/${KIND}/nonexistent-12345/disable")
+  CODE=$(echo "${BODY}" | tail -1)
+  ERR=$(echo "${BODY}" | head -1 | jq -r '.error')
+  if [ "${CODE}" = "404" ] && echo "${ERR}" | grep -q "not found: nonexistent-12345"; then
+    echo "PASS [2.3]: ${KIND} disable of an unknown entry returns 404 (${ERR})"
   else
-    echo "WARN [5.5]: duplicate forward was accepted -- server may allow overwrite"
+    echo "FAIL [2.3]: ${KIND}: HTTP ${CODE}, body ${BODY}"
   fi
-
-  # Cleanup
-  wanaku forwards remove --host "${WANAKU_ROUTER_URL}" --no-auth --name "neg-test-dup-forward" 2>/dev/null || true
-fi
-```
-
-### Test 5.6: Remove non-existent forward
-
-```bash
-assert_failure "5.5" "refresh non-existent forward rejected" \
-  wanaku forwards refresh \
-    --host "${WANAKU_ROUTER_URL}" \
-    --no-auth \
-    --name "nonexistent-forward-12345"
+done
 ```
 
 ---
 
-## Phase 6: Data Store -- Error Cases
+## Phase 3: Forwards — Error Cases (Wanaku Server)
 
-### Test 6.1: Add with non-existent file
-
-The `--read-from-file` option is required by `datastores add`.
+### Test 3.1: Missing required options
 
 ```bash
-assert_failure "6.1" "datastores add with non-existent file rejected" \
-  wanaku datastores add \
-    --host "${WANAKU_ROUTER_URL}" \
-    --no-auth \
-    --read-from-file "/tmp/nonexistent-datastore-file-12345.bin"
+assert_failure "3.1a" 2 "Missing required option: '--name" \
+  wanaku forwards add --host "${WANAKU_SERVER_URL}" --no-auth --service "http://example.com:8080/mcp" --namespace default
+assert_failure "3.1b" 2 "Missing required option: '--service" \
+  wanaku forwards add --host "${WANAKU_SERVER_URL}" --no-auth --name neg-no-service --namespace default
+assert_failure "3.1c" 2 "Missing required argument(s): -N=<namespace>" \
+  wanaku forwards add --host "${WANAKU_SERVER_URL}" --no-auth --name neg-no-ns --service "http://example.com:8080/mcp"
 ```
 
-### Test 6.2: Get non-existent data store by name
+### Test 3.2: The removed `--namespace-id` option is rejected
 
-The `datastores get` command requires either `--id` or `--name`.
+Namespaces are identified by name only.
 
 ```bash
-assert_failure "6.2" "datastores get non-existent name rejected" \
-  wanaku datastores get \
-    --host "${WANAKU_ROUTER_URL}" \
-    --no-auth \
-    --name "nonexistent-datastore-12345"
+assert_failure "3.2" 2 "Unknown options: '--namespace-id'" \
+  wanaku forwards add --host "${WANAKU_SERVER_URL}" --no-auth --name neg-ns-id \
+    --service "http://example.com:8080/mcp" --namespace-id some-uuid-value
 ```
 
-### Test 6.3: Get with neither id nor name
+### Test 3.3: Remove and refresh an unknown forward
 
 ```bash
-assert_failure "6.3" "datastores get with no id or name rejected" \
-  wanaku datastores get \
-    --host "${WANAKU_ROUTER_URL}" \
-    --no-auth
+assert_failure "3.3a" 1 "Forward 'nonexistent-forward-12345' not found" \
+  wanaku forwards remove --host "${WANAKU_SERVER_URL}" --no-auth --name nonexistent-forward-12345
+assert_failure "3.3b" 1 "Forward 'nonexistent-forward-12345' not found" \
+  wanaku forwards refresh --host "${WANAKU_SERVER_URL}" --no-auth --name nonexistent-forward-12345
 ```
 
-### Test 6.4: Remove non-existent data store
+### Test 3.4: A duplicate forward name replaces the entry (not an error)
+
+Wanaku Server has no update route for forwards. A second `add` with the same name replaces the address. It does not
+return `409`.
 
 ```bash
-assert_graceful "6.4" "remove non-existent datastore handled gracefully" \
-  wanaku datastores remove \
-    --host "${WANAKU_ROUTER_URL}" \
-    --no-auth \
-    --name "nonexistent-datastore-12345"
-```
-
-### Test 6.5: Remove with neither id nor name
-
-```bash
-assert_failure "6.5" "datastores remove with no id or name rejected" \
-  wanaku datastores remove \
-    --host "${WANAKU_ROUTER_URL}" \
-    --no-auth
-```
-
----
-
-## Phase 7: Namespaces -- Error Cases
-
-### Test 7.1: Delete non-existent namespace
-
-The `namespaces delete` command takes the namespace ID as a positional parameter.
-
-```bash
-assert_graceful "7.1" "delete non-existent namespace handled gracefully" \
-  wanaku namespaces delete \
-    --host "${WANAKU_ROUTER_URL}" \
-    --no-auth \
-    "nonexistent-namespace-id-12345"
-```
-
-### Test 7.2: Create namespace with no path
-
-The `--path` option is required by `namespaces create`.
-
-```bash
-assert_failure "7.2" "namespaces create with no path rejected" \
-  wanaku namespaces create \
-    --host "${WANAKU_ROUTER_URL}" \
-    --no-auth \
-    --name "neg-test-ns"
-```
-
----
-
-## Phase 8: Service -- Error Cases
-
-### Test 8.1: Service init with no name
-
-The `--name` option is required by `service init`.
-
-```bash
-assert_failure "8.1" "service init with no name rejected" \
-  wanaku service init \
-    --services "system1"
-```
-
-### Test 8.2: Service init with no services
-
-The `--services` option is required by `service init`.
-
-```bash
-assert_failure "8.2" "service init with no services rejected" \
-  wanaku service init \
-    --name "neg-test-init"
-```
-
-### Test 8.3: Service expose with invalid path (no index.properties)
-
-```bash
-assert_failure "8.3" "service expose with invalid path rejected" \
-  wanaku service expose \
-    --path "/tmp/nonexistent-service-catalog-12345"
-```
-
-### Test 8.4: Service package with non-existent path
-
-```bash
-assert_failure "8.4" "service package with non-existent path rejected" \
-  wanaku service package \
-    --path "/tmp/nonexistent-service-catalog-12345"
-```
-
-### Test 8.5: Service deploy with non-existent path
-
-```bash
-assert_failure "8.5" "service deploy with non-existent path rejected" \
-  wanaku service deploy \
-    --path "/tmp/nonexistent-service-catalog-12345" \
-    --host "${WANAKU_ROUTER_URL}"
-```
-
-### Test 8.6: Service deploy with unreachable host
-
-Create a minimal valid service catalog, then try to deploy to an unreachable host.
-
-```bash
-NEG_TEST_DIR=$(mktemp -d)
-wanaku service init --name "${NEG_TEST_DIR}/neg-svc" --services "testsys" 2>/dev/null || true
-
-# Only run if init succeeded
-if [ -f "${NEG_TEST_DIR}/neg-svc/index.properties" ]; then
-  # Generate rules so the catalog is complete
-  wanaku service expose --path "${NEG_TEST_DIR}/neg-svc" 2>/dev/null || true
-
-  assert_failure "8.6" "service deploy to unreachable host rejected" \
-    wanaku service deploy \
-      --path "${NEG_TEST_DIR}/neg-svc" \
-      --host "${WANAKU_UNREACHABLE_HOST}"
-else
-  echo "SKIP [8.6]: service init did not produce expected files"
-fi
-
-# Cleanup
-rm -rf "${NEG_TEST_DIR}" 2>/dev/null || true
-```
-
-### Test 8.7: Service init with already existing directory
-
-```bash
-NEG_TEST_DIR=$(mktemp -d)
-mkdir -p "${NEG_TEST_DIR}/neg-existing"
-
-OUTPUT=$(wanaku service init --name "${NEG_TEST_DIR}/neg-existing" --services "sys1" 2>&1)
+wanaku forwards add --host "${WANAKU_SERVER_URL}" --no-auth --name neg-dup-forward \
+  --service "${WANAKU_UNREACHABLE_HOST}/first/mcp" --namespace default --plain > /dev/null 2>&1
+wanaku forwards add --host "${WANAKU_SERVER_URL}" --no-auth --name neg-dup-forward \
+  --service "${WANAKU_UNREACHABLE_HOST}/second/mcp" --namespace default --plain > /dev/null 2>&1
 EXIT_CODE=$?
-
-if [ "${EXIT_CODE}" -ne 0 ]; then
-  echo "PASS [8.7]: service init with existing directory rejected (exit code ${EXIT_CODE})"
+ROWS=$(wanaku forwards list --host "${WANAKU_SERVER_URL}" --no-auth --plain | grep "^neg-dup-forward${TAB}")
+if [ "${EXIT_CODE}" -eq 0 ] && [ "$(echo "${ROWS}" | wc -l)" -eq 1 ] && echo "${ROWS}" | grep -q "/second/mcp"; then
+  echo "PASS [3.4]: duplicate name replaced the entry"
 else
-  echo "FAIL [8.7]: service init should reject existing directory"
+  echo "FAIL [3.4]: exit ${EXIT_CODE}, rows: ${ROWS}"
 fi
+wanaku forwards remove --host "${WANAKU_SERVER_URL}" --no-auth --name neg-dup-forward > /dev/null 2>&1 || true
+```
 
-# Cleanup
-rm -rf "${NEG_TEST_DIR}" 2>/dev/null || true
+### Test 3.5: An unreachable forward address is stored as unavailable (not an error)
+
+`forwards add` exits with `0`. The forward has `available: false` and no discovered entries.
+
+```bash
+OUTPUT=$(wanaku forwards add --host "${WANAKU_SERVER_URL}" --no-auth --name neg-unreachable \
+  --service "${WANAKU_UNREACHABLE_HOST}/mcp" --namespace default --plain 2>&1)
+EXIT_CODE=$?
+AVAILABLE=$(curl -s "${WANAKU_SERVER_URL}/api/v1/forwards/neg-unreachable" | jq -r '.data.available')
+if [ "${EXIT_CODE}" -eq 0 ] && [ "${AVAILABLE}" = "false" ]; then
+  echo "PASS [3.5]: unreachable forward stored as unavailable"
+else
+  echo "FAIL [3.5]: exit ${EXIT_CODE}, available=${AVAILABLE}, output: ${OUTPUT}"
+fi
+wanaku forwards remove --host "${WANAKU_SERVER_URL}" --no-auth --name neg-unreachable > /dev/null 2>&1 || true
+```
+
+### Test 3.6: A forward with an invalid namespace name
+
+The CLI and Wanaku Server do not validate the namespace name of a forward. This test reports the current behavior as
+a warning.
+
+```bash
+wanaku forwards add --host "${WANAKU_SERVER_URL}" --no-auth --name neg-bad-ns \
+  --service "${WANAKU_UNREACHABLE_HOST}/mcp" --namespace Bad_NS --plain > /dev/null 2>&1
+if [ $? -ne 0 ]; then
+  echo "PASS [3.6]: invalid namespace name rejected"
+else
+  echo "WARN [3.6]: forward with invalid namespace name 'Bad_NS' accepted"
+fi
+wanaku forwards remove --host "${WANAKU_SERVER_URL}" --no-auth --name neg-bad-ns > /dev/null 2>&1 || true
+```
+
+---
+
+## Phase 4: Namespaces — Error Cases (Wanaku Server)
+
+Namespace names are DNS labels: lowercase letters, digits and hyphens, 1 to 63 characters, no hyphen at the start or
+the end.
+
+### Test 4.1: The CLI rejects invalid names
+
+A name that starts with a hyphen must follow `--`. Otherwise picocli reads it as an option.
+
+```bash
+LONG_NAME=$(printf 'a%.0s' $(seq 1 64))
+assert_failure "4.1a" 1 "must contain only lowercase alphanumeric characters and hyphens" \
+  wanaku namespaces create --host "${WANAKU_SERVER_URL}" --no-auth Bad_NS
+assert_failure "4.1b" 1 "must contain only lowercase alphanumeric characters and hyphens" \
+  wanaku namespaces create --host "${WANAKU_SERVER_URL}" --no-auth "neg ns"
+assert_failure "4.1c" 1 "must not start or end with a hyphen" \
+  wanaku namespaces create --host "${WANAKU_SERVER_URL}" --no-auth neg-trailing-
+assert_failure "4.1d" 1 "must not start or end with a hyphen" \
+  wanaku namespaces create --host "${WANAKU_SERVER_URL}" --no-auth -- -neg-leading
+assert_failure "4.1e" 1 "must be at most 63 characters, got 64" \
+  wanaku namespaces create --host "${WANAKU_SERVER_URL}" --no-auth "${LONG_NAME}"
+assert_failure "4.1f" 1 "must not be empty" \
+  wanaku namespaces create --host "${WANAKU_SERVER_URL}" --no-auth ""
+assert_failure "4.1g" 2 "Missing required parameter" \
+  wanaku namespaces create --host "${WANAKU_SERVER_URL}" --no-auth
+```
+
+### Test 4.2: Wanaku Server also rejects invalid names
+
+The CLI validates the name before it calls the API. This test calls the API directly to verify the server-side
+validation.
+
+```bash
+for BODY in '{"name":"Bad_NS"}' '{"name":"-neg"}' '{"name":"neg"'; do
+  CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${WANAKU_SERVER_URL}/api/v1/namespaces" \
+    -H "Content-Type: application/json" -d "${BODY}")
+  [ "${CODE}" = "400" ] && echo "PASS [4.2]: ${BODY} returns 400" || echo "FAIL [4.2]: ${BODY} returns ${CODE}"
+done
+```
+
+### Test 4.3: Show and delete an unknown namespace
+
+```bash
+assert_failure "4.3a" 1 "namespace not found: nonexistent-namespace-12345" \
+  wanaku namespaces show --host "${WANAKU_SERVER_URL}" --no-auth nonexistent-namespace-12345
+assert_failure "4.3b" 1 "Namespace 'nonexistent-namespace-12345' not found" \
+  wanaku namespaces delete --host "${WANAKU_SERVER_URL}" --no-auth nonexistent-namespace-12345
+```
+
+---
+
+## Phase 5: Data Store — Error Cases (Wanaku Barn)
+
+### Test 5.1: Validation errors
+
+```bash
+assert_failure "5.1a" 2 "Missing required option: '--read-from-file" \
+  wanaku data-store add --host "${WANAKU_BARN_URL}" --no-auth
+assert_failure "5.1b" 1 "Failed to read file" \
+  wanaku data-store add --host "${WANAKU_BARN_URL}" --no-auth --read-from-file "${NEG_WORK_DIR}/nonexistent.bin"
+assert_failure "5.1c" 1 "Either --id or --name must be provided" \
+  wanaku data-store get --host "${WANAKU_BARN_URL}" --no-auth
+assert_failure "5.1d" 1 "Either --id or --name must be provided" \
+  wanaku data-store remove --host "${WANAKU_BARN_URL}" --no-auth
+assert_failure "5.1e" 1 "Invalid label format: 'novalue'" \
+  wanaku data-store label add --host "${WANAKU_BARN_URL}" --no-auth --id any --label novalue
+```
+
+### Test 5.2: Unknown entries
+
+```bash
+assert_failure "5.2a" 1 "not found" \
+  wanaku data-store get --host "${WANAKU_BARN_URL}" --no-auth --name nonexistent-datastore-12345 \
+    --output-file "${NEG_WORK_DIR}/out.bin"
+assert_failure "5.2b" 1 "Data store 'nonexistent-datastore-12345' not found" \
+  wanaku data-store remove --host "${WANAKU_BARN_URL}" --no-auth --name nonexistent-datastore-12345
+assert_failure "5.2c" 1 "Data store '00000000-0000-0000-0000-000000000000' not found" \
+  wanaku data-store label add --host "${WANAKU_BARN_URL}" --no-auth --id 00000000-0000-0000-0000-000000000000 --label a=b
+```
+
+### Test 5.3: The old command name is rejected
+
+The command is `data-store`. Earlier plans used `datastores`, which does not exist.
+
+```bash
+assert_failure "5.3" 2 "Unmatched arguments" wanaku datastores list --host "${WANAKU_BARN_URL}" --no-auth
+```
+
+---
+
+## Phase 6: Service — Error Cases (Wanaku Barn)
+
+### Test 6.1: `service init` validation
+
+```bash
+assert_failure "6.1a" 2 "Missing required option: '--name" wanaku service init --services system1
+assert_failure "6.1b" 2 "Missing required option: '--services" wanaku service init --name neg-test-init
+mkdir -p "${NEG_WORK_DIR}/neg-existing"
+assert_failure "6.1c" 1 "already exists" \
+  wanaku service init --name "${NEG_WORK_DIR}/neg-existing" --services sys1
+```
+
+### Test 6.2: Commands on a path without `index.properties`
+
+```bash
+for CMD in expose package; do
+  assert_failure "6.2-${CMD}" 1 "index.properties not found" \
+    wanaku service "${CMD}" --path "${NEG_WORK_DIR}/nonexistent-catalog"
+done
+assert_failure "6.2-deploy" 1 "index.properties not found" \
+  wanaku service deploy --path "${NEG_WORK_DIR}/nonexistent-catalog" --host "${WANAKU_BARN_URL}" --no-auth
+```
+
+### Test 6.3: Deploy to an unreachable host
+
+```bash
+wanaku service init --name "${NEG_WORK_DIR}/neg-svc" --services testsys > /dev/null 2>&1
+wanaku service expose --path "${NEG_WORK_DIR}/neg-svc" > /dev/null 2>&1
+if [ -f "${NEG_WORK_DIR}/neg-svc/index.properties" ]; then
+  assert_failure "6.3" 1 "Incorrect --host URL" \
+    wanaku service deploy --path "${NEG_WORK_DIR}/neg-svc" --host "${WANAKU_UNREACHABLE_HOST}" --no-auth
+else
+  echo "FAIL [6.3]: service init did not create the catalog"
+fi
+```
+
+---
+
+## Phase 7: MCP — Error Cases (Wanaku Server MCP Listener)
+
+### Test 7.1: Missing options
+
+```bash
+assert_failure "7.1a" 1 "Missing required option: --uri" wanaku mcp tool --no-auth --name echo
+assert_failure "7.1b" 1 "Missing required option: --resource-uri" wanaku mcp resource --no-auth --uri "${NEG_MCP_URI}"
+assert_failure "7.1c" 2 "Missing required option" wanaku mcp tool list --no-auth
+```
+
+### Test 7.2: Invalid endpoints
+
+```bash
+assert_failure "7.2a" 1 "invalid MCP endpoint path: use /{namespace}/mcp" \
+  wanaku mcp tool list --no-auth --uri "${WANAKU_MCP_BASE_URL}/mcp"
+assert_failure "7.2b" 1 "Legacy SSE MCP endpoints are no longer supported" \
+  wanaku mcp tool list --no-auth --uri "${NEG_MCP_URI}/sse"
+assert_failure "7.2c" 1 "Invalid URI: 'not-a-valid-uri'" \
+  wanaku mcp tool list --no-auth --uri not-a-valid-uri
+assert_failure "7.2d" 1 "" \
+  wanaku mcp tool list --no-auth --uri "${WANAKU_UNREACHABLE_HOST}/default/mcp"
+```
+
+### Test 7.3: Unknown tool, resource and prompt
+
+```bash
+assert_failure "7.3a" 1 "tool not found: nonexistent-tool-12345" \
+  wanaku mcp tool --no-auth --uri "${NEG_MCP_URI}" --name nonexistent-tool-12345
+assert_failure "7.3b" 1 "resource not found: demo://nonexistent-12345" \
+  wanaku mcp resource --no-auth --uri "${NEG_MCP_URI}" --resource-uri demo://nonexistent-12345
+assert_failure "7.3c" 1 "prompt not found: nonexistent-prompt-12345" \
+  wanaku mcp prompt --no-auth --uri "${NEG_MCP_URI}" --name nonexistent-prompt-12345
+```
+
+### Test 7.4: Invalid tool arguments
+
+```bash
+assert_failure "7.4a" 1 "-32602" wanaku mcp tool --no-auth --uri "${NEG_MCP_URI}" --name echo
+assert_failure "7.4b" 1 "expected number, received string" \
+  wanaku mcp tool --no-auth --uri "${NEG_MCP_URI}" --name get-sum --param a=1 --param b=2
+```
+
+### Test 7.5: Unknown namespace
+
+An MCP endpoint of a namespace that does not exist answers. It lists no tools, and the fail-safe governance denies
+calls before the tool lookup.
+
+```bash
+UNKNOWN_URI="${WANAKU_MCP_BASE_URL}/nonexistent-namespace-12345/mcp"
+OUTPUT=$(wanaku mcp tool list --no-auth --uri "${UNKNOWN_URI}" --plain 2>&1)
+echo "${OUTPUT}" | grep -q "No tools found" && echo "PASS [7.5a]: unknown namespace lists no tools" \
+  || echo "FAIL [7.5a]: output: ${OUTPUT}"
+assert_failure "7.5b" 1 "No governance policy permits this action." \
+  wanaku mcp tool --no-auth --uri "${UNKNOWN_URI}" --name echo --param message=hello
+```
+
+### Test 7.6: Calls in a namespace that governance does not allow
+
+```bash
+wanaku namespaces create "${NEG_UNGOVERNED_NAMESPACE}" --host "${WANAKU_SERVER_URL}" --no-auth --plain > /dev/null
+UNGOV_URI="${WANAKU_MCP_BASE_URL}/${NEG_UNGOVERNED_NAMESPACE}/mcp"
+assert_failure "7.6a" 1 "No governance policy permits this action." \
+  wanaku mcp tool --no-auth --uri "${UNGOV_URI}" --name echo --param message=hello
+assert_failure "7.6b" 1 "No governance policy permits this action." \
+  wanaku mcp prompt --no-auth --uri "${UNGOV_URI}" --name simple-prompt
+```
+
+---
+
+## Phase 8: Commands Against the Wrong Component
+
+Wanaku Server has no data store or service catalog API. Barn has no tool, forward or namespace API. These calls get
+`404` and the CLI exits with `1`.
+
+```bash
+assert_failure "8.1" 1 "The requested resource was not found" \
+  wanaku data-store list --host "${WANAKU_SERVER_URL}" --no-auth --plain
+assert_failure "8.2" 1 "The requested resource was not found" \
+  wanaku service catalog list --host "${WANAKU_SERVER_URL}" --no-auth --plain
+assert_failure "8.3" 1 "The requested resource was not found" \
+  wanaku tools list --host "${WANAKU_BARN_URL}" --no-auth --plain
+assert_failure "8.4" 1 "The requested resource was not found" \
+  wanaku forwards list --host "${WANAKU_BARN_URL}" --no-auth --plain
+assert_failure "8.5" 1 "The requested resource was not found" \
+  wanaku namespaces list --host "${WANAKU_BARN_URL}" --no-auth --plain
 ```
 
 ---
 
 ## Phase 9: Connection Errors
 
-All commands pointing to an unreachable host should fail gracefully with a clear error message and no stack trace.
-
-### Test 9.1: Tools list with unreachable host
+All commands that point at an unreachable host fail with a clear message and no stack trace.
 
 ```bash
-assert_failure "9.1" "tools list with unreachable host fails gracefully" \
-  wanaku tools list \
-    --host "${WANAKU_UNREACHABLE_HOST}" \
-    --no-auth \
-    --plain
-```
-
-### Test 9.2: Resources list with unreachable host
-
-```bash
-assert_failure "9.2" "resources list with unreachable host fails gracefully" \
-  wanaku resources list \
-    --host "${WANAKU_UNREACHABLE_HOST}" \
-    --no-auth \
-    --plain
-```
-
-### Test 9.3: Prompts list with unreachable host
-
-```bash
-assert_failure "9.3" "prompts list with unreachable host fails gracefully" \
-  wanaku prompts list \
-    --host "${WANAKU_UNREACHABLE_HOST}" \
-    --no-auth \
-    --plain
-```
-
-### Test 9.4: Forwards list with unreachable host
-
-```bash
-assert_failure "9.4" "forwards list with unreachable host fails gracefully" \
-  wanaku forwards list \
-    --host "${WANAKU_UNREACHABLE_HOST}" \
-    --no-auth \
-    --plain
-```
-
-### Test 9.5: Datastores list with unreachable host
-
-```bash
-assert_failure "9.5" "datastores list with unreachable host fails gracefully" \
-  wanaku datastores list \
-    --host "${WANAKU_UNREACHABLE_HOST}" \
-    --no-auth \
-    --plain
-```
-
-### Test 9.6: Namespaces list with unreachable host
-
-```bash
-assert_failure "9.6" "namespaces list with unreachable host fails gracefully" \
-  wanaku namespaces list \
-    --host "${WANAKU_UNREACHABLE_HOST}" \
-    --no-auth \
-    --plain
+for CMD in "tools list" "resources list" "prompts list" "forwards list" "namespaces list" \
+           "data-store list" "service catalog list"; do
+  # shellcheck disable=SC2086 # word splitting of CMD is intended
+  assert_failure "9-${CMD}" 1 "Unable to connect to Wanaku service" \
+    wanaku ${CMD} --host "${WANAKU_UNREACHABLE_HOST}" --no-auth --plain
+done
 ```
 
 ---
 
 ## Phase 10: Cleanup
 
-### Step 10.1: Remove any leftover test data
+### Step 10.1: Remove the test data
 
 ```bash
-wanaku forwards remove --host "${WANAKU_ROUTER_URL}" --no-auth --name "neg-test-dup-forward" 2>/dev/null || true
-
-echo "PASS [10.1]: test data cleaned up"
+for FWD in neg-dup-forward neg-unreachable neg-bad-ns neg-no-service neg-no-ns neg-ns-id; do
+  wanaku forwards remove --host "${WANAKU_SERVER_URL}" --no-auth --name "${FWD}" > /dev/null 2>&1 || true
+done
+wanaku namespaces delete "${NEG_UNGOVERNED_NAMESPACE}" --host "${WANAKU_SERVER_URL}" --no-auth > /dev/null 2>&1 || true
+rm -rf "${NEG_WORK_DIR}" 2>/dev/null || true
+echo "PASS [10.1]: test data removed"
 ```
 
-### Step 10.2: Stop the local stack
+### Step 10.2: Stop the processes
 
-```bash
-if [ -n "${WANAKU_PID}" ]; then
-  kill "${WANAKU_PID}" 2>/dev/null || true
-  wait "${WANAKU_PID}" 2>/dev/null || true
-  echo "PASS [10.2]: Wanaku process stopped"
-else
-  echo "SKIP [10.2]: WANAKU_PID not set"
-fi
-```
+Follow the **Shutdown** sections of [common/start-test-mcp-server.md](common/start-test-mcp-server.md),
+[common/start-barn.md](common/start-barn.md) and [common/start-server.md](common/start-server.md), in this order.
 
 ---
 
 ## Summary Matrix
 
-| Phase | Test ID | Test Name | Priority | Category |
-|-------|---------|-----------|----------|----------|
-| 0 | 0.1-0.2 | Prerequisites verification | Critical | Setup |
-| 1 | 1.0 | Router health check | Critical | Setup |
-| 2 | 2.1 | Tool show: non-existent | High | Error handling |
-| 3 | 3.1 | Resource show: non-existent | High | Error handling |
-| 4 | — | Prompt CRUD removed from CLI | — | — |
-| 5 | 5.1 | Forward add: missing --name | High | Validation |
-| 5 | 5.2 | Forward add: missing --service | High | Validation |
-| 5 | 5.3 | Forward add: duplicate name | Medium | Validation |
-| 5 | 5.4 | Forward remove: non-existent | Medium | Error handling |
-| 5 | 5.5 | Forward refresh: non-existent | High | Error handling |
-| 6 | 6.1 | Datastore add: non-existent file | High | Validation |
-| 6 | 6.2 | Datastore get: non-existent name | High | Error handling |
-| 6 | 6.3 | Datastore get: no id or name | High | Validation |
-| 6 | 6.4 | Datastore remove: non-existent | Medium | Error handling |
-| 6 | 6.5 | Datastore remove: no id or name | High | Validation |
-| 7 | 7.1 | Namespace delete: non-existent | Medium | Error handling |
-| 7 | 7.2 | Namespace create: missing --path | High | Validation |
-| 8 | 8.1 | Service init: missing --name | High | Validation |
-| 8 | 8.2 | Service init: missing --services | High | Validation |
-| 8 | 8.3 | Service expose: invalid path | High | Error handling |
-| 8 | 8.4 | Service package: non-existent path | High | Error handling |
-| 8 | 8.5 | Service deploy: non-existent path | High | Error handling |
-| 8 | 8.6 | Service deploy: unreachable host | High | Connection |
-| 8 | 8.7 | Service init: existing directory | High | Error handling |
-| 9 | 9.1 | Tools list: unreachable host | Critical | Connection |
-| 9 | 9.2 | Resources list: unreachable host | Critical | Connection |
-| 9 | 9.3 | Prompts list: unreachable host | Critical | Connection |
-| 9 | 9.4 | Forwards list: unreachable host | Critical | Connection |
-| 9 | 9.5 | Datastores list: unreachable host | Critical | Connection |
-| 9 | 9.6 | Namespaces list: unreachable host | Critical | Connection |
-| 10 | 10.1-10.2 | Cleanup | Critical | Teardown |
+| Phase | Test ID | Test Name | Component | Priority |
+|-------|---------|-----------|-----------|----------|
+| 0 | 0.1 | Prerequisites | — | Critical |
+| 1 | 1.1-1.4 | Server (test governance), Barn, reference forward, health | Both | Critical |
+| 2 | 2.1-2.3 | Unknown tool/resource, missing name, enable/disable unknown entry | Server | High |
+| 3 | 3.1-3.6 | Forward options, removed `--namespace-id`, unknown forward, duplicate name, unreachable address, invalid namespace name | Server | High |
+| 4 | 4.1-4.3 | DNS-label namespace names (CLI and server), unknown namespace | Server | High |
+| 5 | 5.1-5.3 | Data store validation, unknown entries, old command name | Barn | High |
+| 6 | 6.1-6.3 | Service init/expose/package/deploy errors | Barn | High |
+| 7 | 7.1-7.6 | MCP options, bare `/mcp`, SSE, invalid URI, unknown entries, invalid arguments, unknown namespace, fail-safe governance | Server MCP | Critical |
+| 8 | 8.1-8.5 | Commands against the wrong component | Both | High |
+| 9 | 9.x | Connection errors | — | Critical |
+| 10 | 10.1-10.2 | Cleanup | Both | Critical |

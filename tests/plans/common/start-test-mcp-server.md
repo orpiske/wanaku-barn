@@ -76,6 +76,12 @@ java -jar "${CLI_JAR}" forwards add --host "${WANAKU_SERVER_URL}" --no-auth \
   || { echo "FAIL: could not register forward '${TEST_MCP_FORWARD}'"; exit 1; }
 ```
 
+Register the reference server only once per Wanaku Server. Wanaku Server keys tools, resources and prompts by name
+across all namespaces. A second forward to the same upstream (or to another upstream with the same tool names) moves
+the entries to the namespace of the second forward. Removing that forward then deletes them. To test more than one
+namespace, start a second reference server on another port with another forward name, and expect the same collision.
+Use `forwards refresh --name "${TEST_MCP_FORWARD}"` to restore the entries after a collision.
+
 ### 3. Verify the tools were discovered
 
 Wanaku Server discovers the upstream entries when the forward is created.
